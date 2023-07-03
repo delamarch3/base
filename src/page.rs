@@ -1,7 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 
 pub type PageID = u32;
-pub const INVALID_PAGE_ID: PageID = 0;
 pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
 
 /// A TupleID is composed of a PageID and the slot offset within that page
@@ -11,7 +10,7 @@ pub struct Page<const SIZE: usize> {
     id: PageID,
     pin: u32,
     dirty: bool,
-    data: BytesMut,
+    pub data: BytesMut,
 }
 
 macro_rules! get_u64 {
@@ -33,7 +32,7 @@ macro_rules! put_bytes {
 }
 
 impl<const SIZE: usize> Page<SIZE> {
-    pub fn new() -> Self {
+    pub fn new(id: PageID) -> Self {
         let mut data = BytesMut::zeroed(SIZE);
 
         let header = PageHeader {
@@ -44,7 +43,16 @@ impl<const SIZE: usize> Page<SIZE> {
         put_bytes!(data, header.as_bytes(), 0, PageHeader::SIZE);
 
         Self {
-            id: INVALID_PAGE_ID,
+            id,
+            pin: 0,
+            dirty: false,
+            data,
+        }
+    }
+
+    pub fn from_bytes(id: PageID, data: BytesMut) -> Self {
+        Self {
+            id,
             pin: 0,
             dirty: false,
             data,
@@ -65,18 +73,6 @@ impl<const SIZE: usize> Page<SIZE> {
         }
     }
 
-    pub fn read_header(&self) -> PageHeader {
-        let upper = get_u64!(self.data, 0);
-        let lower = get_u64!(self.data, 8);
-        let special = get_u64!(self.data, 16);
-
-        PageHeader {
-            upper,
-            lower,
-            special,
-        }
-    }
-
     pub fn read_tuple(&self, slot_offset: u64, schema: &[Type]) -> Tuple {
         let tuple_offset = get_u64!(self.data, slot_offset);
         let tuple_size = get_u64!(self.data, slot_offset + 8);
@@ -86,7 +82,7 @@ impl<const SIZE: usize> Page<SIZE> {
     }
 
     pub fn write_tuple(&mut self, tuple: &Tuple) -> TupleID {
-        let mut header = self.read_header();
+        let mut header = PageHeader::read(&self.data);
 
         // Write to slot array
         let slot_offset = header.upper;
@@ -98,11 +94,11 @@ impl<const SIZE: usize> Page<SIZE> {
 
         put_bytes!(self.data, tuple_offset_bytes, slot_offset, 8);
         put_bytes!(self.data, len_bytes, slot_offset + 8, 8);
-        header.upper = header.upper + TupleSlot::SIZE;
+        header.upper += TupleSlot::SIZE;
 
         // Write tuple
         put_bytes!(self.data, tuple.as_bytes(), tuple_offset, len);
-        header.lower = header.lower - len;
+        header.lower -= len;
         self.dirty = true;
 
         // Update header
@@ -123,6 +119,19 @@ pub struct PageHeader {
 
 impl PageHeader {
     const SIZE: u64 = 24;
+
+    pub fn read(data: &[u8]) -> Self {
+        let upper = get_u64!(data, 0);
+        let lower = get_u64!(data, 8);
+        let special = get_u64!(data, 16);
+
+        Self {
+            upper,
+            lower,
+            special,
+        }
+    }
+
     pub fn as_bytes(&self) -> BytesMut {
         let mut ret = BytesMut::with_capacity(Self::SIZE as usize);
         ret.put_u64(self.upper);
@@ -176,7 +185,7 @@ impl ColumnType {
                 let start = bytes.len() - bytes.remaining();
                 let end = start + len;
                 let s = BytesMut::from(&bytes[start..end]);
-                bytes.advance(len as usize);
+                bytes.advance(len);
 
                 Some(ColumnType::String(s))
             }
@@ -198,7 +207,7 @@ impl ColumnType {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Tuple(Vec<ColumnType>);
+pub struct Tuple(pub Vec<ColumnType>);
 
 impl Tuple {
     #[inline]
@@ -270,13 +279,13 @@ mod test {
 
     #[test]
     fn test_rw_page() {
-        let mut page: Page<DEFAULT_PAGE_SIZE> = Page::new();
+        let mut page: Page<DEFAULT_PAGE_SIZE> = Page::new(0);
 
         let PageHeader {
             upper,
             lower,
             special,
-        } = page.read_header();
+        } = PageHeader::read(&page.data);
         assert!(
             upper == PageHeader::SIZE
                 && lower == DEFAULT_PAGE_SIZE as u64
@@ -308,7 +317,7 @@ mod test {
             upper,
             lower,
             special,
-        } = page.read_header();
+        } = PageHeader::read(&page.data);
 
         assert!(
             upper == PageHeader::SIZE + (TupleSlot::SIZE * 2)
