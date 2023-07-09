@@ -22,8 +22,9 @@ impl Disk {
         Ok(Self { file })
     }
 
-    pub async fn read_page<const SIZE: usize>(&self, page_id: PageID) -> io::Result<Page<SIZE>> {
-        let offset = SIZE as i64 * page_id as i64;
+    pub fn read_page<const SIZE: usize>(&self, page_id: PageID) -> io::Result<Page<SIZE>> {
+        // let offset = SIZE as i64 * page_id as i64;
+        let offset = SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
         let mut buf = BytesMut::zeroed(SIZE);
@@ -35,8 +36,8 @@ impl Disk {
         Ok(Page::from_bytes(page_id, buf))
     }
 
-    pub async fn write_page<const SIZE: usize>(&self, page_id: PageID, page: &Page<SIZE>) {
-        let offset = SIZE as i64 * page_id as i64;
+    pub fn write_page<const SIZE: usize>(&self, page: &Page<SIZE>) {
+        let offset = SIZE as i64 * i64::from(page.id);
         let fd = self.file.as_raw_fd();
 
         match uio::pwrite(fd, &page.data, offset) {
@@ -60,8 +61,6 @@ mod test {
     fn get_page() -> Page<DEFAULT_PAGE_SIZE> {
         let mut page: Page<DEFAULT_PAGE_SIZE> = Page::new(0);
 
-        let _schema = [Type::Int32, Type::String, Type::Float32];
-
         let tuple_a = Tuple(vec![
             ColumnType::Int32(44),
             ColumnType::String("Hello world".into()),
@@ -81,15 +80,14 @@ mod test {
 
     #[tokio::test]
     async fn test_disk() -> io::Result<()> {
-        const DB_FILE: &str = "./test.db";
+        const DB_FILE: &str = "./test_disk.db";
         let _cu = CleanUp::file(DB_FILE);
         let disk = Disk::new(DB_FILE).await?;
         let page = get_page();
-        let page_id = 0;
 
-        disk.write_page(page_id, &page).await;
+        disk.write_page(&page);
 
-        let disk_page = disk.read_page::<DEFAULT_PAGE_SIZE>(page_id).await?;
+        let disk_page = disk.read_page::<DEFAULT_PAGE_SIZE>(page.id)?;
 
         assert!(page.data == disk_page.data);
 

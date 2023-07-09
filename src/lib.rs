@@ -1,5 +1,7 @@
+pub mod buf_pool;
 pub mod disk;
 pub mod page;
+pub mod replacer;
 
 #[cfg(test)]
 mod test {
