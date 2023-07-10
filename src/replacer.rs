@@ -17,7 +17,7 @@ impl Lruk {
 }
 
 #[derive(Default)]
-pub struct LRUKReplacer {
+pub struct LrukReplacer {
     /// Maps index inside buffer pool to LRUK node
     nodes: HashMap<usize, Lruk>,
     current_ts: u64,
@@ -29,7 +29,7 @@ pub enum AccessType {
     Scan,
 }
 
-impl LRUKReplacer {
+impl LrukReplacer {
     pub fn new(k: usize) -> Self {
         Self {
             k,
@@ -45,14 +45,14 @@ impl LRUKReplacer {
                 continue;
             }
 
-            let current = node.history.len();
-            if current < self.k {
+            let len = node.history.len();
+            if len < self.k {
                 single_access.push(node);
                 continue;
             }
 
-            let k = node.history.len() - self.k;
-            let distance = node.history[current] - node.history[k];
+            let kth = len - self.k;
+            let distance = node.history[len - 1] - node.history[kth];
             if distance > max.1 {
                 max = (*id, distance);
             }

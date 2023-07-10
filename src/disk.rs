@@ -52,7 +52,7 @@ mod test {
     use std::io;
 
     use crate::{
-        page::{ColumnType, Page, Tuple, Type, DEFAULT_PAGE_SIZE},
+        page::{ColumnType, Page, Tuple, DEFAULT_PAGE_SIZE},
         test::CleanUp,
     };
 

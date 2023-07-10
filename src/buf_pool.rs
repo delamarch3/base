@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use crate::{
     disk::Disk,
     page::{Page, PageID},
-    replacer::{AccessType, LRUKReplacer},
+    replacer::{AccessType, LrukReplacer},
 };
 
 pub struct BufferPool<const SIZE: usize, const PAGE_SIZE: usize> {
@@ -21,11 +21,11 @@ pub struct BufferPool<const SIZE: usize, const PAGE_SIZE: usize> {
     free: Vec<usize>,
     disk: Disk,
     next_page_id: AtomicU32,
-    replacer: LRUKReplacer,
+    replacer: LrukReplacer,
 }
 
 impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
-    pub fn new(disk: Disk, replacer: LRUKReplacer) -> Self {
+    pub fn new(disk: Disk, replacer: LrukReplacer) -> Self {
         let pages: [MaybeUninit<Arc<RwLock<Page<PAGE_SIZE>>>>; SIZE] =
             std::array::from_fn(|_| MaybeUninit::zeroed());
         let page_table = HashMap::new();
@@ -55,10 +55,12 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
 
             let page = unsafe { self.pages[i].assume_init_ref().read().await };
             self.disk.write_page(&page);
+            self.page_table.remove(&page.id);
 
             i
         };
 
+        self.replacer.record_access(i, &AccessType::Get);
         let page_id = self.allocate_page();
         let mut page: Page<PAGE_SIZE> = Page::new(page_id);
         self.disk.write_page(&page);
@@ -92,6 +94,7 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
 
             let page = unsafe { self.pages[i].assume_init_ref().read().await };
             self.disk.write_page(&page);
+            self.page_table.remove(&page.id);
 
             i
         };
@@ -117,17 +120,24 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         unsafe { &self.pages[*i].assume_init_ref().write().await.dec_pin() };
     }
 
-    pub async fn flush_page(&self, page_id: PageID) {
+    pub async fn flush_page(&mut self, page_id: PageID) {
         let Some(i) = self.page_table.get(&page_id) else { return };
 
         let mut page = unsafe { self.pages[*i].assume_init_ref().write().await };
         self.disk.write_page(&page);
         page.set_dirty(false);
+        self.replacer.set_evictable(*i, true);
     }
 
-    pub async fn flush_all_pages(&self) {
+    pub async fn flush_all_pages(&mut self) {
+        // Two loops since flush_page is mutable borrow and keys isn't
+        let mut page_ids = Vec::with_capacity(self.page_table.len());
         for page_id in self.page_table.keys() {
-            self.flush_page(*page_id).await;
+            page_ids.push(*page_id);
+        }
+
+        for page_id in page_ids {
+            self.flush_page(page_id).await;
         }
     }
 }
@@ -140,17 +150,17 @@ mod test {
         buf_pool::BufferPool,
         disk::Disk,
         page::{ColumnType, Tuple, Type, DEFAULT_PAGE_SIZE},
-        replacer::LRUKReplacer,
+        replacer::LrukReplacer,
         test::CleanUp,
     };
 
     #[tokio::test]
     async fn test_buf_pool_rw_page() -> io::Result<()> {
-        const DB_FILE: &str = "./test_buf_pool.db";
+        const DB_FILE: &str = "./test_buf_pool_rw_page.db";
         let _cu = CleanUp::file(DB_FILE);
         let disk = Disk::new(DB_FILE).await?;
 
-        let replacer = LRUKReplacer::new(2);
+        let replacer = LrukReplacer::new(2);
         let mut buf_pool: BufferPool<4, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
 
         let schema = [Type::Int32, Type::String, Type::Float32];
@@ -195,6 +205,57 @@ mod test {
         ];
 
         assert!(page_0_tuples == expected_tuples);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_buf_pool_replacer() -> io::Result<()> {
+        const DB_FILE: &str = "./test_buf_pool_replacer.db";
+        let _cu = CleanUp::file(DB_FILE);
+        let disk = Disk::new(DB_FILE).await?;
+
+        let replacer = LrukReplacer::new(2);
+        let mut buf_pool: BufferPool<3, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
+
+        let _page_0 = buf_pool.new_page().await.expect("should return page 0"); // id = 0 ts = 0
+        let _page_1 = buf_pool.new_page().await.expect("should return page 1"); // id = 1 ts = 1
+        let _page_2 = buf_pool.new_page().await.expect("should return page 2"); // id = 2 ts = 2
+
+        assert!(buf_pool.free.is_empty());
+        assert!(buf_pool.page_table.len() == 3);
+        assert!(buf_pool.page_table.contains_key(&2));
+        assert!(buf_pool.page_table.contains_key(&1));
+        assert!(buf_pool.page_table.contains_key(&0));
+
+        buf_pool.fetch_page(0).await; // ts = 3
+        buf_pool.fetch_page(0).await; // ts = 4
+
+        buf_pool.fetch_page(1).await; // ts = 5
+
+        buf_pool.fetch_page(0).await; // ts = 6
+        buf_pool.fetch_page(0).await; // ts = 7
+
+        buf_pool.fetch_page(1).await; // ts = 8
+
+        buf_pool.fetch_page(2).await; // ts = 9
+
+        // Page 2 is the least regularly accessed and should have the largest k distance of 7
+        // Page 1 should have a k distance of 3
+        // Page 0 should have a k distance of 1
+
+        buf_pool.flush_all_pages().await;
+
+        let _page_3 = buf_pool.new_page().await.expect("should return page 3");
+
+        assert!(buf_pool.page_table.len() == 3);
+        assert!(buf_pool.page_table.contains_key(&3));
+        assert!(buf_pool.page_table.contains_key(&1));
+        assert!(buf_pool.page_table.contains_key(&0));
+
+        // TODO: Arc is heap allocated which is why this is still valid:
+        // let page = _page_2.read().await;
+        // assert!(page.id == 2);
 
         Ok(())
     }
