@@ -63,6 +63,10 @@ impl<const SIZE: usize> Page<SIZE> {
         self.dirty = dirty;
     }
 
+    pub fn get_pin(&self) -> u32 {
+        self.pin
+    }
+
     pub fn inc_pin(&mut self) {
         self.pin += 1;
     }

@@ -114,10 +114,15 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         Some(page_ref)
     }
 
-    pub async fn unpin_page(&self, page_id: PageID) {
+    pub async fn unpin_page(&mut self, page_id: PageID) {
         let Some(i) = self.page_table.get(&page_id) else { return };
 
-        unsafe { &self.pages[*i].assume_init_ref().write().await.dec_pin() };
+        let mut page = unsafe { self.pages[*i].assume_init_mut().write().await };
+
+        page.dec_pin();
+        if page.get_pin() == 0 {
+            self.replacer.set_evictable(*i, true);
+        }
     }
 
     pub async fn flush_page(&mut self, page_id: PageID) {
@@ -126,7 +131,6 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         let mut page = unsafe { self.pages[*i].assume_init_ref().write().await };
         self.disk.write_page(&page);
         page.set_dirty(false);
-        self.replacer.set_evictable(*i, true);
     }
 
     pub async fn flush_all_pages(&mut self) {
@@ -244,7 +248,10 @@ mod test {
         // Page 1 should have a k distance of 3
         // Page 0 should have a k distance of 1
 
-        buf_pool.flush_all_pages().await;
+        // Unpin pages so they can be evicted:
+        buf_pool.unpin_page(0).await;
+        buf_pool.unpin_page(1).await;
+        buf_pool.unpin_page(2).await;
 
         let _page_3 = buf_pool.new_page().await.expect("should return page 3");
 
@@ -252,10 +259,6 @@ mod test {
         assert!(buf_pool.page_table.contains_key(&3));
         assert!(buf_pool.page_table.contains_key(&1));
         assert!(buf_pool.page_table.contains_key(&0));
-
-        // TODO: Arc is heap allocated which is why this is still valid:
-        // let page = _page_2.read().await;
-        // assert!(page.id == 2);
 
         Ok(())
     }
