@@ -1,17 +1,7 @@
+use std::sync::Arc;
+
 use bytes::{Buf, BufMut, BytesMut};
-
-pub type PageID = u32;
-pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
-
-/// A TupleID is composed of a PageID and the slot offset within that page
-pub type TupleID = (PageID, u64);
-
-pub struct Page<const SIZE: usize> {
-    pub id: PageID,
-    pin: u32,
-    dirty: bool,
-    pub data: BytesMut,
-}
+use tokio::sync::RwLock;
 
 macro_rules! get_u64 {
     ($x:expr, $o:expr) => {
@@ -31,6 +21,35 @@ macro_rules! put_bytes {
     };
 }
 
+pub type PageID = u32;
+pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
+
+/// A TupleID is composed of a PageID and the slot offset within that page
+pub type TupleID = (PageID, u64);
+
+#[derive(Clone)]
+pub struct Page<const SIZE: usize = DEFAULT_PAGE_SIZE> {
+    inner: Arc<RwLock<Inner<SIZE>>>,
+}
+
+struct Inner<const SIZE: usize = DEFAULT_PAGE_SIZE> {
+    id: PageID,
+    pin: u32,
+    dirty: bool,
+    data: BytesMut,
+}
+
+impl<const SIZE: usize> Default for Inner<SIZE> {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            pin: 0,
+            dirty: false,
+            data: BytesMut::new(),
+        }
+    }
+}
+
 impl<const SIZE: usize> Page<SIZE> {
     pub fn new(id: PageID) -> Self {
         let mut data = BytesMut::zeroed(SIZE);
@@ -42,23 +61,64 @@ impl<const SIZE: usize> Page<SIZE> {
         };
         put_bytes!(data, header.as_bytes(), 0, Header::SIZE);
 
-        Self {
+        let page = Inner {
             id,
             pin: 0,
             dirty: false,
             data,
-        }
+        };
+
+        let inner = Arc::new(RwLock::new(page));
+
+        Self { inner }
     }
 
     pub fn from_bytes(id: PageID, data: BytesMut) -> Self {
-        Self {
+        let inner = Inner {
             id,
             pin: 0,
             dirty: false,
             data,
-        }
+        };
+        let inner = Arc::new(RwLock::new(inner));
+
+        Self { inner }
     }
 
+    pub async fn set_dirty(&self, dirty: bool) {
+        self.inner.write().await.set_dirty(dirty);
+    }
+
+    pub async fn get_pin(&self) -> u32 {
+        self.inner.read().await.get_pin()
+    }
+
+    pub async fn inc_pin(&self) -> u32 {
+        self.inner.write().await.inc_pin()
+    }
+
+    pub async fn dec_pin(&self) -> u32 {
+        self.inner.write().await.dec_pin()
+    }
+
+    pub async fn read_tuple(&self, slot_offset: u64, schema: &[Type]) -> Tuple {
+        self.inner.read().await.read_tuple(slot_offset, schema)
+    }
+
+    pub async fn write_tuple(&self, tuple: &Tuple) -> TupleID {
+        self.inner.write().await.write_tuple(tuple)
+    }
+
+    pub async fn get_id(&self) -> PageID {
+        self.inner.read().await.id
+    }
+
+    pub async fn get_data(&self) -> BytesMut {
+        self.inner.read().await.data.clone()
+    }
+}
+
+impl<const SIZE: usize> Inner<SIZE> {
     pub fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty;
     }
@@ -67,14 +127,18 @@ impl<const SIZE: usize> Page<SIZE> {
         self.pin
     }
 
-    pub fn inc_pin(&mut self) {
+    pub fn inc_pin(&mut self) -> u32 {
         self.pin += 1;
+
+        self.pin
     }
 
-    pub fn dec_pin(&mut self) {
+    pub fn dec_pin(&mut self) -> u32 {
         if self.pin > 0 {
             self.pin -= 1;
         }
+
+        self.pin
     }
 
     pub fn read_tuple(&self, slot_offset: u64, schema: &[Type]) -> Tuple {
@@ -280,15 +344,15 @@ impl Tuple {
 mod test {
     use super::{ColumnType, Header, Page, Tuple, TupleSlot, Type, DEFAULT_PAGE_SIZE};
 
-    #[test]
-    fn test_rw_page() {
-        let mut page: Page<DEFAULT_PAGE_SIZE> = Page::new(0);
+    #[tokio::test]
+    async fn test_rw_page() {
+        let page: Page<DEFAULT_PAGE_SIZE> = Page::new(0);
 
         let Header {
             upper,
             lower,
             special,
-        } = Header::read(&page.data);
+        } = Header::read(&page.inner.read().await.data);
         assert!(
             upper == Header::SIZE
                 && lower == DEFAULT_PAGE_SIZE as u64
@@ -301,32 +365,33 @@ mod test {
             ColumnType::String("Hello world".into()),
             ColumnType::Float32(4.4),
         ]);
-        let (_page_id, offset_a) = page.write_tuple(&tuple_a);
+        let (_page_id, offset_a) = page.write_tuple(&tuple_a).await;
 
         let tuple_b = Tuple(vec![
             ColumnType::Int32(66),
             ColumnType::String("String".into()),
             ColumnType::Float32(6.6),
         ]);
-        let (_page_id, offset_b) = page.write_tuple(&tuple_b);
+        let (_page_id, offset_b) = page.write_tuple(&tuple_b).await;
 
-        let read_tuple_a = page.read_tuple(offset_a, &schema);
+        let read_tuple_a = page.read_tuple(offset_a, &schema).await;
         assert!(read_tuple_a == tuple_a);
 
-        let read_tuple_b = page.read_tuple(offset_b, &schema);
+        let read_tuple_b = page.read_tuple(offset_b, &schema).await;
         assert!(read_tuple_b == tuple_b);
 
         let Header {
             upper,
             lower,
             special,
-        } = Header::read(&page.data);
+        } = Header::read(&page.inner.read().await.data);
 
         assert!(
             upper == Header::SIZE + (TupleSlot::SIZE * 2)
                 && lower == DEFAULT_PAGE_SIZE as u64 - (tuple_a.len() + tuple_b.len()) as u64
                 && special == DEFAULT_PAGE_SIZE as u64
         );
-        assert!(page.dirty);
+
+        assert!(page.inner.read().await.dirty);
     }
 }

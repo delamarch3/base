@@ -1,13 +1,12 @@
 use std::{
     collections::HashMap,
-    mem::MaybeUninit,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
     },
 };
 
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     disk::Disk,
@@ -15,22 +14,24 @@ use crate::{
     replacer::{AccessType, LrukReplacer},
 };
 
+#[derive(Clone)]
 pub struct BufferPool<const SIZE: usize, const PAGE_SIZE: usize> {
-    pages: [MaybeUninit<Arc<RwLock<Page<PAGE_SIZE>>>>; SIZE],
-    page_table: HashMap<PageID, usize>,
-    free: Vec<usize>,
-    disk: Disk,
-    next_page_id: AtomicU32,
-    replacer: LrukReplacer,
+    pages: Arc<RwLock<[Option<Page<PAGE_SIZE>>; SIZE]>>,
+    page_table: Arc<RwLock<HashMap<PageID, usize>>>,
+    free: Arc<RwLock<Vec<usize>>>,
+    disk: Arc<Mutex<Disk<PAGE_SIZE>>>,
+    next_page_id: Arc<AtomicU32>,
+    replacer: Arc<RwLock<LrukReplacer>>,
 }
 
 impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
-    pub fn new(disk: Disk, replacer: LrukReplacer) -> Self {
-        let pages: [MaybeUninit<Arc<RwLock<Page<PAGE_SIZE>>>>; SIZE] =
-            std::array::from_fn(|_| MaybeUninit::zeroed());
-        let page_table = HashMap::new();
-        let free = (0..SIZE).rev().collect();
-        let next_page_id = AtomicU32::new(0);
+    pub fn new(disk: Disk<PAGE_SIZE>, replacer: LrukReplacer) -> Self {
+        let pages = Arc::new(RwLock::new(std::array::from_fn(|_| None)));
+        let page_table = Arc::new(RwLock::new(HashMap::new()));
+        let free = Arc::new(RwLock::new((0..SIZE).rev().collect()));
+        let next_page_id = Arc::new(AtomicU32::new(0));
+        let disk = Arc::new(Mutex::new(disk));
+        let replacer = Arc::new(RwLock::new(replacer));
 
         Self {
             pages,
@@ -46,102 +47,121 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         self.next_page_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub async fn new_page<'a>(&mut self) -> Option<Arc<RwLock<Page<PAGE_SIZE>>>> {
-        let i = if let Some(i) = self.free.pop() {
+    pub async fn new_page<'a>(&mut self) -> Option<Page<PAGE_SIZE>> {
+        let i = if let Some(i) = self.free.write().await.pop() {
             i
         } else {
             // Replacer
-            let Some(i) = self.replacer.evict() else { return None };
+            let Some(i) = self.replacer.write().await.evict() else { return None };
 
-            let page = unsafe { self.pages[i].assume_init_ref().read().await };
-            self.disk.write_page(&page);
-            self.page_table.remove(&page.id);
+            let pages = self.pages.read().await;
+            if let Some(page) = &pages[i] {
+                let page_id = page.get_id().await;
+                let data = page.get_data().await;
+
+                self.disk.lock().await.write_page(page_id, data);
+                self.page_table.write().await.remove(&page_id);
+            }
 
             i
         };
 
-        self.replacer.record_access(i, &AccessType::Get);
+        self.replacer
+            .write()
+            .await
+            .record_access(i, &AccessType::Get);
+
         let page_id = self.allocate_page();
-        let mut page: Page<PAGE_SIZE> = Page::new(page_id);
-        self.disk.write_page(&page);
+        let page: Page<PAGE_SIZE> = Page::new(page_id);
+        self.disk
+            .lock()
+            .await
+            .write_page(page_id, page.get_data().await);
+        page.inc_pin().await;
 
-        page.inc_pin();
+        let mut pages = self.pages.write().await;
+        pages[i].replace(page.clone());
 
-        let page = MaybeUninit::new(Arc::new(RwLock::new(page)));
-        let page_ref = unsafe { page.assume_init_ref().clone() };
-        self.pages[i] = page;
+        self.page_table.write().await.insert(page_id, i);
 
-        self.page_table.insert(page_id, i);
-
-        Some(page_ref)
+        Some(page)
     }
 
-    pub async fn fetch_page<'a>(
-        &mut self,
-        page_id: PageID,
-    ) -> Option<Arc<RwLock<Page<PAGE_SIZE>>>> {
-        if let Some(i) = self.page_table.get(&page_id) {
-            self.replacer.record_access(*i, &AccessType::Get);
-            let page_ref = unsafe { self.pages[*i].assume_init_ref().clone() };
-            return Some(page_ref);
+    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<Page<PAGE_SIZE>> {
+        if let Some(i) = self.page_table.read().await.get(&page_id) {
+            self.replacer
+                .write()
+                .await
+                .record_access(*i, &AccessType::Get);
+
+            if let Some(page) = &self.pages.read().await[*i] {
+                return Some(page.clone());
+            }
         };
 
-        let i = if let Some(i) = self.free.pop() {
+        let i = if let Some(i) = self.free.write().await.pop() {
             i
         } else {
             // Replacer
-            let Some(i) = self.replacer.evict() else { return None };
+            let Some(i) = self.replacer.write().await.evict() else { return None };
 
-            let page = unsafe { self.pages[i].assume_init_ref().read().await };
-            self.disk.write_page(&page);
-            self.page_table.remove(&page.id);
+            if let Some(page) = self.pages.read().await[i].clone() {
+                let page_id = page.get_id().await;
+                let data = page.get_data().await;
+
+                self.disk.lock().await.write_page(page_id, data);
+                self.page_table.write().await.remove(&page_id);
+            }
 
             i
         };
 
-        self.replacer.record_access(i, &AccessType::Get);
-        let mut page = self
+        self.replacer
+            .write()
+            .await
+            .record_access(i, &AccessType::Get);
+        let page = self
             .disk
-            .read_page::<PAGE_SIZE>(page_id)
+            .lock()
+            .await
+            .read_page(page_id)
             .expect("Couldn't read page");
+        page.inc_pin().await;
 
-        page.inc_pin();
+        let mut pages = self.pages.write().await;
+        pages[i].replace(page.clone());
 
-        let page = MaybeUninit::new(Arc::new(RwLock::new(page)));
-        let page_ref = unsafe { page.assume_init_ref().clone() };
-        self.pages[i] = page;
-
-        Some(page_ref)
+        Some(page)
     }
 
     pub async fn unpin_page(&mut self, page_id: PageID) {
-        let Some(i) = self.page_table.get(&page_id) else { return };
+        let page_table = self.page_table.read().await;
+        let Some(i) = page_table.get(&page_id) else { return };
 
-        let mut page = unsafe { self.pages[*i].assume_init_mut().write().await };
-
-        page.dec_pin();
-        if page.get_pin() == 0 {
-            self.replacer.set_evictable(*i, true);
+        // let mut page = unsafe { self.pages[*i].assume_init_mut().write().await };
+        if let Some(page) = &self.pages.read().await[*i] {
+            if page.dec_pin().await == 0 {
+                self.replacer.write().await.set_evictable(*i, true);
+            }
         }
     }
 
-    pub async fn flush_page(&mut self, page_id: PageID) {
-        let Some(i) = self.page_table.get(&page_id) else { return };
+    pub async fn flush_page(&self, page_id: PageID) {
+        let page_table = self.page_table.read().await;
+        let Some(i) = page_table.get(&page_id) else { return };
 
-        let mut page = unsafe { self.pages[*i].assume_init_ref().write().await };
-        self.disk.write_page(&page);
-        page.set_dirty(false);
+        if let Some(page) = &self.pages.read().await[*i] {
+            let page_id = page.get_id().await;
+            let data = page.get_data().await;
+
+            self.disk.lock().await.write_page(page_id, data);
+            page.set_dirty(false).await;
+        }
     }
 
     pub async fn flush_all_pages(&mut self) {
-        // Two loops since flush_page is mutable borrow and keys isn't
-        let mut page_ids = Vec::with_capacity(self.page_table.len());
-        for page_id in self.page_table.keys() {
-            page_ids.push(*page_id);
-        }
-
-        for page_id in page_ids {
-            self.flush_page(page_id).await;
+        for page_id in self.page_table.read().await.keys() {
+            self.flush_page(*page_id).await;
         }
     }
 }
@@ -183,19 +203,23 @@ mod test {
 
         let page_0 = buf_pool.new_page().await.expect("should return page 0");
 
-        let page_0_id = page_0.read().await.id;
+        let page_0_id = page_0.get_id().await;
         assert!(page_0_id == 0);
 
-        let tid_1 = page_0.write().await.write_tuple(&Tuple(vec![
-            ColumnType::Int32(11),
-            ColumnType::String("Tuple 1".into()),
-            ColumnType::Float32(1.1),
-        ]));
-        let tid_2 = page_0.write().await.write_tuple(&Tuple(vec![
-            ColumnType::Int32(22),
-            ColumnType::String("Tuple 2".into()),
-            ColumnType::Float32(2.2),
-        ]));
+        let tid_1 = page_0
+            .write_tuple(&Tuple(vec![
+                ColumnType::Int32(11),
+                ColumnType::String("Tuple 1".into()),
+                ColumnType::Float32(1.1),
+            ]))
+            .await;
+        let tid_2 = page_0
+            .write_tuple(&Tuple(vec![
+                ColumnType::Int32(22),
+                ColumnType::String("Tuple 2".into()),
+                ColumnType::Float32(2.2),
+            ]))
+            .await;
 
         buf_pool.flush_page(page_0_id).await;
 
@@ -204,8 +228,8 @@ mod test {
             .await
             .expect("should return page 0");
         let page_0_tuples = [
-            page_0.read().await.read_tuple(tid_1.1, &schema),
-            page_0.read().await.read_tuple(tid_2.1, &schema),
+            page_0.read_tuple(tid_1.1, &schema).await,
+            page_0.read_tuple(tid_2.1, &schema).await,
         ];
 
         assert!(page_0_tuples == expected_tuples);
@@ -226,11 +250,13 @@ mod test {
         let _page_1 = buf_pool.new_page().await.expect("should return page 1"); // id = 1 ts = 1
         let _page_2 = buf_pool.new_page().await.expect("should return page 2"); // id = 2 ts = 2
 
-        assert!(buf_pool.free.is_empty());
-        assert!(buf_pool.page_table.len() == 3);
-        assert!(buf_pool.page_table.contains_key(&2));
-        assert!(buf_pool.page_table.contains_key(&1));
-        assert!(buf_pool.page_table.contains_key(&0));
+        let page_table = buf_pool.page_table.read().await;
+        assert!(buf_pool.free.read().await.is_empty());
+        assert!(page_table.len() == 3);
+        assert!(page_table.contains_key(&2));
+        assert!(page_table.contains_key(&1));
+        assert!(page_table.contains_key(&0));
+        drop(page_table);
 
         buf_pool.fetch_page(0).await; // ts = 3
         buf_pool.fetch_page(0).await; // ts = 4
@@ -255,10 +281,11 @@ mod test {
 
         let _page_3 = buf_pool.new_page().await.expect("should return page 3");
 
-        assert!(buf_pool.page_table.len() == 3);
-        assert!(buf_pool.page_table.contains_key(&3));
-        assert!(buf_pool.page_table.contains_key(&1));
-        assert!(buf_pool.page_table.contains_key(&0));
+        let page_table = buf_pool.page_table.read().await;
+        assert!(page_table.len() == 3);
+        assert!(page_table.contains_key(&3));
+        assert!(page_table.contains_key(&1));
+        assert!(page_table.contains_key(&0));
 
         Ok(())
     }
