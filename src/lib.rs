@@ -12,6 +12,7 @@ mod test {
 
     pub struct CleanUp(&'static str, Type);
 
+    #[allow(dead_code)]
     impl CleanUp {
         pub fn file(file: &'static str) -> Self {
             Self(file, Type::File)
