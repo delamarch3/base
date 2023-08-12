@@ -179,9 +179,9 @@ mod test {
     use std::io;
 
     use crate::{
-        buf_pool::BufferPool,
         disk::Disk,
         page::DEFAULT_PAGE_SIZE,
+        page_manager::BufferPool,
         replacer::LrukReplacer,
         table_page::{self, ColumnType, Tuple, Type},
         test::CleanUp,

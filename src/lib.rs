@@ -1,6 +1,6 @@
-pub mod buf_pool;
 pub mod disk;
 pub mod page;
+pub mod page_manager;
 pub mod replacer;
 pub mod table_page;
 
