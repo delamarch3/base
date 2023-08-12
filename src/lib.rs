@@ -2,6 +2,7 @@ pub mod buf_pool;
 pub mod disk;
 pub mod page;
 pub mod replacer;
+pub mod table_page;
 
 #[cfg(test)]
 mod test {

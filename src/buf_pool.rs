@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     disk::Disk,
-    page::{Page, PageID},
+    page::{PageID, SharedPage},
     replacer::{AccessType, LrukReplacer},
 };
 
@@ -20,11 +20,11 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         Self { inner }
     }
 
-    pub async fn new_page<'a>(&mut self) -> Option<Page<PAGE_SIZE>> {
+    pub async fn new_page<'a>(&mut self) -> Option<SharedPage<PAGE_SIZE>> {
         self.inner.lock().await.new_page().await
     }
 
-    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<Page<PAGE_SIZE>> {
+    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<SharedPage<PAGE_SIZE>> {
         self.inner.lock().await.fetch_page(page_id).await
     }
 
@@ -42,7 +42,7 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
 }
 
 struct Inner<const SIZE: usize, const PAGE_SIZE: usize> {
-    pages: [Option<Page<PAGE_SIZE>>; SIZE],
+    pages: [Option<SharedPage<PAGE_SIZE>>; SIZE],
     page_table: HashMap<PageID, usize>,
     free: Vec<usize>,
     disk: Disk<PAGE_SIZE>,
@@ -74,7 +74,7 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
         ret
     }
 
-    pub async fn new_page<'a>(&mut self) -> Option<Page<PAGE_SIZE>> {
+    pub async fn new_page<'a>(&mut self) -> Option<SharedPage<PAGE_SIZE>> {
         let i = if let Some(i) = self.free.pop() {
             i
         } else {
@@ -82,11 +82,10 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
             let Some(i) = self.replacer.evict() else { return None };
 
             if let Some(page) = &self.pages[i] {
-                let page_id = page.get_id().await;
-                let data = page.get_data().await;
+                let page_r = page.read().await;
 
-                self.disk.write_page(page_id, data);
-                self.page_table.remove(&page_id);
+                self.disk.write_page(page_r.id, &page_r.data);
+                self.page_table.remove(&page_r.id);
             }
 
             i
@@ -95,9 +94,12 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
         self.replacer.record_access(i, &AccessType::Get);
 
         let page_id = self.allocate_page();
-        let page: Page<PAGE_SIZE> = Page::new(page_id);
-        self.disk.write_page(page_id, page.get_data().await);
-        page.inc_pin().await;
+        let page: SharedPage<PAGE_SIZE> = SharedPage::new(page_id);
+        let mut page_w = page.write().await;
+
+        self.disk.write_page(page_id, &page_w.data);
+        page_w.pin += 1;
+        drop(page_w);
 
         self.pages[i].replace(page.clone());
 
@@ -106,7 +108,7 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
         Some(page)
     }
 
-    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<Page<PAGE_SIZE>> {
+    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<SharedPage<PAGE_SIZE>> {
         if let Some(i) = self.page_table.get(&page_id) {
             self.replacer.record_access(*i, &AccessType::Get);
 
@@ -122,10 +124,9 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
             let Some(i) = self.replacer.evict() else { return None };
 
             if let Some(page) = self.pages[i].clone() {
-                let page_id = page.get_id().await;
-                let data = page.get_data().await;
+                let page_r = page.read().await;
 
-                self.disk.write_page(page_id, data);
+                self.disk.write_page(page_r.id, &page_r.data);
                 self.page_table.remove(&page_id);
             }
 
@@ -134,7 +135,9 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
 
         self.replacer.record_access(i, &AccessType::Get);
         let page = self.disk.read_page(page_id).expect("Couldn't read page");
-        page.inc_pin().await;
+        let mut page_w = page.write().await;
+        page_w.pin += 1;
+        drop(page_w);
 
         self.pages[i].replace(page.clone());
 
@@ -144,9 +147,10 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
     pub async fn unpin_page(&mut self, page_id: PageID) {
         let Some(i) = self.page_table.get(&page_id) else { return };
 
-        // let mut page = unsafe { self.pages[*i].assume_init_mut().write().await };
         if let Some(page) = &self.pages[*i] {
-            if page.dec_pin().await == 0 {
+            let mut page_w = page.write().await;
+            page_w.pin -= 1;
+            if page_w.pin == 0 {
                 self.replacer.set_evictable(*i, true);
             }
         }
@@ -156,11 +160,10 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
         let Some(i) = self.page_table.get(&page_id) else { return };
 
         if let Some(page) = &self.pages[*i] {
-            let page_id = page.get_id().await;
-            let data = page.get_data().await;
+            let mut page_w = page.write().await;
 
-            self.disk.write_page(page_id, data);
-            page.set_dirty(false).await;
+            self.disk.write_page(page_w.id, &page_w.data);
+            page_w.dirty = false;
         }
     }
 
@@ -178,8 +181,9 @@ mod test {
     use crate::{
         buf_pool::BufferPool,
         disk::Disk,
-        page::{ColumnType, Tuple, Type, DEFAULT_PAGE_SIZE},
+        page::DEFAULT_PAGE_SIZE,
         replacer::LrukReplacer,
+        table_page::{self, ColumnType, Tuple, Type},
         test::CleanUp,
     };
 
@@ -207,24 +211,28 @@ mod test {
         ];
 
         let page_0 = buf_pool.new_page().await.expect("should return page 0");
+        let page_0_id = 0;
 
-        let page_0_id = page_0.get_id().await;
-        assert!(page_0_id == 0);
-
-        let tid_1 = page_0
-            .write_tuple(&Tuple(vec![
+        table_page::init(page_0.write().await);
+        let tid_1 = table_page::write_tuple(
+            &page_0,
+            &Tuple(vec![
                 ColumnType::Int32(11),
                 ColumnType::String("Tuple 1".into()),
                 ColumnType::Float32(1.1),
-            ]))
-            .await;
-        let tid_2 = page_0
-            .write_tuple(&Tuple(vec![
+            ]),
+        )
+        .await;
+
+        let tid_2 = table_page::write_tuple(
+            &page_0,
+            &Tuple(vec![
                 ColumnType::Int32(22),
                 ColumnType::String("Tuple 2".into()),
                 ColumnType::Float32(2.2),
-            ]))
-            .await;
+            ]),
+        )
+        .await;
 
         buf_pool.flush_page(page_0_id).await;
 
@@ -233,8 +241,8 @@ mod test {
             .await
             .expect("should return page 0");
         let page_0_tuples = [
-            page_0.read_tuple(tid_1.1, &schema).await,
-            page_0.read_tuple(tid_2.1, &schema).await,
+            table_page::read_tuple(&page_0, tid_1.1, &schema).await,
+            table_page::read_tuple(&page_0, tid_2.1, &schema).await,
         ];
 
         assert!(page_0_tuples == expected_tuples);
