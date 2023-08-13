@@ -5,15 +5,22 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[macro_export]
 macro_rules! get_u64 {
-    ($x:expr, $o:expr) => {
-        u64::from_be_bytes($x[$o as usize..$o as usize + 8].try_into().unwrap())
+    ($src:expr, $o:expr) => {
+        u64::from_be_bytes($src[$o as usize..$o as usize + 8].try_into().unwrap())
+    };
+}
+
+#[macro_export]
+macro_rules! get_u32 {
+    ($src:expr, $o:expr) => {
+        u32::from_be_bytes($src[$o as usize..$o as usize + 4].try_into().unwrap())
     };
 }
 
 #[macro_export]
 macro_rules! get_bytes {
-    ($x:expr, $o:expr, $l:expr) => {
-        &$x[$o as usize..$o as usize + $l as usize]
+    ($src:expr, $o:expr, $l:expr) => {
+        &$src[$o as usize..$o as usize + $l as usize]
     };
 }
 

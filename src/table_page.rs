@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use tokio::sync::RwLockWriteGuard;
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -12,7 +14,7 @@ use crate::{
 pub type TupleID = (PageID, u64);
 pub const TUPLE_SLOT_SIZE: u64 = 16;
 
-pub fn new<const SIZE: usize>(id: PageID) -> SharedPage<SIZE> {
+pub fn new_shared<const SIZE: usize>(id: PageID) -> SharedPage<SIZE> {
     let mut data = BytesMut::zeroed(SIZE);
 
     let header = Header {
@@ -78,7 +80,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub const SIZE: u64 = 16;
+    pub const SIZE: u64 = 2 * size_of::<u64>() as u64;
 
     pub fn read(data: &[u8]) -> Self {
         let upper = get_u64!(data, 0);
@@ -226,7 +228,7 @@ mod test {
 
     #[tokio::test]
     async fn test_rw_page() {
-        let page = table_page::new(0);
+        let page = table_page::new_shared(0);
 
         let Header { upper, lower } = Header::read(&page.read().await.data);
         assert!(upper == Header::SIZE && lower == DEFAULT_PAGE_SIZE as u64);

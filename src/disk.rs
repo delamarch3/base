@@ -63,7 +63,7 @@ mod test {
     use super::Disk;
 
     async fn get_page() -> (PageID, BytesMut) {
-        let page: SharedPage<DEFAULT_PAGE_SIZE> = table_page::new(0);
+        let page: SharedPage<DEFAULT_PAGE_SIZE> = table_page::new_shared(0);
 
         let tuple_a = Tuple(vec![
             ColumnType::Int32(44),
