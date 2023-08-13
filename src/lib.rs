@@ -3,6 +3,7 @@ pub mod page;
 pub mod page_manager;
 pub mod replacer;
 pub mod table_page;
+pub mod hash_table_page;
 
 #[cfg(test)]
 mod test {

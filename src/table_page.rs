@@ -18,7 +18,6 @@ pub fn new<const SIZE: usize>(id: PageID) -> SharedPage<SIZE> {
     let header = Header {
         upper: Header::SIZE,
         lower: SIZE as u64,
-        special: SIZE as u64,
     };
     put_bytes!(data, header.as_bytes(), 0, Header::SIZE);
 
@@ -29,7 +28,6 @@ pub fn init<const SIZE: usize>(mut page: RwLockWriteGuard<'_, Page<SIZE>>) {
     let header = Header {
         upper: Header::SIZE,
         lower: SIZE as u64,
-        special: SIZE as u64,
     };
 
     put_bytes!(page.data, header.as_bytes(), 0, Header::SIZE);
@@ -77,30 +75,22 @@ pub struct Header {
     pub upper: u64,
     /// End of free space (start of rows)
     pub lower: u64,
-    // Start of special data (equal to page size if none)
-    pub special: u64,
 }
 
 impl Header {
-    pub const SIZE: u64 = 24;
+    pub const SIZE: u64 = 16;
 
     pub fn read(data: &[u8]) -> Self {
         let upper = get_u64!(data, 0);
         let lower = get_u64!(data, 8);
-        let special = get_u64!(data, 16);
 
-        Self {
-            upper,
-            lower,
-            special,
-        }
+        Self { upper, lower }
     }
 
     pub fn as_bytes(&self) -> BytesMut {
         let mut ret = BytesMut::with_capacity(Self::SIZE as usize);
         ret.put_u64(self.upper);
         ret.put_u64(self.lower);
-        ret.put_u64(self.special);
 
         ret
     }
@@ -238,16 +228,8 @@ mod test {
     async fn test_rw_page() {
         let page = table_page::new(0);
 
-        let Header {
-            upper,
-            lower,
-            special,
-        } = Header::read(&page.read().await.data);
-        assert!(
-            upper == Header::SIZE
-                && lower == DEFAULT_PAGE_SIZE as u64
-                && special == DEFAULT_PAGE_SIZE as u64
-        );
+        let Header { upper, lower } = Header::read(&page.read().await.data);
+        assert!(upper == Header::SIZE && lower == DEFAULT_PAGE_SIZE as u64);
 
         let schema = [Type::Int32, Type::String, Type::Float32];
         let tuple_a = Tuple(vec![
@@ -270,16 +252,11 @@ mod test {
         let read_tuple_b = table_page::read_tuple(&page, offset_b, &schema).await;
         assert!(read_tuple_b == tuple_b);
 
-        let Header {
-            upper,
-            lower,
-            special,
-        } = Header::read(&page.read().await.data);
+        let Header { upper, lower } = Header::read(&page.read().await.data);
 
         assert!(
             upper == Header::SIZE + (TUPLE_SLOT_SIZE * 2)
-                && lower == DEFAULT_PAGE_SIZE as u64 - (tuple_a.len() + tuple_b.len()) as u64
-                && special == DEFAULT_PAGE_SIZE as u64
+                && lower == DEFAULT_PAGE_SIZE as u64 - (tuple_a.len() + tuple_b.len()) as u64 // && special == DEFAULT_PAGE_SIZE as u64
         );
 
         assert!(page.read().await.dirty);
