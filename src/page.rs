@@ -31,6 +31,14 @@ macro_rules! put_bytes {
     };
 }
 
+#[macro_export]
+macro_rules! copy_bytes {
+    ($dst:expr, $src:expr, $o:expr, $l:expr) => {
+        // $dst[$o as usize..$o as usize + $l as usize]
+        $dst[..].copy_from_slice(&$src[$o as usize..$o as usize + $l as usize])
+    };
+}
+
 pub type PageID = u32;
 pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
 

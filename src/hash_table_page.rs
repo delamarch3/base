@@ -38,26 +38,13 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
     }
 
     pub fn new_shared(id: PageID) -> SharedPage<PAGE_SIZE> {
-        let mut data = BytesMut::zeroed(PAGE_SIZE);
-
-        let header: Directory<PAGE_SIZE> = Directory {
-            global_depth: 0,
-            local_depths: BytesMut::zeroed(LOCAL_DEPTHS_SIZE),
-            bucket_page_ids: BytesMut::zeroed(BUCKET_PAGE_IDS_SIZE),
-        };
-        put_bytes!(data, header.as_bytes(), 0, PAGE_SIZE);
+        let data = BytesMut::zeroed(PAGE_SIZE);
 
         SharedPage::from_bytes(id, data)
     }
 
     pub fn init(page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        let header: Directory<PAGE_SIZE> = Directory {
-            global_depth: 0,
-            local_depths: BytesMut::zeroed(LOCAL_DEPTHS_SIZE),
-            bucket_page_ids: BytesMut::zeroed(BUCKET_PAGE_IDS_SIZE),
-        };
-
-        put_bytes!(page.data, header.as_bytes(), 0, PAGE_SIZE);
+        page.data = BytesMut::zeroed(PAGE_SIZE);
     }
 
     pub fn as_bytes(&self) -> BytesMut {
@@ -115,7 +102,7 @@ mod test {
 
         drop(dir);
 
-        // Make sure it reads back ok it reads back ok
+        // Make sure it reads back ok
         let dir = Directory::write(&page_w);
         assert!(dir.get_page_id(1) == 1);
         assert!(dir.get_page_id(2) == 2);
