@@ -6,18 +6,19 @@ use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
+    bitmap::BitMap,
     copy_bytes, get_bytes,
     page::{Page, DEFAULT_PAGE_SIZE},
     put_bytes,
 };
 
-pub const OCCUPIED_SIZE: usize = 512;
-pub const READABLE_SIZE: usize = 512;
+pub const OCCUPIED_SIZE: usize = 512 / 8;
+pub const READABLE_SIZE: usize = 512 / 8;
 pub const VALUES_START: usize = OCCUPIED_SIZE + READABLE_SIZE;
 
 pub struct Bucket<K, V, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    occupied: [u8; OCCUPIED_SIZE],
-    readable: [u8; READABLE_SIZE],
+    occupied: BitMap<OCCUPIED_SIZE>,
+    readable: BitMap<READABLE_SIZE>,
     pairs: Vec<(PairType<K>, PairType<V>)>,
 }
 
@@ -29,11 +30,11 @@ where
     pub fn write(page: &RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
         let data = &page.data;
 
-        let mut occupied = [0; OCCUPIED_SIZE];
-        copy_bytes!(occupied, data, 0, OCCUPIED_SIZE);
+        let mut occupied = BitMap::<OCCUPIED_SIZE>::new();
+        copy_bytes!(occupied.as_mut_slice(), data, 0, OCCUPIED_SIZE);
 
-        let mut readable = [0; READABLE_SIZE];
-        copy_bytes!(readable, data, OCCUPIED_SIZE, READABLE_SIZE);
+        let mut readable = BitMap::<READABLE_SIZE>::new();
+        copy_bytes!(readable.as_mut_slice(), data, OCCUPIED_SIZE, READABLE_SIZE);
 
         let k_size = size_of::<K>();
         let v_size = size_of::<V>();
@@ -59,55 +60,19 @@ where
     }
 
     pub fn set_occupied(&mut self, i: usize, val: bool) {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
-
-        let b = &mut self.occupied[pos_i];
-
-        if val {
-            *b |= 1 << pos_j;
-        } else {
-            *b &= !(1 << pos_j);
-        }
+        self.occupied.set(i, val);
     }
 
     pub fn is_occupied(&self, i: usize) -> bool {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
-
-        let b = self.occupied[pos_i];
-
-        if b & (1 << pos_j) == 1 {
-            true
-        } else {
-            false
-        }
+        self.occupied.check(i)
     }
 
     pub fn set_readable(&mut self, i: usize, val: bool) {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
-
-        let b = &mut self.readable[pos_i];
-
-        if val {
-            *b |= 1 << pos_j;
-        } else {
-            *b &= !(1 << pos_j);
-        }
+        self.readable.set(i, val);
     }
 
     pub fn is_readable(&self, i: usize) -> bool {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
-
-        let b = self.readable[pos_i];
-
-        if b & (1 << pos_j) == 1 {
-            true
-        } else {
-            false
-        }
+        self.readable.check(i)
     }
 
     pub fn remove(&mut self, k: PairType<K>, v: PairType<V>) {
@@ -147,8 +112,8 @@ where
     pub fn as_bytes(&self) -> BytesMut {
         let mut ret = BytesMut::zeroed(PAGE_SIZE);
 
-        put_bytes!(ret, self.occupied, 0, OCCUPIED_SIZE);
-        put_bytes!(ret, self.readable, OCCUPIED_SIZE, READABLE_SIZE);
+        put_bytes!(ret, self.occupied.as_slice(), 0, OCCUPIED_SIZE);
+        put_bytes!(ret, self.readable.as_slice(), OCCUPIED_SIZE, READABLE_SIZE);
 
         let mut pos = OCCUPIED_SIZE + READABLE_SIZE;
         for pair in &self.pairs {

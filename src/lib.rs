@@ -1,3 +1,4 @@
+pub mod bitmap;
 pub mod disk;
 pub mod hash_table_bucket_page;
 pub mod hash_table_page;
