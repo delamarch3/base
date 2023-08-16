@@ -6,8 +6,8 @@ use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    copy_bytes, get_bytes, get_u64,
-    page::{Page, PageID, SharedPage, DEFAULT_PAGE_SIZE},
+    copy_bytes, get_bytes,
+    page::{Page, DEFAULT_PAGE_SIZE},
     put_bytes,
 };
 
@@ -16,8 +16,8 @@ pub const READABLE_SIZE: usize = 512;
 pub const VALUES_START: usize = OCCUPIED_SIZE + READABLE_SIZE;
 
 pub struct Bucket<K, V, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    occupied: [u8; 512],
-    readable: [u8; 512],
+    occupied: [u8; OCCUPIED_SIZE],
+    readable: [u8; READABLE_SIZE],
     pairs: Vec<(PairType<K>, PairType<V>)>,
 }
 
@@ -56,16 +56,6 @@ where
             readable,
             pairs,
         }
-    }
-
-    pub fn new_shared(id: PageID) -> SharedPage<PAGE_SIZE> {
-        let data = BytesMut::zeroed(PAGE_SIZE);
-
-        SharedPage::from_bytes(id, data)
-    }
-
-    pub fn init(page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        page.data = BytesMut::zeroed(PAGE_SIZE);
     }
 
     pub fn set_occupied(&mut self, i: usize, val: bool) {
@@ -145,7 +135,6 @@ where
             i += 1;
         }
 
-        let i = self.pairs.len();
         self.pairs[i] = (k, v);
         self.set_occupied(i, true);
         self.set_readable(i, true);
@@ -176,13 +165,13 @@ where
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct PairType<T>(T);
 
 impl Into<BytesMut> for PairType<i32> {
     fn into(self) -> BytesMut {
         let mut ret = BytesMut::zeroed(size_of::<i32>());
-        copy_bytes!(ret, i32::to_be_bytes(self.0), 0, 0);
+        copy_bytes!(ret, i32::to_be_bytes(self.0), 0, size_of::<i32>());
 
         ret
     }
@@ -197,36 +186,52 @@ impl From<BytesMut> for PairType<i32> {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use crate::{hash_table_bucket_page::Bucket, page::DEFAULT_PAGE_SIZE};
+impl Into<PairType<i32>> for i32 {
+    fn into(self) -> PairType<i32> {
+        PairType(self)
+    }
+}
 
-//     #[tokio::test]
-//     async fn test_directory() {
-//         let page = Bucket::<i32, i32, DEFAULT_PAGE_SIZE>::new_shared(0);
-//         let mut page_w = page.write().await;
-//         Bucket::init(&mut page_w);
+impl PartialEq<PairType<i32>> for i32 {
+    fn eq(&self, other: &PairType<i32>) -> bool {
+        *self == other.0
+    }
+}
 
-//         let mut dir = Bucket::write(&page_w);
+#[cfg(test)]
+mod test {
+    use crate::{
+        hash_table_bucket_page::{Bucket, PairType},
+        page::{SharedPage, DEFAULT_PAGE_SIZE},
+    };
 
-//         dir.set_page_id(1, 1);
-//         dir.set_page_id(2, 2);
-//         dir.set_page_id(10, 10);
+    #[tokio::test]
+    async fn test_directory() {
+        let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
+        let mut page_w = page.write().await;
 
-//         assert!(dir.get_page_id(1) == 1);
-//         assert!(dir.get_page_id(2) == 2);
-//         assert!(dir.get_page_id(10) == 10);
+        let mut bucket = Bucket::write(&page_w);
 
-//         let dir_bytes = dir.as_bytes();
-//         assert!(dir_bytes.len() == DEFAULT_PAGE_SIZE);
-//         page_w.data = dir_bytes;
+        bucket.insert(1.into(), 2.into());
+        bucket.insert(3.into(), 4.into());
+        bucket.insert(5.into(), 6.into());
 
-//         drop(dir);
+        let got = bucket.get(0);
+        assert!(bucket.get(0) == &(PairType(1), PairType(2)), "Got: {got:?}");
+        // assert!(bucket.get(3) == &(PairType(3), PairType(4)));
+        // assert!(bucket.get(5) == &(PairType(5), PairType(6)));
 
-//         // Make sure it reads back ok
-//         let dir = Directory::write(&page_w);
-//         assert!(dir.get_page_id(1) == 1);
-//         assert!(dir.get_page_id(2) == 2);
-//         assert!(dir.get_page_id(10) == 10);
-//     }
-// }
+        let bucket_bytes = bucket.as_bytes();
+        assert!(bucket_bytes.len() == DEFAULT_PAGE_SIZE);
+        page_w.data = bucket_bytes;
+
+        drop(bucket);
+
+        // Make sure it reads back ok
+        let bucket = Bucket::write(&page_w);
+        let got = bucket.get(0);
+        assert!(got == &(PairType(1), PairType(2)), "Got: {got:?}");
+        // assert!(dir.get(3) == &(PairType(3), PairType(4)));
+        // assert!(dir.get(5) == &(PairType(5), PairType(6)));
+    }
+}

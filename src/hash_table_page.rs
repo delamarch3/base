@@ -37,16 +37,6 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         }
     }
 
-    pub fn new_shared(id: PageID) -> SharedPage<PAGE_SIZE> {
-        let data = BytesMut::zeroed(PAGE_SIZE);
-
-        SharedPage::from_bytes(id, data)
-    }
-
-    pub fn init(page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        page.data = BytesMut::zeroed(PAGE_SIZE);
-    }
-
     pub fn as_bytes(&self) -> BytesMut {
         let mut ret = BytesMut::zeroed(PAGE_SIZE);
 
@@ -78,13 +68,15 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
 
 #[cfg(test)]
 mod test {
-    use crate::{hash_table_page::Directory, page::DEFAULT_PAGE_SIZE};
+    use crate::{
+        hash_table_page::Directory,
+        page::{SharedPage, DEFAULT_PAGE_SIZE},
+    };
 
     #[tokio::test]
     async fn test_directory() {
-        let dir_page = Directory::<DEFAULT_PAGE_SIZE>::new_shared(0);
-        let mut page_w = dir_page.write().await;
-        Directory::init(&mut page_w);
+        let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
+        let mut page_w = page.write().await;
 
         let mut dir = Directory::write(&page_w);
 

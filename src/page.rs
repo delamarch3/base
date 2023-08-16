@@ -87,3 +87,9 @@ pub struct Page<const SIZE: usize = DEFAULT_PAGE_SIZE> {
     pub dirty: bool,
     pub data: BytesMut,
 }
+
+impl<const SIZE: usize> Page<SIZE> {
+    pub fn reset_data(&mut self) {
+        self.data = BytesMut::zeroed(SIZE);
+    }
+}
