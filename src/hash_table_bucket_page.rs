@@ -43,13 +43,13 @@ where
         let mut pos = VALUES_START;
         while pos < PAGE_SIZE {
             let k_bytes = BytesMut::from(get_bytes!(data, pos, k_size));
+            pos += k_size;
             let v_bytes = BytesMut::from(get_bytes!(data, pos, v_size));
+            pos += v_size;
 
             let k: PairType<K> = k_bytes.into();
             let v: PairType<V> = v_bytes.into();
             pairs.push((k, v));
-
-            pos += k_size + v_size;
         }
 
         Self {
@@ -105,8 +105,12 @@ where
         self.set_readable(i, true);
     }
 
-    pub fn get(&self, i: usize) -> &(PairType<K>, PairType<V>) {
-        &self.pairs[i]
+    pub fn get(&self, i: usize) -> Option<&(PairType<K>, PairType<V>)> {
+        if self.is_readable(i) {
+            Some(&self.pairs[i])
+        } else {
+            None
+        }
     }
 
     pub fn as_bytes(&self) -> BytesMut {
@@ -171,7 +175,7 @@ mod test {
     };
 
     #[tokio::test]
-    async fn test_directory() {
+    async fn test_bucket() {
         let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
         let mut page_w = page.write().await;
 
@@ -181,10 +185,9 @@ mod test {
         bucket.insert(3.into(), 4.into());
         bucket.insert(5.into(), 6.into());
 
-        let got = bucket.get(0);
-        assert!(bucket.get(0) == &(PairType(1), PairType(2)), "Got: {got:?}");
-        // assert!(bucket.get(3) == &(PairType(3), PairType(4)));
-        // assert!(bucket.get(5) == &(PairType(5), PairType(6)));
+        assert!(bucket.get(0) == Some(&(PairType(1), PairType(2))));
+        assert!(bucket.get(1) == Some(&(PairType(3), PairType(4))));
+        assert!(bucket.get(2) == Some(&(PairType(5), PairType(6))));
 
         let bucket_bytes = bucket.as_bytes();
         assert!(bucket_bytes.len() == DEFAULT_PAGE_SIZE);
@@ -194,9 +197,8 @@ mod test {
 
         // Make sure it reads back ok
         let bucket = Bucket::write(&page_w);
-        let got = bucket.get(0);
-        assert!(got == &(PairType(1), PairType(2)), "Got: {got:?}");
-        // assert!(dir.get(3) == &(PairType(3), PairType(4)));
-        // assert!(dir.get(5) == &(PairType(5), PairType(6)));
+        assert!(bucket.get(0) == Some(&(PairType(1), PairType(2))));
+        assert!(bucket.get(1) == Some(&(PairType(3), PairType(4))));
+        assert!(bucket.get(2) == Some(&(PairType(5), PairType(6))));
     }
 }
