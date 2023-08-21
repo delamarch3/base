@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use crate::{byte_array, copy_bytes};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct PairType<T>(T);
+pub struct PairType<T>(pub T);
 
 impl<T> PairType<T> {
     pub fn new(val: T) -> Self {

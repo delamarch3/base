@@ -27,6 +27,7 @@ impl<'a, const PAGE_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE>
 where
     PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
     PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
+    V: Copy,
 {
     pub fn write(page: &'a RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
         let data = &page.data;
@@ -96,6 +97,17 @@ where
         }
     }
 
+    pub fn find(&self, k: &K) -> Vec<V> {
+        let mut ret = Vec::new();
+        for (i, pair) in self.pairs.iter().enumerate() {
+            if pair.a == *k && self.readable.check(i) {
+                ret.push(pair.b.0)
+            }
+        }
+
+        ret
+    }
+
     pub fn as_bytes(&self) -> BytesMut {
         let mut ret = BytesMut::zeroed(PAGE_SIZE);
 
@@ -154,5 +166,9 @@ mod test {
         assert!(*bucket.get(1).unwrap() == (3, 4));
         assert!(*bucket.get(2).unwrap() == (5, 6));
         assert!(bucket.get(3).is_none());
+
+        let find1 = bucket.find(&1);
+        assert!(find1.len() == 1);
+        assert!(find1[0] == 2);
     }
 }
