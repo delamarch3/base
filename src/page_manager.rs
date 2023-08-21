@@ -194,7 +194,7 @@ mod test {
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LrukReplacer::new(2);
-        let mut buf_pool: BufferPool<4, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
+        let buf_pool: BufferPool<4, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
 
         let schema = [Type::Int32, Type::String, Type::Float32];
         let expected_tuples = [
@@ -257,7 +257,7 @@ mod test {
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LrukReplacer::new(2);
-        let mut buf_pool: BufferPool<3, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
+        let buf_pool: BufferPool<3, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
 
         let _page_0 = buf_pool.new_page().await.expect("should return page 0"); // id = 0 ts = 0
         let _page_1 = buf_pool.new_page().await.expect("should return page 1"); // id = 1 ts = 1
