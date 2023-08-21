@@ -15,7 +15,7 @@ pub type TupleID = (PageID, u64);
 pub const TUPLE_SLOT_SIZE: u64 = 16;
 
 pub fn new_shared<const SIZE: usize>(id: PageID) -> SharedPage<SIZE> {
-    let mut data = BytesMut::zeroed(SIZE);
+    let mut data = [0; SIZE];
 
     let header = Header {
         upper: Header::SIZE,

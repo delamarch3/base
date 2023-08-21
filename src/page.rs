@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bytes::BytesMut;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[macro_export]
@@ -66,7 +65,7 @@ impl<const SIZE: usize> SharedPage<SIZE> {
             id,
             pin: 0,
             dirty: false,
-            data: BytesMut::zeroed(SIZE),
+            data: [0; SIZE],
         };
 
         let inner = Arc::new(RwLock::new(page));
@@ -74,7 +73,7 @@ impl<const SIZE: usize> SharedPage<SIZE> {
         Self { inner }
     }
 
-    pub fn from_bytes(id: PageID, data: BytesMut) -> Self {
+    pub fn from_bytes(id: PageID, data: [u8; SIZE]) -> Self {
         let inner = Arc::new(RwLock::new(Page {
             id,
             pin: 0,
@@ -98,11 +97,11 @@ pub struct Page<const SIZE: usize = DEFAULT_PAGE_SIZE> {
     pub id: PageID,
     pub pin: u32,
     pub dirty: bool,
-    pub data: BytesMut,
+    pub data: [u8; SIZE],
 }
 
 impl<const SIZE: usize> Page<SIZE> {
     pub fn reset_data(&mut self) {
-        self.data = BytesMut::zeroed(SIZE);
+        self.data = [0; SIZE]
     }
 }

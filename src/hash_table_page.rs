@@ -37,8 +37,8 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         }
     }
 
-    pub fn as_bytes(&self) -> BytesMut {
-        let mut ret = BytesMut::zeroed(PAGE_SIZE);
+    pub fn as_bytes(&self) -> [u8; PAGE_SIZE] {
+        let mut ret = [0; PAGE_SIZE];
 
         put_bytes!(ret, self.global_depth.to_be_bytes(), 0, size_of::<u32>());
         put_bytes!(ret, self.local_depths, size_of::<u32>(), LOCAL_DEPTHS_SIZE);

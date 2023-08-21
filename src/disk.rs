@@ -1,6 +1,5 @@
 use std::{io, os::fd::AsRawFd, path::Path};
 
-use bytes::BytesMut;
 use nix::sys::uio;
 use tokio::fs::{File, OpenOptions};
 
@@ -26,7 +25,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
-        let mut buf = BytesMut::zeroed(PAGE_SIZE);
+        let mut buf = [0; PAGE_SIZE];
         match uio::pread(fd, &mut buf, offset) {
             Ok(n) => eprintln!("Read {n} bytes"),
             Err(e) => panic!("{e}"),
@@ -35,7 +34,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
         Ok(SharedPage::from_bytes(page_id, buf))
     }
 
-    pub fn write_page(&self, page_id: PageID, data: &BytesMut) {
+    pub fn write_page(&self, page_id: PageID, data: &[u8]) {
         assert!(data.len() == PAGE_SIZE);
 
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
@@ -52,8 +51,6 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
 mod test {
     use std::io;
 
-    use bytes::BytesMut;
-
     use crate::{
         page::{PageID, SharedPage, DEFAULT_PAGE_SIZE},
         table_page::{self, ColumnType, Tuple},
@@ -62,7 +59,7 @@ mod test {
 
     use super::Disk;
 
-    async fn get_page() -> (PageID, BytesMut) {
+    async fn get_page() -> (PageID, [u8; DEFAULT_PAGE_SIZE]) {
         let page: SharedPage<DEFAULT_PAGE_SIZE> = table_page::new_shared(0);
 
         let tuple_a = Tuple(vec![
@@ -95,7 +92,7 @@ mod test {
         let disk_page = disk.read_page(id)?;
         let disk_data = &disk_page.read().await.data;
 
-        assert!(data == disk_data);
+        assert!(data == *disk_data);
 
         Ok(())
     }

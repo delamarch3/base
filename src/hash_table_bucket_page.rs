@@ -109,8 +109,8 @@ where
         ret
     }
 
-    pub fn as_bytes(&self) -> BytesMut {
-        let mut ret = BytesMut::zeroed(PAGE_SIZE);
+    pub fn as_bytes(&self) -> [u8; PAGE_SIZE] {
+        let mut ret = [0; PAGE_SIZE];
 
         put_bytes!(ret, self.occupied.as_slice(), 0, OCCUPIED_SIZE);
         put_bytes!(ret, self.readable.as_slice(), OCCUPIED_SIZE, READABLE_SIZE);
