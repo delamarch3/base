@@ -20,15 +20,15 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
         Self { inner }
     }
 
-    pub async fn new_page<'a>(&mut self) -> Option<SharedPage<PAGE_SIZE>> {
+    pub async fn new_page<'a>(&self) -> Option<SharedPage<PAGE_SIZE>> {
         self.inner.lock().await.new_page().await
     }
 
-    pub async fn fetch_page<'a>(&mut self, page_id: PageID) -> Option<SharedPage<PAGE_SIZE>> {
+    pub async fn fetch_page<'a>(&self, page_id: PageID) -> Option<SharedPage<PAGE_SIZE>> {
         self.inner.lock().await.fetch_page(page_id).await
     }
 
-    pub async fn unpin_page(&mut self, page_id: PageID) {
+    pub async fn unpin_page(&self, page_id: PageID) {
         self.inner.lock().await.unpin_page(page_id).await
     }
 

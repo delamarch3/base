@@ -16,7 +16,7 @@ pub const BUCKET_PAGE_IDS_SIZE: usize = 2048;
 pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
     global_depth: u32,
     local_depths: BytesMut,
-    bucket_page_ids: BytesMut,
+    bucket_page_ids: BytesMut, // TODO: this would be better as [u32; size]
 }
 
 impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {

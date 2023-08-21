@@ -27,6 +27,7 @@ impl<'a, const PAGE_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE>
 where
     PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
     PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
+    K: Copy,
     V: Copy,
 {
     pub fn write(page: &'a RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
@@ -59,10 +60,10 @@ where
         }
     }
 
-    pub fn remove(&mut self, k: K, v: V) {
+    pub fn remove(&mut self, k: &K, v: &V) {
         let mut delete = Vec::new();
         for (i, pair) in self.pairs.iter().enumerate() {
-            if pair.a == k && pair.b == v {
+            if pair.a == *k && pair.b == *v {
                 delete.push(i);
             }
         }
@@ -73,7 +74,7 @@ where
         }
     }
 
-    pub fn insert(&mut self, k: K, v: V) {
+    pub fn insert(&mut self, k: &K, v: &V) {
         // Find occupied
         let mut i = 0;
         loop {
@@ -84,7 +85,7 @@ where
             i += 1;
         }
 
-        self.pairs[i] = Pair::new(k, v);
+        self.pairs[i] = Pair::new(*k, *v);
         self.occupied.set(i, true);
         self.readable.set(i, true);
     }
@@ -143,11 +144,11 @@ mod test {
 
         let mut bucket = Bucket::write(&page_w);
 
-        bucket.insert(1, 2);
-        bucket.insert(3, 4);
-        bucket.insert(5, 6);
-        bucket.insert(7, 8);
-        bucket.remove(7, 8);
+        bucket.insert(&1, &2);
+        bucket.insert(&3, &4);
+        bucket.insert(&5, &6);
+        bucket.insert(&7, &8);
+        bucket.remove(&7, &8);
 
         assert!(*bucket.get(0).unwrap() == (1, 2));
         assert!(*bucket.get(1).unwrap() == (3, 4));
