@@ -34,9 +34,22 @@ macro_rules! put_bytes {
 #[macro_export]
 macro_rules! copy_bytes {
     ($dst:expr, $src:expr, $o:expr, $l:expr) => {
-        // $dst[$o as usize..$o as usize + $l as usize]
         $dst[..].copy_from_slice(&$src[$o as usize..$o as usize + $l as usize])
     };
+}
+
+#[macro_export]
+macro_rules! byte_array {
+    ($t:ty, $src:expr) => {{
+        let mut bytes = [0; size_of::<$t>()];
+        bytes[..].copy_from_slice(&$src[0..size_of::<$t>()]);
+        bytes
+    }};
+    ($t:ty, $src:expr, $o:expr) => {{
+        let mut bytes = [0; size_of::<$t>()];
+        bytes[..].copy_from_slice(&$src[$o as usize..$o as usize + size_of::<$t>()]);
+        bytes
+    }};
 }
 
 pub type PageID = u32;

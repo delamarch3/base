@@ -5,7 +5,7 @@ use tokio::sync::RwLockWriteGuard;
 
 use crate::{
     get_bytes, get_u32,
-    page::{Page, PageID, SharedPage, DEFAULT_PAGE_SIZE},
+    page::{Page, PageID, DEFAULT_PAGE_SIZE},
     put_bytes,
 };
 

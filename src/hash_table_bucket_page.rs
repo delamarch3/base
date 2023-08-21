@@ -9,6 +9,7 @@ use crate::{
     bitmap::BitMap,
     copy_bytes, get_bytes,
     page::{Page, DEFAULT_PAGE_SIZE},
+    pair::{Pair, PairType},
     put_bytes,
 };
 
@@ -17,17 +18,17 @@ pub const READABLE_SIZE: usize = 512 / 8;
 pub const VALUES_START: usize = OCCUPIED_SIZE + READABLE_SIZE;
 
 pub struct Bucket<K, V, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    occupied: BitMap<OCCUPIED_SIZE>,
-    readable: BitMap<READABLE_SIZE>,
-    pairs: Vec<(PairType<K>, PairType<V>)>,
+    pub occupied: BitMap<OCCUPIED_SIZE>,
+    pub readable: BitMap<READABLE_SIZE>,
+    pairs: Vec<Pair<K, V>>,
 }
 
 impl<'a, const PAGE_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE>
 where
-    PairType<K>: From<BytesMut> + Into<BytesMut> + PartialEq + Copy,
-    PairType<V>: From<BytesMut> + Into<BytesMut> + PartialEq + Copy,
+    PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
+    PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
 {
-    pub fn write(page: &RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
+    pub fn write(page: &'a RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
         let data = &page.data;
 
         let mut occupied = BitMap::<OCCUPIED_SIZE>::new();
@@ -42,14 +43,12 @@ where
         let mut pairs = Vec::with_capacity(PAGE_SIZE / k_size + v_size);
         let mut pos = VALUES_START;
         while pos < PAGE_SIZE {
-            let k_bytes = BytesMut::from(get_bytes!(data, pos, k_size));
+            let k_bytes = get_bytes!(data, pos, k_size);
             pos += k_size;
-            let v_bytes = BytesMut::from(get_bytes!(data, pos, v_size));
+            let v_bytes = get_bytes!(data, pos, v_size);
             pos += v_size;
 
-            let k: PairType<K> = k_bytes.into();
-            let v: PairType<V> = v_bytes.into();
-            pairs.push((k, v));
+            pairs.push(Pair::from_bytes(k_bytes, v_bytes));
         }
 
         Self {
@@ -59,54 +58,38 @@ where
         }
     }
 
-    pub fn set_occupied(&mut self, i: usize, val: bool) {
-        self.occupied.set(i, val);
-    }
-
-    pub fn is_occupied(&self, i: usize) -> bool {
-        self.occupied.check(i)
-    }
-
-    pub fn set_readable(&mut self, i: usize, val: bool) {
-        self.readable.set(i, val);
-    }
-
-    pub fn is_readable(&self, i: usize) -> bool {
-        self.readable.check(i)
-    }
-
-    pub fn remove(&mut self, k: PairType<K>, v: PairType<V>) {
+    pub fn remove(&mut self, k: K, v: V) {
         let mut delete = Vec::new();
-        for (i, (k_, v_)) in self.pairs.iter().enumerate() {
-            if k == *k_ && v == *v_ {
+        for (i, pair) in self.pairs.iter().enumerate() {
+            if pair.a == k && pair.b == v {
                 delete.push(i);
             }
         }
 
         for i in delete {
-            self.set_readable(i, false);
-            self.set_occupied(i, false);
+            self.readable.set(i, false);
+            self.occupied.set(i, false);
         }
     }
 
-    pub fn insert(&mut self, k: PairType<K>, v: PairType<V>) {
+    pub fn insert(&mut self, k: K, v: V) {
         // Find occupied
         let mut i = 0;
         loop {
-            if !self.is_occupied(i) {
+            if !self.occupied.check(i) {
                 break;
             }
 
             i += 1;
         }
 
-        self.pairs[i] = (k, v);
-        self.set_occupied(i, true);
-        self.set_readable(i, true);
+        self.pairs[i] = Pair::new(k, v);
+        self.occupied.set(i, true);
+        self.readable.set(i, true);
     }
 
-    pub fn get(&self, i: usize) -> Option<&(PairType<K>, PairType<V>)> {
-        if self.is_readable(i) {
+    pub fn get(&self, i: usize) -> Option<&Pair<K, V>> {
+        if self.readable.check(i) {
             Some(&self.pairs[i])
         } else {
             None
@@ -121,8 +104,8 @@ where
 
         let mut pos = OCCUPIED_SIZE + READABLE_SIZE;
         for pair in &self.pairs {
-            let key: BytesMut = pair.0.into();
-            let value: BytesMut = pair.1.into();
+            let key: BytesMut = pair.a.into();
+            let value: BytesMut = pair.b.into();
 
             put_bytes!(ret, key, pos, key.len());
             pos += key.len();
@@ -134,43 +117,10 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct PairType<T>(T);
-
-impl Into<BytesMut> for PairType<i32> {
-    fn into(self) -> BytesMut {
-        let mut ret = BytesMut::zeroed(size_of::<i32>());
-        copy_bytes!(ret, i32::to_be_bytes(self.0), 0, size_of::<i32>());
-
-        ret
-    }
-}
-
-impl From<BytesMut> for PairType<i32> {
-    fn from(value: BytesMut) -> Self {
-        let mut bytes = [0; size_of::<i32>()];
-        copy_bytes!(bytes, value[0..size_of::<i32>()], 0, size_of::<i32>());
-
-        PairType(i32::from_be_bytes(bytes))
-    }
-}
-
-impl Into<PairType<i32>> for i32 {
-    fn into(self) -> PairType<i32> {
-        PairType(self)
-    }
-}
-
-impl PartialEq<PairType<i32>> for i32 {
-    fn eq(&self, other: &PairType<i32>) -> bool {
-        *self == other.0
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table_bucket_page::{Bucket, PairType},
+        hash_table_bucket_page::Bucket,
         page::{SharedPage, DEFAULT_PAGE_SIZE},
     };
 
@@ -181,13 +131,16 @@ mod test {
 
         let mut bucket = Bucket::write(&page_w);
 
-        bucket.insert(1.into(), 2.into());
-        bucket.insert(3.into(), 4.into());
-        bucket.insert(5.into(), 6.into());
+        bucket.insert(1, 2);
+        bucket.insert(3, 4);
+        bucket.insert(5, 6);
+        bucket.insert(7, 8);
+        bucket.remove(7, 8);
 
-        assert!(bucket.get(0) == Some(&(PairType(1), PairType(2))));
-        assert!(bucket.get(1) == Some(&(PairType(3), PairType(4))));
-        assert!(bucket.get(2) == Some(&(PairType(5), PairType(6))));
+        assert!(*bucket.get(0).unwrap() == (1, 2));
+        assert!(*bucket.get(1).unwrap() == (3, 4));
+        assert!(*bucket.get(2).unwrap() == (5, 6));
+        assert!(bucket.get(3).is_none());
 
         let bucket_bytes = bucket.as_bytes();
         assert!(bucket_bytes.len() == DEFAULT_PAGE_SIZE);
@@ -197,8 +150,9 @@ mod test {
 
         // Make sure it reads back ok
         let bucket = Bucket::write(&page_w);
-        assert!(bucket.get(0) == Some(&(PairType(1), PairType(2))));
-        assert!(bucket.get(1) == Some(&(PairType(3), PairType(4))));
-        assert!(bucket.get(2) == Some(&(PairType(5), PairType(6))));
+        assert!(*bucket.get(0).unwrap() == (1, 2));
+        assert!(*bucket.get(1).unwrap() == (3, 4));
+        assert!(*bucket.get(2).unwrap() == (5, 6));
+        assert!(bucket.get(3).is_none());
     }
 }
