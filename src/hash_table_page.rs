@@ -1,22 +1,22 @@
 use std::mem::size_of;
 
-use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    get_bytes, get_u32,
+    copy_bytes, get_u32,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
     put_bytes,
 };
 
 pub const LOCAL_DEPTHS_SIZE: usize = 512;
 pub const BUCKET_PAGE_IDS_SIZE: usize = 2048;
+pub const BUCKET_PAGE_IDS_SIZE_U32: usize = 512;
 
 #[derive(Debug)]
 pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
     global_depth: u32,
-    local_depths: BytesMut,
-    bucket_page_ids: BytesMut, // TODO: this would be better as [u32; size]
+    local_depths: [u8; LOCAL_DEPTHS_SIZE],
+    bucket_page_ids: [u8; BUCKET_PAGE_IDS_SIZE],
 }
 
 impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
@@ -26,9 +26,15 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         let data = &page.data;
 
         let global_depth = get_u32!(data, 0);
-        let local_depths = BytesMut::from(get_bytes!(data, size_of::<u32>(), LOCAL_DEPTHS_SIZE));
-        let bucket_page_ids =
-            BytesMut::from(get_bytes!(data, LOCAL_DEPTHS_SIZE, BUCKET_PAGE_IDS_SIZE));
+        let mut local_depths = [0; LOCAL_DEPTHS_SIZE];
+        copy_bytes!(local_depths, data, size_of::<u32>(), LOCAL_DEPTHS_SIZE);
+        let mut bucket_page_ids = [0; BUCKET_PAGE_IDS_SIZE];
+        copy_bytes!(
+            bucket_page_ids,
+            data,
+            LOCAL_DEPTHS_SIZE,
+            BUCKET_PAGE_IDS_SIZE
+        );
 
         Self {
             global_depth,
@@ -52,11 +58,13 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         ret
     }
 
-    pub fn get_page_id(&self, i: usize) -> PageID {
+    pub fn get_page_id(&self, hash: usize) -> PageID {
+        let i = hash % BUCKET_PAGE_IDS_SIZE_U32;
         get_u32!(self.bucket_page_ids, i * size_of::<u32>())
     }
 
-    pub fn set_page_id(&mut self, i: usize, id: PageID) {
+    pub fn set_page_id(&mut self, hash: usize, id: PageID) {
+        let i = hash % BUCKET_PAGE_IDS_SIZE_U32;
         put_bytes!(
             self.bucket_page_ids,
             u32::to_be_bytes(id),

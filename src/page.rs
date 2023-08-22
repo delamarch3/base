@@ -37,6 +37,7 @@ macro_rules! copy_bytes {
     };
 }
 
+/// Crates a [u8; _] from &[u8]
 #[macro_export]
 macro_rules! byte_array {
     ($t:ty, $src:expr) => {{
