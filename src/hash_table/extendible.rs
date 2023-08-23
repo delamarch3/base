@@ -35,20 +35,19 @@ where
     pub async fn insert(&self, k: &K, v: &V) {
         let i = Self::hash(k);
 
-        let page = match self.bpm.fetch_page(self.dir_page_id).await {
+        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => panic!("could not fetch directory page"),
         };
-        let mut page_w = page.write().await;
-        let mut dir = Directory::write(&page_w);
+        let mut dir_page_w = dir_page.write().await;
+        let mut dir = Directory::new(&dir_page_w.data);
 
         let bucket_page_id = dir.get_page_id(i);
         let bucket_page = if bucket_page_id == 0 {
             match self.bpm.new_page().await {
                 Some(p) => {
                     dir.set_page_id(i, p.read().await.id);
-                    page_w.data = dir.as_bytes();
-                    page_w.dirty = true;
+                    dir.write_data(&mut dir_page_w);
                     p
                 }
                 None => panic!("could not create bucket page"),
@@ -61,34 +60,25 @@ where
         };
 
         let mut bucket_page_w = bucket_page.write().await;
-        let mut bucket: Bucket<K, V, PAGE_SIZE> = Bucket::write(&bucket_page_w);
+        let mut bucket: Bucket<K, V, PAGE_SIZE> = Bucket::new(&bucket_page_w.data);
 
         bucket.insert(k, v);
-        bucket_page_w.data = bucket.as_bytes();
-        page_w.dirty = true;
+        bucket.write_data(&mut bucket_page_w);
     }
 
     pub async fn get(&self, k: &K) -> Vec<V> {
         let i = Self::hash(k);
 
-        let page = match self.bpm.fetch_page(self.dir_page_id).await {
+        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => panic!("could not fetch directory page"),
         };
-        let mut page_w = page.write().await;
-        let mut dir = Directory::write(&page_w);
+        let dir_page_r = dir_page.read().await;
+        let dir = Directory::new(&dir_page_r.data);
 
         let bucket_page_id = dir.get_page_id(i);
         let bucket_page = if bucket_page_id == 0 {
-            match self.bpm.new_page().await {
-                Some(p) => {
-                    dir.set_page_id(i, p.read().await.id);
-                    page_w.data = dir.as_bytes();
-                    page_w.dirty = true;
-                    p
-                }
-                None => panic!("could not create bucket page"),
-            }
+            return vec![];
         } else {
             match self.bpm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
@@ -96,8 +86,8 @@ where
             }
         };
 
-        let bucket_page_w = bucket_page.write().await;
-        let bucket: Bucket<K, V, PAGE_SIZE> = Bucket::write(&bucket_page_w);
+        let bucket_page_w = bucket_page.read().await;
+        let bucket: Bucket<K, V, PAGE_SIZE> = Bucket::new(&bucket_page_w.data);
 
         bucket.find(k)
     }

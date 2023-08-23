@@ -30,9 +30,7 @@ where
     K: Copy,
     V: Copy,
 {
-    pub fn write(page: &'a RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
-        let data = &page.data;
-
+    pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
         let mut occupied = BitMap::<OCCUPIED_SIZE>::new();
         copy_bytes!(occupied.as_mut_slice(), data, 0, OCCUPIED_SIZE);
 
@@ -109,24 +107,25 @@ where
         ret
     }
 
-    pub fn as_bytes(&self) -> [u8; PAGE_SIZE] {
-        let mut ret = [0; PAGE_SIZE];
-
-        put_bytes!(ret, self.occupied.as_slice(), 0, OCCUPIED_SIZE);
-        put_bytes!(ret, self.readable.as_slice(), OCCUPIED_SIZE, READABLE_SIZE);
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+        put_bytes!(page.data, self.occupied.as_slice(), 0, OCCUPIED_SIZE);
+        put_bytes!(
+            page.data,
+            self.readable.as_slice(),
+            OCCUPIED_SIZE,
+            READABLE_SIZE
+        );
 
         let mut pos = OCCUPIED_SIZE + READABLE_SIZE;
         for pair in &self.pairs {
             let key: BytesMut = pair.a.into();
             let value: BytesMut = pair.b.into();
 
-            put_bytes!(ret, key, pos, key.len());
+            put_bytes!(page.data, key, pos, key.len());
             pos += key.len();
-            put_bytes!(ret, value, pos, value.len());
+            put_bytes!(page.data, value, pos, value.len());
             pos += value.len();
         }
-
-        ret
     }
 }
 
@@ -142,7 +141,7 @@ mod test {
         let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
         let mut page_w = page.write().await;
 
-        let mut bucket = Bucket::write(&page_w);
+        let mut bucket = Bucket::new(&page_w.data);
 
         bucket.insert(&1, &2);
         bucket.insert(&3, &4);
@@ -155,14 +154,12 @@ mod test {
         assert!(*bucket.get(2).unwrap() == (5, 6));
         assert!(bucket.get(3).is_none());
 
-        let bucket_bytes = bucket.as_bytes();
-        assert!(bucket_bytes.len() == DEFAULT_PAGE_SIZE);
-        page_w.data = bucket_bytes;
+        bucket.write_data(&mut page_w);
 
         drop(bucket);
 
         // Make sure it reads back ok
-        let bucket = Bucket::write(&page_w);
+        let bucket = Bucket::new(&page_w.data);
         assert!(*bucket.get(0).unwrap() == (1, 2));
         assert!(*bucket.get(1).unwrap() == (3, 4));
         assert!(*bucket.get(2).unwrap() == (5, 6));

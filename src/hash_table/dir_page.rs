@@ -22,9 +22,7 @@ pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
 impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
     pub const SIZE: usize = LOCAL_DEPTHS_SIZE + BUCKET_PAGE_IDS_SIZE + size_of::<u32>();
 
-    pub fn write(page: &RwLockWriteGuard<'_, Page<PAGE_SIZE>>) -> Self {
-        let data = &page.data;
-
+    pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let global_depth = get_u32!(data, 0);
         let mut local_depths = [0; LOCAL_DEPTHS_SIZE];
         copy_bytes!(local_depths, data, size_of::<u32>(), LOCAL_DEPTHS_SIZE);
@@ -43,19 +41,27 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         }
     }
 
-    pub fn as_bytes(&self) -> [u8; PAGE_SIZE] {
-        let mut ret = [0; PAGE_SIZE];
-
-        put_bytes!(ret, self.global_depth.to_be_bytes(), 0, size_of::<u32>());
-        put_bytes!(ret, self.local_depths, size_of::<u32>(), LOCAL_DEPTHS_SIZE);
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
         put_bytes!(
-            ret,
+            page.data,
+            self.global_depth.to_be_bytes(),
+            0,
+            size_of::<u32>()
+        );
+        put_bytes!(
+            page.data,
+            self.local_depths,
+            size_of::<u32>(),
+            LOCAL_DEPTHS_SIZE
+        );
+        put_bytes!(
+            page.data,
             self.bucket_page_ids,
             LOCAL_DEPTHS_SIZE,
             BUCKET_PAGE_IDS_SIZE
         );
 
-        ret
+        page.dirty = true;
     }
 
     pub fn get_page_id(&self, hash: usize) -> PageID {
@@ -86,7 +92,7 @@ mod test {
         let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
         let mut page_w = page.write().await;
 
-        let mut dir = Directory::write(&page_w);
+        let mut dir = Directory::new(&page_w.data);
 
         dir.set_page_id(1, 1);
         dir.set_page_id(2, 2);
@@ -96,14 +102,12 @@ mod test {
         assert!(dir.get_page_id(2) == 2);
         assert!(dir.get_page_id(10) == 10);
 
-        let dir_bytes = dir.as_bytes();
-        assert!(dir_bytes.len() == DEFAULT_PAGE_SIZE);
-        page_w.data = dir_bytes;
+        dir.write_data(&mut page_w);
 
         drop(dir);
 
         // Make sure it reads back ok
-        let dir = Directory::write(&page_w);
+        let dir = Directory::new(&page_w.data);
         assert!(dir.get_page_id(1) == 1);
         assert!(dir.get_page_id(2) == 2);
         assert!(dir.get_page_id(10) == 10);
