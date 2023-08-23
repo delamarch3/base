@@ -133,7 +133,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table_bucket_page::Bucket,
+        hash_table::bucket_page::Bucket,
         page::{SharedPage, DEFAULT_PAGE_SIZE},
     };
 

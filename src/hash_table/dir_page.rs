@@ -77,7 +77,7 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table_page::Directory,
+        hash_table::dir_page::Directory,
         page::{SharedPage, DEFAULT_PAGE_SIZE},
     };
 

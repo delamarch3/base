@@ -7,7 +7,7 @@ use std::{
 use bytes::BytesMut;
 
 use crate::{
-    hash_table_bucket_page::Bucket, hash_table_page::Directory, page::PageID,
+    hash_table::bucket_page::Bucket, hash_table::dir_page::Directory, page::PageID,
     page_manager::BufferPool, pair::PairType,
 };
 
@@ -112,7 +112,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        disk::Disk, extendible_hash_table::ExtendibleHashTable, page::DEFAULT_PAGE_SIZE,
+        disk::Disk, hash_table::extendible::ExtendibleHashTable, page::DEFAULT_PAGE_SIZE,
         page_manager::BufferPool, replacer::LrukReplacer, test::CleanUp,
     };
 
