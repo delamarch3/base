@@ -40,7 +40,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
-        match uio::pwrite(fd, &data, offset) {
+        match uio::pwrite(fd, data, offset) {
             Ok(n) => eprintln!("Written {n} bytes"),
             Err(e) => panic!("{e}"),
         };

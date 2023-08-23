@@ -2,6 +2,12 @@ pub struct BitMap<const SIZE: usize> {
     inner: [u8; SIZE],
 }
 
+impl<const SIZE: usize> Default for BitMap<SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const SIZE: usize> BitMap<SIZE> {
     pub fn new() -> Self {
         Self { inner: [0; SIZE] }
@@ -26,11 +32,7 @@ impl<const SIZE: usize> BitMap<SIZE> {
 
         let b = self.inner[pos_i];
 
-        if (1 << pos_j) & b > 0 {
-            true
-        } else {
-            false
-        }
+        (1 << pos_j) & b > 0
     }
 
     pub fn as_slice(&self) -> &[u8] {
