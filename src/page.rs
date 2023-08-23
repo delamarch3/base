@@ -57,6 +57,7 @@ pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
 
 #[derive(Clone)]
 pub struct SharedPage<const SIZE: usize = DEFAULT_PAGE_SIZE> {
+    id: PageID,
     inner: Arc<RwLock<Page<SIZE>>>,
 }
 
@@ -71,7 +72,7 @@ impl<const SIZE: usize> SharedPage<SIZE> {
 
         let inner = Arc::new(RwLock::new(page));
 
-        Self { inner }
+        Self { id, inner }
     }
 
     pub fn from_bytes(id: PageID, data: [u8; SIZE]) -> Self {
@@ -82,7 +83,7 @@ impl<const SIZE: usize> SharedPage<SIZE> {
             data,
         }));
 
-        Self { inner }
+        Self { id, inner }
     }
 
     pub async fn read(&self) -> RwLockReadGuard<'_, Page<SIZE>> {
@@ -91,6 +92,10 @@ impl<const SIZE: usize> SharedPage<SIZE> {
 
     pub async fn write(&self) -> RwLockWriteGuard<'_, Page<SIZE>> {
         self.inner.write().await
+    }
+
+    pub fn get_id(&self) -> PageID {
+        self.id
     }
 }
 

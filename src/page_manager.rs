@@ -94,8 +94,8 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
 
         let page_id = self.allocate_page();
         let page: SharedPage<PAGE_SIZE> = SharedPage::new(page_id);
-        let mut page_w = page.write().await;
 
+        let mut page_w = page.write().await;
         self.disk.write_page(page_id, &page_w.data);
         page_w.pin += 1;
         drop(page_w);
@@ -112,6 +112,8 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
             self.replacer.record_access(*i, &AccessType::Get);
 
             if let Some(page) = &self.pages[*i] {
+                page.write().await.pin += 1;
+
                 return Some(page.clone());
             }
         };
@@ -134,9 +136,7 @@ impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
 
         self.replacer.record_access(i, &AccessType::Get);
         let page = self.disk.read_page(page_id).expect("Couldn't read page");
-        let mut page_w = page.write().await;
-        page_w.pin += 1;
-        drop(page_w);
+        page.write().await.pin += 1;
 
         self.pages[i].replace(page.clone());
 
@@ -186,6 +186,7 @@ mod test {
         test::CleanUp,
     };
 
+    // TODO: should be a table_page test
     #[tokio::test]
     async fn test_buf_pool_rw_page() -> io::Result<()> {
         const DB_FILE: &str = "./test_buf_pool_rw_page.db";
@@ -289,6 +290,8 @@ mod test {
         // Unpin pages so they can be evicted:
         buf_pool.unpin_page(0).await;
         buf_pool.unpin_page(1).await;
+        buf_pool.unpin_page(2).await;
+        // TODO: debug this
         buf_pool.unpin_page(2).await;
 
         let _page_3 = buf_pool.new_page().await.expect("should return page 3");

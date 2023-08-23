@@ -64,6 +64,11 @@ where
 
         bucket.insert(k, v);
         bucket.write_data(&mut bucket_page_w);
+
+        drop(dir_page_w);
+        drop(bucket_page_w);
+        self.bpm.unpin_page(dir_page.get_id()).await;
+        self.bpm.unpin_page(bucket_page.get_id()).await;
     }
 
     pub async fn get(&self, k: &K) -> Vec<V> {
@@ -88,6 +93,11 @@ where
 
         let bucket_page_w = bucket_page.read().await;
         let bucket: Bucket<K, V, PAGE_SIZE> = Bucket::new(&bucket_page_w.data);
+
+        drop(dir_page_r);
+        drop(bucket_page_w);
+        self.bpm.unpin_page(dir_page.get_id()).await;
+        self.bpm.unpin_page(bucket_page.get_id()).await;
 
         bucket.find(k)
     }
