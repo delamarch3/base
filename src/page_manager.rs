@@ -14,8 +14,8 @@ pub struct BufferPool<const SIZE: usize, const PAGE_SIZE: usize> {
 }
 
 impl<const SIZE: usize, const PAGE_SIZE: usize> BufferPool<SIZE, PAGE_SIZE> {
-    pub fn new(disk: Disk<PAGE_SIZE>, replacer: LrukReplacer) -> Self {
-        let inner = Arc::new(Mutex::new(Inner::new(disk, replacer)));
+    pub fn new(disk: Disk<PAGE_SIZE>, replacer: LrukReplacer, next_page_id: PageID) -> Self {
+        let inner = Arc::new(Mutex::new(Inner::new(disk, replacer, next_page_id)));
 
         Self { inner }
     }
@@ -51,11 +51,10 @@ struct Inner<const SIZE: usize, const PAGE_SIZE: usize> {
 }
 
 impl<const SIZE: usize, const PAGE_SIZE: usize> Inner<SIZE, PAGE_SIZE> {
-    pub fn new(disk: Disk<PAGE_SIZE>, replacer: LrukReplacer) -> Self {
+    pub fn new(disk: Disk<PAGE_SIZE>, replacer: LrukReplacer, next_page_id: PageID) -> Self {
         let pages = std::array::from_fn(|_| None);
         let page_table = HashMap::new();
         let free = (0..SIZE).rev().collect();
-        let next_page_id = 0;
 
         Self {
             pages,
@@ -194,7 +193,7 @@ mod test {
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LrukReplacer::new(2);
-        let buf_pool: BufferPool<4, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
+        let buf_pool: BufferPool<4, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer, 0);
 
         let schema = [Type::Int32, Type::String, Type::Float32];
         let expected_tuples = [
@@ -257,7 +256,7 @@ mod test {
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LrukReplacer::new(2);
-        let buf_pool: BufferPool<3, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer);
+        let buf_pool: BufferPool<3, DEFAULT_PAGE_SIZE> = BufferPool::new(disk, replacer, 0);
 
         let _page_0 = buf_pool.new_page().await.expect("should return page 0"); // id = 0 ts = 0
         let _page_1 = buf_pool.new_page().await.expect("should return page 1"); // id = 1 ts = 1

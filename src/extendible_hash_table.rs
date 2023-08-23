@@ -124,14 +124,29 @@ mod test {
             .expect("could not open db file");
         let _cu = CleanUp::file(file);
         let replacer = LrukReplacer::new(2);
-        let bpm = BufferPool::<8, DEFAULT_PAGE_SIZE>::new(disk, replacer);
+        let bpm = BufferPool::<8, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
         let _dir_page = bpm.new_page().await;
         let ht = ExtendibleHashTable::new(0, bpm.clone());
 
         ht.insert(&0, &1).await;
         ht.insert(&2, &3).await;
 
+        let r1 = ht.get(&0).await;
+        let r2 = ht.get(&2).await;
+
+        assert!(r1[0] == 1);
+        assert!(r2[0] == 3);
+
         bpm.flush_all_pages().await;
+
+        // Make sure it reads back ok
+        let disk = Disk::<DEFAULT_PAGE_SIZE>::new(file)
+            .await
+            .expect("could not open db file");
+        let replacer = LrukReplacer::new(2);
+        let bpm = BufferPool::<8, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
+        let ht: ExtendibleHashTable<8, DEFAULT_PAGE_SIZE, i32, i32> =
+            ExtendibleHashTable::new(0, bpm.clone());
 
         let r1 = ht.get(&0).await;
         let r2 = ht.get(&2).await;
