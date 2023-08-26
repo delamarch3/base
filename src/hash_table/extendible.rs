@@ -32,7 +32,7 @@ where
         }
     }
 
-    pub async fn insert(&self, k: &K, v: &V) {
+    pub async fn insert(&self, k: &K, v: &V) -> bool {
         let i = Self::hash(k);
 
         let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
@@ -69,6 +69,41 @@ where
         drop(bucket_page_w);
         self.bpm.unpin_page(dir_page.get_id()).await;
         self.bpm.unpin_page(bucket_page.get_id()).await;
+
+        true
+    }
+
+    pub async fn remove(&self, k: &K, v: &V) -> bool {
+        let i = Self::hash(k);
+
+        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
+            Some(p) => p,
+            None => panic!("could not fetch directory page"),
+        };
+        let dir_page_r = dir_page.read().await;
+        let dir = Directory::new(&dir_page_r.data);
+
+        let bucket_page_id = dir.get_page_id(i);
+        let bucket_page = if bucket_page_id == 0 {
+            return false;
+        } else {
+            match self.bpm.fetch_page(bucket_page_id).await {
+                Some(p) => p,
+                None => panic!("count not fetch bucket page"),
+            }
+        };
+        let mut bucket_page_w = bucket_page.write().await;
+        let mut bucket: Bucket<K, V, PAGE_SIZE> = Bucket::new(&bucket_page_w.data);
+
+        let ret = bucket.remove(k, v);
+        bucket.write_data(&mut bucket_page_w);
+
+        drop(dir_page_r);
+        drop(bucket_page_w);
+        self.bpm.unpin_page(dir_page.get_id()).await;
+        self.bpm.unpin_page(bucket_page.get_id()).await;
+
+        ret
     }
 
     pub async fn get(&self, k: &K) -> Vec<V> {
@@ -130,12 +165,17 @@ mod test {
 
         ht.insert(&0, &1).await;
         ht.insert(&2, &3).await;
+        ht.insert(&4, &5).await;
 
         let r1 = ht.get(&0).await;
         let r2 = ht.get(&2).await;
+        let r3 = ht.get(&4).await;
 
         assert!(r1[0] == 1);
         assert!(r2[0] == 3);
+        assert!(r3[0] == 5);
+
+        ht.remove(&4, &5).await;
 
         bpm.flush_all_pages().await;
 
@@ -150,8 +190,10 @@ mod test {
 
         let r1 = ht.get(&0).await;
         let r2 = ht.get(&2).await;
+        let r3 = ht.get(&4).await;
 
         assert!(r1[0] == 1);
         assert!(r2[0] == 3);
+        assert!(r3.is_empty());
     }
 }

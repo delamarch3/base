@@ -58,18 +58,22 @@ where
         }
     }
 
-    pub fn remove(&mut self, k: &K, v: &V) {
-        let mut delete = Vec::new();
+    pub fn remove(&mut self, k: &K, v: &V) -> bool {
+        let mut ret = false;
         for (i, pair) in self.pairs.iter().enumerate() {
             if pair.a == *k && pair.b == *v {
-                delete.push(i);
+                self.readable.set(i, false);
+                self.occupied.set(i, false);
+                ret = true;
             }
         }
 
-        for i in delete {
-            self.readable.set(i, false);
-            self.occupied.set(i, false);
-        }
+        ret
+    }
+
+    pub fn remove_at(&mut self, i: usize) {
+        self.occupied.set(i, false);
+        self.readable.set(i, false);
     }
 
     pub fn insert(&mut self, k: &K, v: &V) {
@@ -88,7 +92,7 @@ where
         self.readable.set(i, true);
     }
 
-    pub fn get(&self, i: usize) -> Option<&Pair<K, V>> {
+    pub fn get_at(&self, i: usize) -> Option<&Pair<K, V>> {
         if self.readable.check(i) {
             Some(&self.pairs[i])
         } else {
@@ -149,10 +153,10 @@ mod test {
         bucket.insert(&7, &8);
         bucket.remove(&7, &8);
 
-        assert!(*bucket.get(0).unwrap() == (1, 2));
-        assert!(*bucket.get(1).unwrap() == (3, 4));
-        assert!(*bucket.get(2).unwrap() == (5, 6));
-        assert!(bucket.get(3).is_none());
+        assert!(*bucket.get_at(0).unwrap() == (1, 2));
+        assert!(*bucket.get_at(1).unwrap() == (3, 4));
+        assert!(*bucket.get_at(2).unwrap() == (5, 6));
+        assert!(bucket.get_at(3).is_none());
 
         bucket.write_data(&mut page_w);
 
@@ -160,10 +164,10 @@ mod test {
 
         // Make sure it reads back ok
         let bucket = Bucket::new(&page_w.data);
-        assert!(*bucket.get(0).unwrap() == (1, 2));
-        assert!(*bucket.get(1).unwrap() == (3, 4));
-        assert!(*bucket.get(2).unwrap() == (5, 6));
-        assert!(bucket.get(3).is_none());
+        assert!(*bucket.get_at(0).unwrap() == (1, 2));
+        assert!(*bucket.get_at(1).unwrap() == (3, 4));
+        assert!(*bucket.get_at(2).unwrap() == (5, 6));
+        assert!(bucket.get_at(3).is_none());
 
         let find1 = bucket.find(&1);
         assert!(find1.len() == 1);
