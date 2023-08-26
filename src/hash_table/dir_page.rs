@@ -78,6 +78,56 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
             size_of::<u32>()
         );
     }
+
+    pub fn set_local_depth(&mut self, i: usize, depth: u8) {
+        self.local_depths[i] = depth;
+    }
+
+    pub fn incr_local_depth(&mut self, i: usize) {
+        self.local_depths[i] += 1;
+    }
+
+    pub fn decr_local_depth(&mut self, i: usize) {
+        self.local_depths[i] -= 1;
+    }
+
+    pub fn set_global_depth(&mut self, depth: u32) {
+        self.global_depth = depth;
+    }
+
+    pub fn incr_global_depth(&mut self) {
+        self.global_depth += 1;
+    }
+
+    pub fn decr_global_depth(&mut self) {
+        self.global_depth += 1;
+    }
+
+    pub fn get_local_depth_mask(&self, i: usize) -> u64 {
+        Self::get_depth_mask(self.local_depths[i] as u32)
+    }
+
+    pub fn get_global_depth_mask(&self) -> u64 {
+        Self::get_depth_mask(self.global_depth)
+    }
+
+    #[inline]
+    fn get_depth_mask(depth: u32) -> u64 {
+        // ld = 0 => 0000...
+        // ld = 1 => 1000...
+        // ld = 2 => 1100...
+        // etc
+
+        let mut ret = 0;
+        let mut pos = 63;
+
+        for _ in 0..depth {
+            ret |= 1 << pos;
+            pos -= 1;
+        }
+
+        ret
+    }
 }
 
 #[cfg(test)]
@@ -86,6 +136,27 @@ mod test {
         hash_table::dir_page::Directory,
         page::{SharedPage, DEFAULT_PAGE_SIZE},
     };
+
+    #[test]
+    fn test_depth_mask() {
+        let mut dir = Directory::new(&[0; DEFAULT_PAGE_SIZE]);
+
+        assert!(dir.get_global_depth_mask() == 0);
+        assert!(dir.get_local_depth_mask(0) == 0);
+
+        dir.set_global_depth(2);
+        assert!(
+            dir.get_global_depth_mask() == 0xC000000000000000,
+            "Got: {:#X}",
+            dir.get_global_depth_mask()
+        );
+
+        dir.set_global_depth(4);
+        assert!(dir.get_global_depth_mask() == 0xF000000000000000);
+
+        dir.set_global_depth(8);
+        assert!(dir.get_global_depth_mask() == 0xFF00000000000000);
+    }
 
     #[tokio::test]
     async fn test_directory() {
