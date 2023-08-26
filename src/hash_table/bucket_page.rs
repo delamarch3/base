@@ -13,13 +13,12 @@ use crate::{
     put_bytes,
 };
 
-pub const OCCUPIED_SIZE: usize = 512 / 8;
-pub const READABLE_SIZE: usize = 512 / 8;
-pub const VALUES_START: usize = OCCUPIED_SIZE + READABLE_SIZE;
+pub const BUCKET_BIT_SIZE: usize = 512 / 8;
+pub const VALUES_START: usize = BUCKET_BIT_SIZE * 2;
 
 pub struct Bucket<K, V, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    pub occupied: BitMap<OCCUPIED_SIZE>,
-    pub readable: BitMap<READABLE_SIZE>,
+    pub occupied: BitMap<BUCKET_BIT_SIZE>,
+    pub readable: BitMap<BUCKET_BIT_SIZE>,
     pairs: Vec<Pair<K, V>>,
 }
 
@@ -31,11 +30,16 @@ where
     V: Copy,
 {
     pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
-        let mut occupied = BitMap::<OCCUPIED_SIZE>::new();
-        copy_bytes!(occupied.as_mut_slice(), data, 0, OCCUPIED_SIZE);
+        let mut occupied = BitMap::<BUCKET_BIT_SIZE>::new();
+        copy_bytes!(occupied.as_mut_slice(), data, 0, BUCKET_BIT_SIZE);
 
-        let mut readable = BitMap::<READABLE_SIZE>::new();
-        copy_bytes!(readable.as_mut_slice(), data, OCCUPIED_SIZE, READABLE_SIZE);
+        let mut readable = BitMap::<BUCKET_BIT_SIZE>::new();
+        copy_bytes!(
+            readable.as_mut_slice(),
+            data,
+            BUCKET_BIT_SIZE,
+            BUCKET_BIT_SIZE
+        );
 
         let k_size = size_of::<K>();
         let v_size = size_of::<V>();
@@ -112,15 +116,15 @@ where
     }
 
     pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        put_bytes!(page.data, self.occupied.as_slice(), 0, OCCUPIED_SIZE);
+        put_bytes!(page.data, self.occupied.as_slice(), 0, BUCKET_BIT_SIZE);
         put_bytes!(
             page.data,
             self.readable.as_slice(),
-            OCCUPIED_SIZE,
-            READABLE_SIZE
+            BUCKET_BIT_SIZE,
+            BUCKET_BIT_SIZE
         );
 
-        let mut pos = OCCUPIED_SIZE + READABLE_SIZE;
+        let mut pos = BUCKET_BIT_SIZE * 2;
         for pair in &self.pairs {
             let key: BytesMut = pair.a.into();
             let value: BytesMut = pair.b.into();
@@ -130,6 +134,16 @@ where
             put_bytes!(page.data, value, pos, value.len());
             pos += value.len();
         }
+    }
+
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        self.occupied.is_full()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.occupied.is_empty()
     }
 }
 

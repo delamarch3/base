@@ -1,5 +1,6 @@
 pub struct BitMap<const SIZE: usize> {
     inner: [u8; SIZE],
+    occupied: usize,
 }
 
 impl<const SIZE: usize> Default for BitMap<SIZE> {
@@ -10,19 +11,28 @@ impl<const SIZE: usize> Default for BitMap<SIZE> {
 
 impl<const SIZE: usize> BitMap<SIZE> {
     pub fn new() -> Self {
-        Self { inner: [0; SIZE] }
+        Self {
+            inner: [0; SIZE],
+            occupied: 0,
+        }
     }
 
     pub fn set(&mut self, i: usize, val: bool) {
         let pos_i = i / 8;
         let pos_j = i % 8;
 
-        let b = &mut self.inner[pos_i];
-
         if val {
-            *b |= 1 << pos_j;
+            if !self.check(i) {
+                self.occupied += 1;
+            }
+
+            self.inner[pos_i] |= 1 << pos_j;
         } else {
-            *b &= !(1 << pos_j);
+            if self.check(i) && self.occupied > 0 {
+                self.occupied -= 1;
+            }
+
+            self.inner[pos_i] &= !(1 << pos_j);
         }
     }
 
@@ -41,6 +51,16 @@ impl<const SIZE: usize> BitMap<SIZE> {
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         &mut self.inner
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.occupied == 0
+    }
+
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        self.occupied == SIZE * 8
     }
 }
 
@@ -65,5 +85,24 @@ mod test {
         assert!(bm.check(177));
         assert!(bm.check(200));
         assert!(bm.check(512));
+    }
+
+    #[test]
+    fn test_occupied() {
+        let mut bm = BitMap::<1>::new();
+        assert!(bm.is_empty());
+
+        bm.set(0, true);
+        assert!(!bm.is_empty());
+
+        bm.set(1, true);
+        bm.set(2, true);
+        bm.set(3, true);
+        bm.set(4, true);
+        bm.set(5, true);
+        bm.set(6, true);
+        bm.set(7, true);
+
+        assert!(bm.is_full());
     }
 }
