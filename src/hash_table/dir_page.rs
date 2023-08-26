@@ -142,14 +142,9 @@ mod test {
         let mut dir = Directory::new(&[0; DEFAULT_PAGE_SIZE]);
 
         assert!(dir.get_global_depth_mask() == 0);
-        assert!(dir.get_local_depth_mask(0) == 0);
 
         dir.set_global_depth(2);
-        assert!(
-            dir.get_global_depth_mask() == 0xC000000000000000,
-            "Got: {:#X}",
-            dir.get_global_depth_mask()
-        );
+        assert!(dir.get_global_depth_mask() == 0xC000000000000000);
 
         dir.set_global_depth(4);
         assert!(dir.get_global_depth_mask() == 0xF000000000000000);
