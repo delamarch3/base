@@ -18,21 +18,21 @@ impl<const SIZE: usize> BitMap<SIZE> {
     }
 
     pub fn set(&mut self, i: usize, val: bool) {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
+        let index = i >> 3;
+        let bit_index = 1 << (i & 7);
 
         if val {
             if !self.check(i) {
                 self.occupied += 1;
             }
 
-            self.inner[pos_i] |= 1 << pos_j;
+            self.inner[index] |= bit_index;
         } else {
             if self.check(i) && self.occupied > 0 {
                 self.occupied -= 1;
             }
 
-            self.inner[pos_i] &= !(1 << pos_j);
+            self.inner[index] &= !bit_index;
         }
     }
 

@@ -64,13 +64,11 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         page.dirty = true;
     }
 
-    pub fn get_page_id(&self, hash: usize) -> PageID {
-        let i = hash % BUCKET_PAGE_IDS_SIZE_U32;
+    pub fn get_page_id(&self, i: usize) -> PageID {
         get_u32!(self.bucket_page_ids, i * size_of::<u32>())
     }
 
-    pub fn set_page_id(&mut self, hash: usize, id: PageID) {
-        let i = hash % BUCKET_PAGE_IDS_SIZE_U32;
+    pub fn set_page_id(&mut self, i: usize, id: PageID) {
         put_bytes!(
             self.bucket_page_ids,
             u32::to_be_bytes(id),
@@ -103,30 +101,22 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         self.global_depth += 1;
     }
 
-    pub fn get_local_depth_mask(&self, i: usize) -> u64 {
+    pub fn get_local_depth_mask(&self, i: usize) -> usize {
         Self::get_depth_mask(self.local_depths[i] as u32)
     }
 
-    pub fn get_global_depth_mask(&self) -> u64 {
+    pub fn get_global_depth_mask(&self) -> usize {
         Self::get_depth_mask(self.global_depth)
     }
 
     #[inline]
-    fn get_depth_mask(depth: u32) -> u64 {
-        // ld = 0 => 0000...
-        // ld = 1 => 1000...
-        // ld = 2 => 1100...
+    fn get_depth_mask(depth: u32) -> usize {
+        // ld = 0 => ...0000
+        // ld = 1 => ...0001
+        // ld = 2 => ...0011
         // etc
 
-        let mut ret = 0;
-        let mut pos = 63;
-
-        for _ in 0..depth {
-            ret |= 1 << pos;
-            pos -= 1;
-        }
-
-        ret
+        (1 << depth) - 1
     }
 }
 
@@ -144,13 +134,13 @@ mod test {
         assert!(dir.get_global_depth_mask() == 0);
 
         dir.set_global_depth(2);
-        assert!(dir.get_global_depth_mask() == 0xC000000000000000);
+        assert!(dir.get_global_depth_mask() == 3);
 
         dir.set_global_depth(4);
-        assert!(dir.get_global_depth_mask() == 0xF000000000000000);
+        assert!(dir.get_global_depth_mask() == 15);
 
         dir.set_global_depth(8);
-        assert!(dir.get_global_depth_mask() == 0xFF00000000000000);
+        assert!(dir.get_global_depth_mask() == 255);
     }
 
     #[tokio::test]

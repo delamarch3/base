@@ -7,8 +7,11 @@ use std::{
 use bytes::BytesMut;
 
 use crate::{
-    hash_table::bucket_page::Bucket, hash_table::dir_page::Directory, page::PageID,
-    page_manager::BufferPool, pair::PairType,
+    hash_table::bucket_page::Bucket,
+    hash_table::dir_page::{self, Directory},
+    page::PageID,
+    page_manager::BufferPool,
+    pair::PairType,
 };
 
 pub struct ExtendibleHashTable<const SIZE: usize, const PAGE_SIZE: usize, K, V> {
@@ -33,8 +36,6 @@ where
     }
 
     pub async fn insert(&self, k: &K, v: &V) -> bool {
-        let i = Self::hash(k);
-
         let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => panic!("could not fetch directory page"),
@@ -42,6 +43,7 @@ where
         let mut dir_page_w = dir_page.write().await;
         let mut dir = Directory::new(&dir_page_w.data);
 
+        let i = Self::key_to_directory_index(k, &dir);
         let bucket_page_id = dir.get_page_id(i);
         let bucket_page = if bucket_page_id == 0 {
             match self.bpm.new_page().await {
@@ -74,8 +76,6 @@ where
     }
 
     pub async fn remove(&self, k: &K, v: &V) -> bool {
-        let i = Self::hash(k);
-
         let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => panic!("could not fetch directory page"),
@@ -83,6 +83,7 @@ where
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
+        let i = Self::key_to_directory_index(k, &dir);
         let bucket_page_id = dir.get_page_id(i);
         let bucket_page = if bucket_page_id == 0 {
             return false;
@@ -107,8 +108,6 @@ where
     }
 
     pub async fn get(&self, k: &K) -> Vec<V> {
-        let i = Self::hash(k);
-
         let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => panic!("could not fetch directory page"),
@@ -116,6 +115,7 @@ where
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
+        let i = Self::key_to_directory_index(k, &dir);
         let bucket_page_id = dir.get_page_id(i);
         let bucket_page = if bucket_page_id == 0 {
             return vec![];
@@ -141,6 +141,13 @@ where
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
         hasher.finish() as usize
+    }
+
+    fn key_to_directory_index(k: &K, dir_page: &Directory<PAGE_SIZE>) -> usize {
+        let hash = Self::hash(k);
+        let i = hash & dir_page.get_global_depth_mask();
+
+        i % dir_page::BUCKET_PAGE_IDS_SIZE_U32
     }
 }
 
