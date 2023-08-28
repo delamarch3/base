@@ -8,30 +8,32 @@ use crate::{
     put_bytes,
 };
 
-pub const LOCAL_DEPTHS_SIZE: usize = 512;
-pub const BUCKET_PAGE_IDS_SIZE: usize = 2048;
-pub const BUCKET_PAGE_IDS_SIZE_U32: usize = 512;
+pub const DEFAULT_BUCKET_PAGE_IDS_SIZE: usize = 512;
+pub const DEFAULT_BUCKET_PAGE_IDS_SIZE_U8: usize = 512;
 
 #[derive(Debug)]
 pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
     global_depth: u32,
-    local_depths: [u8; LOCAL_DEPTHS_SIZE],
-    bucket_page_ids: [u8; BUCKET_PAGE_IDS_SIZE],
+    local_depths: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE],
+    bucket_page_ids: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE_U8],
 }
 
 impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
-    pub const SIZE: usize = LOCAL_DEPTHS_SIZE + BUCKET_PAGE_IDS_SIZE + size_of::<u32>();
-
     pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let global_depth = get_u32!(data, 0);
-        let mut local_depths = [0; LOCAL_DEPTHS_SIZE];
-        copy_bytes!(local_depths, data, size_of::<u32>(), LOCAL_DEPTHS_SIZE);
-        let mut bucket_page_ids = [0; BUCKET_PAGE_IDS_SIZE];
+        let mut local_depths = [0; DEFAULT_BUCKET_PAGE_IDS_SIZE];
+        copy_bytes!(
+            local_depths,
+            data,
+            size_of::<u32>(),
+            DEFAULT_BUCKET_PAGE_IDS_SIZE
+        );
+        let mut bucket_page_ids = [0; DEFAULT_BUCKET_PAGE_IDS_SIZE_U8];
         copy_bytes!(
             bucket_page_ids,
             data,
-            LOCAL_DEPTHS_SIZE,
-            BUCKET_PAGE_IDS_SIZE
+            DEFAULT_BUCKET_PAGE_IDS_SIZE,
+            DEFAULT_BUCKET_PAGE_IDS_SIZE_U8
         );
 
         Self {
@@ -52,13 +54,13 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
             page.data,
             self.local_depths,
             size_of::<u32>(),
-            LOCAL_DEPTHS_SIZE
+            DEFAULT_BUCKET_PAGE_IDS_SIZE
         );
         put_bytes!(
             page.data,
             self.bucket_page_ids,
-            LOCAL_DEPTHS_SIZE,
-            BUCKET_PAGE_IDS_SIZE
+            DEFAULT_BUCKET_PAGE_IDS_SIZE,
+            DEFAULT_BUCKET_PAGE_IDS_SIZE_U8
         );
 
         page.dirty = true;
@@ -107,6 +109,10 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
 
     pub fn get_global_depth_mask(&self) -> usize {
         Self::get_depth_mask(self.global_depth)
+    }
+
+    pub fn get_local_high_bit(&self, i: usize) -> usize {
+        1 << self.local_depths[i]
     }
 
     #[inline]

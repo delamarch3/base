@@ -1,5 +1,3 @@
-// No hashing in the bucket, key/value pairs are inserted/fetched by scanning
-
 use std::mem::size_of;
 
 use bytes::BytesMut;
@@ -13,16 +11,21 @@ use crate::{
     put_bytes,
 };
 
-pub const BUCKET_BIT_SIZE: usize = 512 / 8;
-pub const VALUES_START: usize = BUCKET_BIT_SIZE * 2;
+pub const DEFAULT_BIT_SIZE: usize = 512 / 8;
+pub const VALUES_START: usize = DEFAULT_BIT_SIZE * 2;
 
-pub struct Bucket<K, V, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    pub occupied: BitMap<BUCKET_BIT_SIZE>,
-    pub readable: BitMap<BUCKET_BIT_SIZE>,
+pub struct Bucket<
+    K,
+    V,
+    const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE,
+    const BIT_SIZE: usize = DEFAULT_BIT_SIZE,
+> {
+    pub occupied: BitMap<BIT_SIZE>,
+    pub readable: BitMap<BIT_SIZE>,
     pairs: Vec<Pair<K, V>>,
 }
 
-impl<'a, const PAGE_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE>
+impl<'a, const PAGE_SIZE: usize, const BIT_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE, BIT_SIZE>
 where
     PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
     PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
@@ -30,16 +33,11 @@ where
     V: Copy,
 {
     pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
-        let mut occupied = BitMap::<BUCKET_BIT_SIZE>::new();
-        copy_bytes!(occupied.as_mut_slice(), data, 0, BUCKET_BIT_SIZE);
+        let mut occupied = BitMap::<BIT_SIZE>::new();
+        copy_bytes!(occupied.as_mut_slice(), data, 0, DEFAULT_BIT_SIZE);
 
-        let mut readable = BitMap::<BUCKET_BIT_SIZE>::new();
-        copy_bytes!(
-            readable.as_mut_slice(),
-            data,
-            BUCKET_BIT_SIZE,
-            BUCKET_BIT_SIZE
-        );
+        let mut readable = BitMap::<BIT_SIZE>::new();
+        copy_bytes!(readable.as_mut_slice(), data, BIT_SIZE, BIT_SIZE);
 
         let k_size = size_of::<K>();
         let v_size = size_of::<V>();
@@ -116,15 +114,15 @@ where
     }
 
     pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        put_bytes!(page.data, self.occupied.as_slice(), 0, BUCKET_BIT_SIZE);
+        put_bytes!(page.data, self.occupied.as_slice(), 0, DEFAULT_BIT_SIZE);
         put_bytes!(
             page.data,
             self.readable.as_slice(),
-            BUCKET_BIT_SIZE,
-            BUCKET_BIT_SIZE
+            DEFAULT_BIT_SIZE,
+            DEFAULT_BIT_SIZE
         );
 
-        let mut pos = BUCKET_BIT_SIZE * 2;
+        let mut pos = DEFAULT_BIT_SIZE * 2;
         for pair in &self.pairs {
             let key: BytesMut = pair.a.into();
             let value: BytesMut = pair.b.into();
@@ -134,6 +132,11 @@ where
             put_bytes!(page.data, value, pos, value.len());
             pos += value.len();
         }
+    }
+
+    #[inline]
+    pub fn get_pairs(&self) -> &Vec<Pair<K, V>> {
+        &self.pairs
     }
 
     #[inline]
@@ -150,7 +153,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table::bucket_page::Bucket,
+        hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
         page::{SharedPage, DEFAULT_PAGE_SIZE},
     };
 
@@ -159,7 +162,8 @@ mod test {
         let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
         let mut page_w = page.write().await;
 
-        let mut bucket = Bucket::new(&page_w.data);
+        let mut bucket: Bucket<i32, i32, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
+            Bucket::new(&page_w.data);
 
         bucket.insert(&1, &2);
         bucket.insert(&3, &4);
@@ -177,7 +181,8 @@ mod test {
         drop(bucket);
 
         // Make sure it reads back ok
-        let bucket = Bucket::new(&page_w.data);
+        let bucket: Bucket<i32, i32, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
+            Bucket::new(&page_w.data);
         assert!(*bucket.get_at(0).unwrap() == (1, 2));
         assert!(*bucket.get_at(1).unwrap() == (3, 4));
         assert!(*bucket.get_at(2).unwrap() == (5, 6));
