@@ -31,8 +31,8 @@ impl<const POOL_SIZE: usize, const PAGE_SIZE: usize, const BUCKET_BIT_SIZE: usiz
 where
     for<'a> PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
     for<'a> PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
-    K: Copy + Hash,
-    V: Copy,
+    K: Copy + Hash + std::fmt::Debug,
+    V: Copy + std::fmt::Debug,
 {
     pub fn new(dir_page_id: PageID, bpm: BufferPool<POOL_SIZE, PAGE_SIZE>) -> Self {
         Self {
@@ -55,7 +55,7 @@ where
         let bucket_page = if bucket_page_id == 0 {
             match self.bpm.new_page().await {
                 Some(p) => {
-                    dir.set_page_id(i, p.read().await.id);
+                    dir.set_bucket_page_id(i, p.read().await.id);
                     dir.write_data(&mut dir_page_w);
                     p
                 }
@@ -95,7 +95,7 @@ where
                 Some(p) => p,
                 None => unimplemented!("could not create a new page for bucket split"),
             };
-            let page1_w = page0.write().await;
+            let page1_w = page1.write().await;
             let mut bucket1: Bucket<K, V, PAGE_SIZE, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
             let bit = dir.get_local_high_bit(i);
@@ -119,8 +119,12 @@ where
                     page1.get_id()
                 };
 
-                dir.set_page_id(i, new_page_id);
+                dir.set_bucket_page_id(i, new_page_id);
             }
+
+            dir.write_data(&mut dir_page_w);
+
+            // TODO: mark original page on disk as ready to be allocated
         }
 
         drop(dir_page_w);
@@ -210,9 +214,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        disk::Disk, hash_table::bucket_page::DEFAULT_BIT_SIZE,
-        hash_table::extendible::ExtendibleHashTable, page::DEFAULT_PAGE_SIZE,
-        page_manager::BufferPool, replacer::LrukReplacer, test::CleanUp,
+        disk::Disk,
+        hash_table::extendible::ExtendibleHashTable,
+        hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
+        page::DEFAULT_PAGE_SIZE,
+        page_manager::BufferPool,
+        replacer::LrukReplacer,
+        test::CleanUp,
     };
 
     #[tokio::test]
@@ -264,7 +272,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_extendible_hash_table_spit() {
+    async fn test_extendible_hash_table_split() {
         let file = "test_extendible_hash_table_split.db";
         let disk = Disk::<DEFAULT_PAGE_SIZE>::new(file)
             .await
@@ -278,6 +286,20 @@ mod test {
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_PAGE_SIZE, BIT_SIZE> =
             ExtendibleHashTable::new(0, bpm.clone());
 
-        // TODO
+        // Global depth should be 1 after this
+        ht.insert(&0, &1).await;
+        ht.insert(&2, &2).await;
+        ht.insert(&0, &3).await;
+        ht.insert(&2, &4).await;
+        ht.insert(&0, &5).await;
+        ht.insert(&2, &6).await;
+        ht.insert(&0, &7).await;
+        ht.insert(&2, &8).await;
+
+        let dir_page = bpm.fetch_page(0).await.expect("there should be a page 0");
+        let dir_page_w = dir_page.write().await;
+        let dir = Directory::new(&dir_page_w.data);
+
+        assert!(dir.get_global_depth() == 1);
     }
 }

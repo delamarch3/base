@@ -27,7 +27,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
 
         let mut buf = [0; PAGE_SIZE];
         match uio::pread(fd, &mut buf, offset) {
-            Ok(n) => eprintln!("Read {n} bytes"),
+            Ok(_) => {}
             Err(e) => panic!("{e}"),
         }
 
@@ -41,7 +41,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
         let fd = self.file.as_raw_fd();
 
         match uio::pwrite(fd, data, offset) {
-            Ok(n) => eprintln!("Written {n} bytes"),
+            Ok(_) => {}
             Err(e) => panic!("{e}"),
         };
     }

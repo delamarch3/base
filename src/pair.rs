@@ -13,7 +13,7 @@ impl<T> PairType<T> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Pair<A, B> {
     pub a: PairType<A>,
     pub b: PairType<B>,

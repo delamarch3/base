@@ -1,6 +1,5 @@
 pub struct BitMap<const SIZE: usize> {
     inner: [u8; SIZE],
-    occupied: usize,
 }
 
 impl<const SIZE: usize> Default for BitMap<SIZE> {
@@ -11,10 +10,7 @@ impl<const SIZE: usize> Default for BitMap<SIZE> {
 
 impl<const SIZE: usize> BitMap<SIZE> {
     pub fn new() -> Self {
-        Self {
-            inner: [0; SIZE],
-            occupied: 0,
-        }
+        Self { inner: [0; SIZE] }
     }
 
     pub fn set(&mut self, i: usize, val: bool) {
@@ -22,27 +18,19 @@ impl<const SIZE: usize> BitMap<SIZE> {
         let bit_index = 1 << (i & 7);
 
         if val {
-            if !self.check(i) {
-                self.occupied += 1;
-            }
-
             self.inner[index] |= bit_index;
         } else {
-            if self.check(i) && self.occupied > 0 {
-                self.occupied -= 1;
-            }
-
             self.inner[index] &= !bit_index;
         }
     }
 
     pub fn check(&self, i: usize) -> bool {
-        let pos_i = i / 8;
-        let pos_j = i % 8;
+        let index = i >> 3;
+        let bit_index = 1 << (i & 7);
 
-        let b = self.inner[pos_i];
+        let b = self.inner[index];
 
-        (1 << pos_j) & b > 0
+        bit_index & b > 0
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -54,13 +42,15 @@ impl<const SIZE: usize> BitMap<SIZE> {
     }
 
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.occupied == 0
-    }
-
-    #[inline]
     pub fn is_full(&self) -> bool {
-        self.occupied == SIZE * 8
+        let mut full = 0;
+        for b in &self.inner {
+            if *b == 0xFF {
+                full += 1;
+            }
+        }
+
+        full == SIZE
     }
 }
 
@@ -85,24 +75,5 @@ mod test {
         assert!(bm.check(177));
         assert!(bm.check(200));
         assert!(bm.check(512));
-    }
-
-    #[test]
-    fn test_occupied() {
-        let mut bm = BitMap::<1>::new();
-        assert!(bm.is_empty());
-
-        bm.set(0, true);
-        assert!(!bm.is_empty());
-
-        bm.set(1, true);
-        bm.set(2, true);
-        bm.set(3, true);
-        bm.set(4, true);
-        bm.set(5, true);
-        bm.set(6, true);
-        bm.set(7, true);
-
-        assert!(bm.is_full());
     }
 }

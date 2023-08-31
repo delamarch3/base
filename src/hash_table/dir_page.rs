@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub const DEFAULT_BUCKET_PAGE_IDS_SIZE: usize = 512;
-pub const DEFAULT_BUCKET_PAGE_IDS_SIZE_U8: usize = 512;
+pub const DEFAULT_BUCKET_PAGE_IDS_SIZE_U8: usize = 512 * 4;
 
 #[derive(Debug)]
 pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
@@ -70,7 +70,7 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         get_u32!(self.bucket_page_ids, i * size_of::<u32>())
     }
 
-    pub fn set_page_id(&mut self, i: usize, id: PageID) {
+    pub fn set_bucket_page_id(&mut self, i: usize, id: PageID) {
         put_bytes!(
             self.bucket_page_ids,
             u32::to_be_bytes(id),
@@ -117,12 +117,22 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
 
     #[inline]
     fn get_depth_mask(depth: u32) -> usize {
-        // ld = 0 => ...0000
-        // ld = 1 => ...0001
-        // ld = 2 => ...0011
+        // 0 => ...0001
+        // 1 => ...0011
+        // 2 => ...0111
         // etc
 
         (1 << depth) - 1
+    }
+
+    #[cfg(test)]
+    pub fn get_global_depth(&self) -> u32 {
+        self.global_depth
+    }
+
+    #[cfg(test)]
+    pub fn get_local_depth(&self, i: usize) -> u32 {
+        self.local_depths[i] as u32
     }
 }
 
@@ -156,9 +166,9 @@ mod test {
 
         let mut dir = Directory::new(&page_w.data);
 
-        dir.set_page_id(1, 1);
-        dir.set_page_id(2, 2);
-        dir.set_page_id(10, 10);
+        dir.set_bucket_page_id(1, 1);
+        dir.set_bucket_page_id(2, 2);
+        dir.set_bucket_page_id(10, 10);
 
         assert!(dir.get_page_id(1) == 1);
         assert!(dir.get_page_id(2) == 2);
