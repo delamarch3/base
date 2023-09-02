@@ -57,8 +57,7 @@ where
             pos += k_size;
             let v_bytes = get_bytes!(data, pos, v_size);
 
-            let pair = Pair::from_bytes(k_bytes, v_bytes);
-            pairs[i] = Some(pair);
+            pairs[i] = Some(Pair::from_bytes(k_bytes, v_bytes));
         }
 
         Self {
@@ -99,7 +98,6 @@ where
             i += 1;
         }
 
-        let pair = Pair::new(*k, *v);
         self.pairs[i] = Some(Pair::new(*k, *v));
         self.occupied.set(i, true);
         self.readable.set(i, true);

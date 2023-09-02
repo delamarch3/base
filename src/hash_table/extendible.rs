@@ -10,7 +10,7 @@ use crate::{
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
     page::{PageID, DEFAULT_PAGE_SIZE},
-    page_manager::BufferPool,
+    page_manager::PageManager,
     pair::PairType,
 };
 
@@ -22,7 +22,7 @@ pub struct ExtendibleHashTable<
     const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE,
 > {
     dir_page_id: PageID,
-    bpm: BufferPool<POOL_SIZE, PAGE_SIZE>,
+    pm: PageManager<POOL_SIZE, PAGE_SIZE>,
     _data: PhantomData<(K, V)>,
 }
 
@@ -34,16 +34,16 @@ where
     K: Copy + Hash + std::fmt::Debug,
     V: Copy + std::fmt::Debug,
 {
-    pub fn new(dir_page_id: PageID, bpm: BufferPool<POOL_SIZE, PAGE_SIZE>) -> Self {
+    pub fn new(dir_page_id: PageID, pm: PageManager<POOL_SIZE, PAGE_SIZE>) -> Self {
         Self {
             dir_page_id,
-            bpm,
+            pm,
             _data: PhantomData,
         }
     }
 
     pub async fn insert(&self, k: &K, v: &V) -> bool {
-        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
+        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => unimplemented!("could not fetch directory page"),
         };
@@ -53,7 +53,7 @@ where
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = if bucket_page_id == 0 {
-            match self.bpm.new_page().await {
+            match self.pm.new_page().await {
                 Some(p) => {
                     dir.set_bucket_page_id(bucket_index, p.read().await.id);
                     dir.write_data(&mut dir_page_w);
@@ -62,7 +62,7 @@ where
                 None => unimplemented!("could not create bucket page"),
             }
         } else {
-            match self.bpm.fetch_page(bucket_page_id).await {
+            match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
                 None => unimplemented!("count not fetch bucket page"),
             }
@@ -84,14 +84,14 @@ where
             // 2. Get the high bit of the old bucket (1 << local_depth)
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
-            let page0 = match self.bpm.new_page().await {
+            let page0 = match self.pm.new_page().await {
                 Some(p) => p,
                 None => unimplemented!("could not create a new page for bucket split"),
             };
             let page0_w = page0.write().await;
             let mut bucket0: Bucket<K, V, PAGE_SIZE, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
 
-            let page1 = match self.bpm.new_page().await {
+            let page1 = match self.pm.new_page().await {
                 Some(p) => p,
                 None => unimplemented!("could not create a new page for bucket split"),
             };
@@ -129,14 +129,14 @@ where
 
         drop(dir_page_w);
         drop(bucket_page_w);
-        self.bpm.unpin_page(dir_page.get_id()).await;
-        self.bpm.unpin_page(bucket_page.get_id()).await;
+        self.pm.unpin_page(dir_page.get_id()).await;
+        self.pm.unpin_page(bucket_page.get_id()).await;
 
         true
     }
 
     pub async fn remove(&self, k: &K, v: &V) -> bool {
-        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
+        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => unimplemented!("could not fetch directory page"),
         };
@@ -148,7 +148,7 @@ where
         let bucket_page = if bucket_page_id == 0 {
             return false;
         } else {
-            match self.bpm.fetch_page(bucket_page_id).await {
+            match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
                 None => unimplemented!("count not fetch bucket page"),
             }
@@ -161,14 +161,14 @@ where
 
         drop(dir_page_r);
         drop(bucket_page_w);
-        self.bpm.unpin_page(dir_page.get_id()).await;
-        self.bpm.unpin_page(bucket_page.get_id()).await;
+        self.pm.unpin_page(dir_page.get_id()).await;
+        self.pm.unpin_page(bucket_page.get_id()).await;
 
         ret
     }
 
     pub async fn get(&self, k: &K) -> Vec<V> {
-        let dir_page = match self.bpm.fetch_page(self.dir_page_id).await {
+        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
             Some(p) => p,
             None => unimplemented!("could not fetch directory page"),
         };
@@ -180,7 +180,7 @@ where
         let bucket_page = if bucket_page_id == 0 {
             return vec![];
         } else {
-            match self.bpm.fetch_page(bucket_page_id).await {
+            match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
                 None => unimplemented!("count not fetch bucket page"),
             }
@@ -191,8 +191,8 @@ where
 
         drop(dir_page_r);
         drop(bucket_page_w);
-        self.bpm.unpin_page(dir_page.get_id()).await;
-        self.bpm.unpin_page(bucket_page.get_id()).await;
+        self.pm.unpin_page(dir_page.get_id()).await;
+        self.pm.unpin_page(bucket_page.get_id()).await;
 
         bucket.find(k)
     }
@@ -218,8 +218,8 @@ mod test {
         hash_table::extendible::ExtendibleHashTable,
         hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
         page::DEFAULT_PAGE_SIZE,
-        page_manager::BufferPool,
-        replacer::LrukReplacer,
+        page_manager::PageManager,
+        replacer::LRUKReplacer,
         test::CleanUp,
     };
 
@@ -230,12 +230,12 @@ mod test {
             .await
             .expect("could not open db file");
         let _cu = CleanUp::file(file);
-        let replacer = LrukReplacer::new(2);
+        let replacer = LRUKReplacer::new(2);
         const POOL_SIZE: usize = 8;
-        let bpm = BufferPool::<POOL_SIZE, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
-        let _dir_page = bpm.new_page().await;
+        let pm = PageManager::<POOL_SIZE, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
+        let _dir_page = pm.new_page().await;
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(0, bpm.clone());
+            ExtendibleHashTable::new(0, pm.clone());
 
         ht.insert(&0, &1).await;
         ht.insert(&2, &3).await;
@@ -251,16 +251,16 @@ mod test {
 
         ht.remove(&4, &5).await;
 
-        bpm.flush_all_pages().await;
+        pm.flush_all_pages().await;
 
         // Make sure it reads back ok
         let disk = Disk::<DEFAULT_PAGE_SIZE>::new(file)
             .await
             .expect("could not open db file");
-        let replacer = LrukReplacer::new(2);
-        let bpm = BufferPool::<8, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
+        let replacer = LRUKReplacer::new(2);
+        let pm = PageManager::<8, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
         let ht: ExtendibleHashTable<i32, i32, 8, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(0, bpm.clone());
+            ExtendibleHashTable::new(0, pm.clone());
 
         let r1 = ht.get(&0).await;
         let r2 = ht.get(&2).await;
@@ -278,13 +278,13 @@ mod test {
             .await
             .expect("could not open db file");
         let _cu = CleanUp::file(file);
-        let replacer = LrukReplacer::new(2);
+        let replacer = LRUKReplacer::new(2);
         const POOL_SIZE: usize = 8;
         const BIT_SIZE: usize = 1; // 8 slots
-        let bpm = BufferPool::<POOL_SIZE, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
-        let _dir_page = bpm.new_page().await;
+        let pm = PageManager::<POOL_SIZE, DEFAULT_PAGE_SIZE>::new(disk, replacer, 0);
+        let _dir_page = pm.new_page().await;
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_PAGE_SIZE, BIT_SIZE> =
-            ExtendibleHashTable::new(0, bpm.clone());
+            ExtendibleHashTable::new(0, pm.clone());
 
         // Global depth should be 1 after this
         ht.insert(&0, &1).await;
@@ -296,7 +296,7 @@ mod test {
         ht.insert(&0, &7).await;
         ht.insert(&2, &8).await;
 
-        let dir_page = bpm.fetch_page(0).await.expect("there should be a page 0");
+        let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
         let dir_page_w = dir_page.write().await;
         let dir = Directory::new(&dir_page_w.data);
 

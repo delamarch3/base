@@ -1,25 +1,37 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-struct Lruk {
-    buf_i: usize,
+struct LRUKNode {
+    i: usize,
     history: Vec<u64>,
     is_evictable: bool,
 }
 
-impl Lruk {
-    pub fn new(buf_i: usize, ts: u64) -> Self {
+impl LRUKNode {
+    pub fn new(i: usize, ts: u64) -> Self {
         Self {
-            buf_i,
+            i,
             history: vec![ts],
             is_evictable: false,
         }
     }
+
+    pub fn get_k_distance(&self, k: usize) -> Option<u64> {
+        let len = self.history.len();
+        if len < k {
+            return None;
+        }
+
+        let latest = self.history.last().unwrap();
+        let kth = len - k;
+
+        Some(latest - self.history[kth])
+    }
 }
 
 #[derive(Default)]
-pub struct LrukReplacer {
-    /// Maps index inside buffer pool to LRUK node
-    nodes: HashMap<usize, Lruk>,
+pub struct LRUKReplacer {
+    /// Maps index inside page manager to LRUK node
+    nodes: HashMap<usize, LRUKNode>,
     current_ts: u64,
     k: usize,
 }
@@ -29,7 +41,7 @@ pub enum AccessType {
     Scan,
 }
 
-impl LrukReplacer {
+impl LRUKReplacer {
     pub fn new(k: usize) -> Self {
         Self {
             k,
@@ -39,23 +51,17 @@ impl LrukReplacer {
 
     pub fn evict(&mut self) -> Option<usize> {
         let mut max: (usize, u64) = (0, 0);
-        let mut single_access: Vec<&Lruk> = Vec::new();
+        let mut single_access: Vec<&LRUKNode> = Vec::new();
         for (id, node) in &self.nodes {
             if !node.is_evictable {
                 continue;
             }
 
-            let len = node.history.len();
-            if len < self.k {
-                single_access.push(node);
-                continue;
-            }
-
-            let kth = len - self.k;
-            let distance = node.history[len - 1] - node.history[kth];
-            if distance > max.1 {
-                max = (*id, distance);
-            }
+            match node.get_k_distance(self.k) {
+                Some(d) if d > max.1 => max = (*id, d),
+                None => single_access.push(node),
+                _ => {}
+            };
         }
 
         if max.1 != 0 {
@@ -66,40 +72,41 @@ impl LrukReplacer {
             return None;
         }
 
-        // If multiple frames have less than two recorded accesses, choose the one with the
+        // If multiple frames have less than k recorded accesses, choose the one with the
         // earliest timestamp to evict
         let mut earliest: (usize, u64) = (0, u64::MAX);
         for node in &single_access {
-            let ts = node.history[0];
-            if ts < earliest.1 {
-                earliest = (node.buf_i, ts);
+            match node.history.last() {
+                Some(ts) if *ts < earliest.1 => earliest = (node.i, *ts),
+                None => todo!(),
+                _ => {}
             }
         }
 
         Some(earliest.0)
     }
 
-    pub fn record_access(&mut self, buf_i: usize, _access_type: &AccessType) {
-        match self.nodes.entry(buf_i) {
+    pub fn record_access(&mut self, i: usize, _access_type: &AccessType) {
+        match self.nodes.entry(i) {
             Entry::Occupied(mut node) => {
                 node.get_mut().history.push(self.current_ts);
                 self.current_ts += 1;
             }
             Entry::Vacant(entry) => {
-                entry.insert(Lruk::new(buf_i, self.current_ts));
+                entry.insert(LRUKNode::new(i, self.current_ts));
                 self.current_ts += 1;
             }
         }
     }
 
-    pub fn set_evictable(&mut self, buf_i: usize, evictable: bool) {
-        if let Some(node) = self.nodes.get_mut(&buf_i) {
+    pub fn set_evictable(&mut self, i: usize, evictable: bool) {
+        if let Some(node) = self.nodes.get_mut(&i) {
             node.is_evictable = evictable;
         }
     }
 
-    pub fn remove(&mut self, buf_i: usize) {
-        match self.nodes.entry(buf_i) {
+    pub fn remove(&mut self, i: usize) {
+        match self.nodes.entry(i) {
             Entry::Occupied(node) => {
                 assert!(node.get().is_evictable);
                 node.remove();
@@ -107,7 +114,7 @@ impl LrukReplacer {
             Entry::Vacant(_) => {
                 eprintln!(
                     "ERROR: Attempt to remove frame that has not been registered in the replacer \
-                    {buf_i}"
+                    {i}"
                 );
             }
         }
