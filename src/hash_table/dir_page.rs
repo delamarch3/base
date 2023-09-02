@@ -125,12 +125,10 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         (1 << depth) - 1
     }
 
-    #[cfg(test)]
     pub fn get_global_depth(&self) -> u32 {
         self.global_depth
     }
 
-    #[cfg(test)]
     pub fn get_local_depth(&self, i: usize) -> u32 {
         self.local_depths[i] as u32
     }

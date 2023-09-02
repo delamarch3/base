@@ -50,12 +50,12 @@ where
         let mut dir_page_w = dir_page.write().await;
         let mut dir = Directory::new(&dir_page_w.data);
 
-        let i = Self::get_dir_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(i);
+        let bucket_index = Self::get_bucket_index(k, &dir);
+        let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = if bucket_page_id == 0 {
             match self.bpm.new_page().await {
                 Some(p) => {
-                    dir.set_bucket_page_id(i, p.read().await.id);
+                    dir.set_bucket_page_id(bucket_index, p.read().await.id);
                     dir.write_data(&mut dir_page_w);
                     p
                 }
@@ -75,7 +75,7 @@ where
         bucket.write_data(&mut bucket_page_w);
 
         if bucket.is_full() {
-            if dir.get_local_depth_mask(i) == dir.get_global_depth_mask() {
+            if dir.get_local_depth_mask(bucket_index) == dir.get_global_depth_mask() {
                 // The size of the directory implicitily doubles
                 dir.incr_global_depth();
             }
@@ -98,9 +98,9 @@ where
             let page1_w = page1.write().await;
             let mut bucket1: Bucket<K, V, PAGE_SIZE, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
-            let bit = dir.get_local_high_bit(i);
+            let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
-                let i = Self::get_dir_index(&pair.a.0, &dir);
+                let i = Self::get_bucket_index(&pair.a.0, &dir);
                 let new_bucket = if i & bit > 0 {
                     &mut bucket1
                 } else {
@@ -109,7 +109,7 @@ where
                 new_bucket.insert(&pair.a.0, &pair.b.0);
             }
 
-            for i in (Self::get_dir_index(&k, &dir) & (bit - 1)
+            for i in (Self::get_bucket_index(&k, &dir) & (bit - 1)
                 ..dir_page::DEFAULT_BUCKET_PAGE_IDS_SIZE)
                 .step_by(bit)
             {
@@ -143,8 +143,8 @@ where
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
-        let i = Self::get_dir_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(i);
+        let bucket_index = Self::get_bucket_index(k, &dir);
+        let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = if bucket_page_id == 0 {
             return false;
         } else {
@@ -175,8 +175,8 @@ where
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
-        let i = Self::get_dir_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(i);
+        let bucket_index = Self::get_bucket_index(k, &dir);
+        let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = if bucket_page_id == 0 {
             return vec![];
         } else {
@@ -203,7 +203,7 @@ where
         hasher.finish() as usize
     }
 
-    fn get_dir_index(k: &K, dir_page: &Directory<PAGE_SIZE>) -> usize {
+    fn get_bucket_index(k: &K, dir_page: &Directory<PAGE_SIZE>) -> usize {
         let hash = Self::hash(k);
         let i = hash & dir_page.get_global_depth_mask();
 

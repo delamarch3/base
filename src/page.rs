@@ -63,14 +63,12 @@ pub struct SharedPage<const SIZE: usize = DEFAULT_PAGE_SIZE> {
 
 impl<const SIZE: usize> SharedPage<SIZE> {
     pub fn new(id: PageID) -> Self {
-        let page = Page {
+        let inner = Arc::new(RwLock::new(Page {
             id,
             pin: 0,
             dirty: false,
             data: [0; SIZE],
-        };
-
-        let inner = Arc::new(RwLock::new(page));
+        }));
 
         Self { id, inner }
     }
