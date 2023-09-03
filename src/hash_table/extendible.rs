@@ -64,7 +64,7 @@ where
         } else {
             match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
-                None => unimplemented!("count not fetch bucket page"),
+                None => unimplemented!("cound not fetch bucket page"),
             }
         };
 
@@ -150,7 +150,7 @@ where
         } else {
             match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
-                None => unimplemented!("count not fetch bucket page"),
+                None => unimplemented!("cound not fetch bucket page"),
             }
         };
         let mut bucket_page_w = bucket_page.write().await;
@@ -158,6 +158,8 @@ where
 
         let ret = bucket.remove(k, v);
         bucket.write_data(&mut bucket_page_w);
+
+        // TODO: attempt to merge if empty
 
         drop(dir_page_r);
         drop(bucket_page_w);
@@ -182,7 +184,7 @@ where
         } else {
             match self.pm.fetch_page(bucket_page_id).await {
                 Some(p) => p,
-                None => unimplemented!("count not fetch bucket page"),
+                None => unimplemented!("cound not fetch bucket page"),
             }
         };
 

@@ -41,16 +41,24 @@ impl<const SIZE: usize> BitMap<SIZE> {
         &mut self.inner
     }
 
-    #[inline]
     pub fn is_full(&self) -> bool {
-        let mut full = 0;
         for b in &self.inner {
-            if *b == 0xFF {
-                full += 1;
+            if *b != 0xFF {
+                return false;
             }
         }
 
-        full == SIZE
+        true
+    }
+
+    pub fn is_empty(&self) -> bool {
+        for b in &self.inner {
+            if *b != 0 {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
