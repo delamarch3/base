@@ -197,6 +197,17 @@ where
         bucket.find(k)
     }
 
+    pub async fn get_num_buckets(&self) -> u32 {
+        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
+            Some(p) => p,
+            None => unimplemented!("could not fetch directory page"),
+        };
+        let dir_page_r = dir_page.read().await;
+        let dir = Directory::new(&dir_page_r.data);
+
+        1 << dir.get_global_depth()
+    }
+
     fn hash(k: &K) -> usize {
         let mut hasher = DefaultHasher::new();
         k.hash(&mut hasher);
@@ -286,6 +297,8 @@ mod test {
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_PAGE_SIZE, BIT_SIZE> =
             ExtendibleHashTable::new(0, pm.clone());
 
+        assert!(ht.get_num_buckets().await == 1);
+
         // Global depth should be 1 after this
         ht.insert(&0, &1).await;
         ht.insert(&2, &2).await;
@@ -295,6 +308,8 @@ mod test {
         ht.insert(&2, &6).await;
         ht.insert(&0, &7).await;
         ht.insert(&2, &8).await;
+
+        assert!(ht.get_num_buckets().await == 2);
 
         let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
         let dir_page_w = dir_page.write().await;
