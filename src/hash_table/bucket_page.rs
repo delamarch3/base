@@ -67,6 +67,29 @@ where
         }
     }
 
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+        put_bytes!(page.data, self.occupied.as_slice(), 0, BIT_SIZE);
+        put_bytes!(page.data, self.readable.as_slice(), BIT_SIZE, BIT_SIZE);
+
+        let mut pos = BIT_SIZE * 2;
+        let p_size = size_of::<K>() + size_of::<V>();
+        for pair in &self.pairs {
+            if pos + p_size > PAGE_SIZE {
+                break;
+            }
+
+            if let Some(pair) = pair {
+                let key: BytesMut = pair.a.into();
+                let value: BytesMut = pair.b.into();
+
+                put_bytes!(page.data, key, pos, key.len());
+                pos += key.len();
+                put_bytes!(page.data, value, pos, value.len());
+                pos += value.len();
+            }
+        }
+    }
+
     pub fn remove(&mut self, k: &K, v: &V) -> bool {
         let mut ret = false;
         for (i, pair) in self.pairs.iter().enumerate() {
@@ -122,32 +145,6 @@ where
         }
 
         ret
-    }
-
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
-        put_bytes!(page.data, self.occupied.as_slice(), 0, BIT_SIZE);
-        put_bytes!(page.data, self.readable.as_slice(), BIT_SIZE, BIT_SIZE);
-
-        let mut pos = BIT_SIZE * 2;
-        let size = PAGE_SIZE / size_of::<K>() + size_of::<V>();
-        for pair in &self.pairs {
-            if pos > size {
-                break;
-            }
-
-            if let Some(pair) = pair {
-                let key: BytesMut = pair.a.into();
-                let value: BytesMut = pair.b.into();
-
-                put_bytes!(page.data, key, pos, key.len());
-                pos += key.len();
-                put_bytes!(page.data, value, pos, value.len());
-                pos += value.len();
-            } else {
-                put_bytes!(page.data, &BytesMut::zeroed(size), pos, size);
-                pos += size;
-            }
-        }
     }
 
     pub fn get_pairs(&self) -> Vec<Pair<K, V>> {

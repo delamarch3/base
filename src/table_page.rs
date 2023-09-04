@@ -10,8 +10,8 @@ use crate::{
     put_bytes,
 };
 
-/// A TupleID is composed of a PageID and the slot offset within that page
-pub type TupleID = (PageID, u64);
+/// A `RelationID` is composed of a PageID and the slot offset within that page
+pub type RelationID = (PageID, u64);
 pub const TUPLE_SLOT_SIZE: u64 = 16;
 
 pub fn new_shared<const SIZE: usize>(id: PageID) -> SharedPage<SIZE> {
@@ -45,7 +45,7 @@ pub async fn read_tuple(page: &SharedPage, slot_offset: u64, schema: &[Type]) ->
     Tuple::parse(BytesMut::from(tuple_bytes), schema)
 }
 
-pub async fn write_tuple(page: &SharedPage, tuple: &Tuple) -> TupleID {
+pub async fn write_tuple(page: &SharedPage, tuple: &Tuple) -> RelationID {
     let mut page = page.write().await;
     let mut header = Header::read(&page.data);
 

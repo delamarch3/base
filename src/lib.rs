@@ -6,6 +6,7 @@ pub mod page_manager;
 pub mod pair;
 pub mod replacer;
 pub mod table_page;
+pub mod btree;
 
 #[cfg(test)]
 mod test {
