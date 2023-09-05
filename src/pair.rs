@@ -2,9 +2,9 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 
-use crate::{byte_array, copy_bytes};
+use crate::{byte_array, copy_bytes, table_page::RelationID};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub struct PairType<T>(pub T);
 
 impl<T> PairType<T> {
@@ -13,7 +13,7 @@ impl<T> PairType<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub struct Pair<A, B> {
     pub a: PairType<A>,
     pub b: PairType<B>,
@@ -85,3 +85,51 @@ macro_rules! pair_impl {
 }
 
 pair_impl!(u8, u16, u32, u64, i8, i16, i32, i64);
+
+impl Into<BytesMut> for PairType<RelationID> {
+    fn into(self) -> BytesMut {
+        let mut ret = BytesMut::zeroed(size_of::<RelationID>());
+        copy_bytes!(ret, u32::to_be_bytes(self.0 .0), 0, size_of::<u32>());
+        copy_bytes!(
+            ret,
+            u64::to_be_bytes(self.0 .1),
+            size_of::<u32>(),
+            size_of::<u64>()
+        );
+        ret
+    }
+}
+
+impl Into<PairType<RelationID>> for RelationID {
+    fn into(self) -> PairType<RelationID> {
+        PairType(self)
+    }
+}
+
+impl From<&[u8]> for PairType<RelationID> {
+    fn from(value: &[u8]) -> Self {
+        let page_id = u32::from_be_bytes(byte_array!(u32, value));
+        let slot_offset = u64::from_be_bytes(byte_array!(u64, value, size_of::<u32>()));
+        PairType::new((page_id, slot_offset))
+    }
+}
+
+impl<K> PartialOrd for Pair<K, RelationID>
+where
+    PairType<K>: Ord,
+    K: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl<K> Ord for Pair<K, RelationID>
+where
+    PairType<K>: Ord,
+    K: Ord,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.a.cmp(&other.a)
+    }
+}

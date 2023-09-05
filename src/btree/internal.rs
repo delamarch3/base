@@ -4,75 +4,12 @@ use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    get_bytes, get_u32,
+    btree::BTreeHeader,
+    get_bytes,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
     pair::{Pair, PairType},
     put_bytes,
-    table_page::RelationID,
 };
-
-#[derive(PartialEq, Clone, Copy)]
-enum PageType {
-    Invalid,
-    Internal,
-    Leaf,
-}
-
-impl Into<u32> for PageType {
-    fn into(self) -> u32 {
-        match self {
-            PageType::Invalid => 0,
-            PageType::Internal => 1,
-            PageType::Leaf => 2,
-        }
-    }
-}
-
-impl Into<PageType> for u32 {
-    fn into(self) -> PageType {
-        match self {
-            1 => PageType::Internal,
-            2 => PageType::Leaf,
-            _ => PageType::Invalid,
-        }
-    }
-}
-
-struct BTreeHeader {
-    t: PageType,
-    size: u32,
-    max_size: u32,
-}
-
-impl BTreeHeader {
-    const SIZE: usize = size_of::<u32>() * 3;
-
-    pub fn new(data: &[u8]) -> Self {
-        let t = get_u32!(data, 0);
-        let size = get_u32!(data, 4);
-        let max_size = get_u32!(data, 8);
-
-        Self {
-            t: t.into(),
-            size,
-            max_size,
-        }
-    }
-
-    pub fn write_data(&self, page: &mut [u8]) {
-        put_bytes!(page, Into::<u32>::into(self.t).to_be_bytes(), 0, 4);
-        put_bytes!(page, self.size.to_be_bytes(), 4, 8);
-        put_bytes!(page, self.max_size.to_be_bytes(), 8, 12);
-    }
-
-    pub fn set_page_type(&mut self, t: PageType) {
-        self.t = t;
-    }
-
-    pub fn is_leaf(&self) -> bool {
-        self.t == PageType::Leaf
-    }
-}
 
 pub struct InternalNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
     header: BTreeHeader,
@@ -89,8 +26,6 @@ where
         let k_size = size_of::<K>();
         let v_size = size_of::<PageID>();
 
-        // Page ID = 0 => invalid
-
         let mut pairs = Vec::new();
         let mut pos = BTreeHeader::SIZE;
 
@@ -100,6 +35,7 @@ where
             let v_bytes = get_bytes!(data, pos, v_size);
             pos += v_bytes.len();
 
+            // Check invalid page id
             let page_id: PairType<PageID> = v_bytes.into();
             if page_id == 0 {
                 continue;
@@ -131,11 +67,11 @@ where
             put_bytes!(page.data, value, pos, value.len());
             pos += value.len();
         }
-    }
-}
 
-pub struct LeafNode<K> {
-    header: BTreeHeader,
-    next_page_id: PageID,
-    pairs: Vec<Pair<K, RelationID>>,
+        page.dirty = true;
+    }
+
+    pub fn len(&self) -> usize {
+        self.pairs.len()
+    }
 }
