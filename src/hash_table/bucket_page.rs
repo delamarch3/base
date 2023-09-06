@@ -1,14 +1,14 @@
 use std::mem::size_of;
 
-use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
     bitmap::BitMap,
     copy_bytes, get_bytes,
     page::{Page, DEFAULT_PAGE_SIZE},
-    pair::{Pair, PairType},
+    pair::Pair2,
     put_bytes,
+    storable::Storable,
 };
 
 pub const DEFAULT_BIT_SIZE: usize = 512 / 8;
@@ -22,15 +22,13 @@ pub struct Bucket<
 > {
     pub occupied: BitMap<BIT_SIZE>,
     pub readable: BitMap<BIT_SIZE>,
-    pairs: [Option<Pair<K, V>>; 512],
+    pairs: [Option<Pair2<K, V>>; 512],
 }
 
 impl<'a, const PAGE_SIZE: usize, const BIT_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE, BIT_SIZE>
 where
-    PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
-    PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
-    K: Copy + std::fmt::Debug,
-    V: Copy + std::fmt::Debug,
+    K: Storable + Copy + Eq,
+    V: Storable + Copy + Eq,
 {
     pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
         let mut occupied = BitMap::<BIT_SIZE>::new();
@@ -41,23 +39,26 @@ where
 
         let k_size = size_of::<K>();
         let v_size = size_of::<V>();
-        let p_size = k_size + v_size;
 
         // Use the occupied map to find pairs to insert
-        let mut pairs = [None; 512];
-        let size = BIT_SIZE * 8;
+        let mut pairs: [Option<Pair2<K, V>>; 512] = std::array::from_fn(|_| None);
 
+        let size = BIT_SIZE * 8;
+        let mut pos = BIT_SIZE * 2;
         for i in 0..size {
             if !occupied.check(i) {
                 continue;
             }
 
-            let mut pos = BIT_SIZE * 2 + p_size * i;
             let k_bytes = get_bytes!(data, pos, k_size);
             pos += k_size;
             let v_bytes = get_bytes!(data, pos, v_size);
+            pos += v_size;
 
-            pairs[i] = Some(Pair::from_bytes(k_bytes, v_bytes));
+            let key = K::from_bytes(k_bytes);
+            let value = V::from_bytes(v_bytes);
+
+            pairs[i] = Some(Pair2::new(key, value));
         }
 
         Self {
@@ -79,13 +80,10 @@ where
             }
 
             if let Some(pair) = pair {
-                let key: BytesMut = pair.a.into();
-                let value: BytesMut = pair.b.into();
-
-                put_bytes!(page.data, key, pos, key.len());
-                pos += key.len();
-                put_bytes!(page.data, value, pos, value.len());
-                pos += value.len();
+                pair.a.write_to(&mut page.data, pos);
+                pos += pair.a.len();
+                pair.b.write_to(&mut page.data, pos);
+                pos += pair.b.len();
             }
         }
     }
@@ -121,12 +119,12 @@ where
             i += 1;
         }
 
-        self.pairs[i] = Some(Pair::new(*k, *v));
+        self.pairs[i] = Some(Pair2::new(*k, *v));
         self.occupied.set(i, true);
         self.readable.set(i, true);
     }
 
-    pub fn get_at(&self, i: usize) -> Option<Pair<K, V>> {
+    pub fn get_at(&self, i: usize) -> Option<Pair2<K, V>> {
         if self.readable.check(i) {
             self.pairs[i]
         } else {
@@ -139,7 +137,7 @@ where
         for (i, pair) in self.pairs.iter().enumerate() {
             if let Some(pair) = pair {
                 if pair.a == *k && self.readable.check(i) {
-                    ret.push(pair.b.0)
+                    ret.push(pair.b)
                 }
             }
         }
@@ -147,7 +145,7 @@ where
         ret
     }
 
-    pub fn get_pairs(&self) -> Vec<Pair<K, V>> {
+    pub fn get_pairs(&self) -> Vec<Pair2<K, V>> {
         let mut ret = Vec::new();
         for pair in &self.pairs {
             if let Some(pair) = pair {

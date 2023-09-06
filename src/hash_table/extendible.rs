@@ -4,14 +4,12 @@ use std::{
     marker::PhantomData,
 };
 
-use bytes::BytesMut;
-
 use crate::{
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
     page::{PageID, DEFAULT_PAGE_SIZE},
     page_manager::PageManager,
-    pair::PairType,
+    storable::Storable,
 };
 
 pub struct ExtendibleHashTable<
@@ -29,10 +27,8 @@ pub struct ExtendibleHashTable<
 impl<const POOL_SIZE: usize, const PAGE_SIZE: usize, const BUCKET_BIT_SIZE: usize, K, V>
     ExtendibleHashTable<K, V, POOL_SIZE, PAGE_SIZE, BUCKET_BIT_SIZE>
 where
-    for<'a> PairType<K>: Into<BytesMut> + From<&'a [u8]> + PartialEq<K> + Copy,
-    for<'a> PairType<V>: Into<BytesMut> + From<&'a [u8]> + PartialEq<V> + Copy,
-    K: Copy + Hash + std::fmt::Debug,
-    V: Copy + std::fmt::Debug,
+    K: Storable + Copy + Eq + Hash,
+    V: Storable + Copy + Eq,
 {
     pub fn new(dir_page_id: PageID, pm: PageManager<POOL_SIZE, PAGE_SIZE>) -> Self {
         Self {
@@ -100,13 +96,13 @@ where
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
-                let i = Self::get_bucket_index(&pair.a.0, &dir);
+                let i = Self::get_bucket_index(&pair.a, &dir);
                 let new_bucket = if i & bit > 0 {
                     &mut bucket1
                 } else {
                     &mut bucket0
                 };
-                new_bucket.insert(&pair.a.0, &pair.b.0);
+                new_bucket.insert(&pair.a, &pair.b);
             }
 
             for i in (Self::get_bucket_index(&k, &dir) & (bit - 1)
