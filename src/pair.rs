@@ -1,18 +1,16 @@
-use crate::table_page::RelationID;
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Pair2<A, B> {
+#[derive(PartialEq, Eq, Clone, Copy, PartialOrd)]
+pub struct Pair<A, B> {
     pub a: A,
     pub b: B,
 }
 
-impl<A, B> Pair2<A, B> {
+impl<A, B> Pair<A, B> {
     pub fn new(a: A, b: B) -> Self {
         Self { a, b }
     }
 }
 
-impl<A, B> PartialEq<(A, B)> for Pair2<A, B>
+impl<A, B> PartialEq<(A, B)> for Pair<A, B>
 where
     A: PartialEq,
     B: PartialEq,
@@ -22,18 +20,10 @@ where
     }
 }
 
-impl<K> PartialOrd for Pair2<K, RelationID>
+impl<A, B> Ord for Pair<A, B>
 where
-    K: Ord,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-impl<K> Ord for Pair2<K, RelationID>
-where
-    K: Ord,
+    A: Ord,
+    B: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.a.cmp(&other.a)

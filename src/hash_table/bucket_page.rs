@@ -6,7 +6,7 @@ use crate::{
     bitmap::BitMap,
     copy_bytes, get_bytes,
     page::{Page, DEFAULT_PAGE_SIZE},
-    pair::Pair2,
+    pair::Pair,
     put_bytes,
     storable::Storable,
 };
@@ -22,7 +22,7 @@ pub struct Bucket<
 > {
     pub occupied: BitMap<BIT_SIZE>,
     pub readable: BitMap<BIT_SIZE>,
-    pairs: [Option<Pair2<K, V>>; 512],
+    pairs: [Option<Pair<K, V>>; 512],
 }
 
 impl<'a, const PAGE_SIZE: usize, const BIT_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE, BIT_SIZE>
@@ -41,7 +41,7 @@ where
         let v_size = size_of::<V>();
 
         // Use the occupied map to find pairs to insert
-        let mut pairs: [Option<Pair2<K, V>>; 512] = std::array::from_fn(|_| None);
+        let mut pairs: [Option<Pair<K, V>>; 512] = std::array::from_fn(|_| None);
 
         let size = BIT_SIZE * 8;
         let mut pos = BIT_SIZE * 2;
@@ -58,7 +58,7 @@ where
             let key = K::from_bytes(k_bytes);
             let value = V::from_bytes(v_bytes);
 
-            pairs[i] = Some(Pair2::new(key, value));
+            pairs[i] = Some(Pair::new(key, value));
         }
 
         Self {
@@ -119,12 +119,12 @@ where
             i += 1;
         }
 
-        self.pairs[i] = Some(Pair2::new(*k, *v));
+        self.pairs[i] = Some(Pair::new(*k, *v));
         self.occupied.set(i, true);
         self.readable.set(i, true);
     }
 
-    pub fn get_at(&self, i: usize) -> Option<Pair2<K, V>> {
+    pub fn get_at(&self, i: usize) -> Option<Pair<K, V>> {
         if self.readable.check(i) {
             self.pairs[i]
         } else {
@@ -145,7 +145,7 @@ where
         ret
     }
 
-    pub fn get_pairs(&self) -> Vec<Pair2<K, V>> {
+    pub fn get_pairs(&self) -> Vec<Pair<K, V>> {
         let mut ret = Vec::new();
         for pair in &self.pairs {
             if let Some(pair) = pair {

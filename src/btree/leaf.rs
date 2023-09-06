@@ -3,19 +3,19 @@ use std::{collections::BinaryHeap, mem::size_of};
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    btree::BTreeHeader,
+    btree::{BTreeHeader, PageType},
     get_bytes, get_u32,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
-    pair::Pair2,
+    pair::Pair,
     put_bytes,
     storable::Storable,
     table_page::RelationID,
 };
 
 pub struct LeafNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    header: BTreeHeader,
+    pub header: BTreeHeader,
     next_page_id: PageID,
-    pairs: BinaryHeap<Pair2<K, RelationID>>,
+    pairs: BinaryHeap<Pair<K, RelationID>>,
 }
 
 impl<'a, const PAGE_SIZE: usize, K> LeafNode<K, PAGE_SIZE>
@@ -46,7 +46,7 @@ where
 
             let key = K::from_bytes(k_bytes);
 
-            pairs.push(Pair2::new(key, rel_id));
+            pairs.push(Pair::new(key, rel_id));
         }
 
         Self {
@@ -54,6 +54,10 @@ where
             next_page_id,
             pairs,
         }
+    }
+
+    pub fn init(&mut self, size: u32, max_size: u32) {
+        self.header.init(PageType::Leaf, size, max_size);
     }
 
     pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
@@ -86,7 +90,7 @@ where
     }
 
     pub fn insert(&mut self, k: K, rel_id: RelationID) {
-        let pair = Pair2::new(k, rel_id);
+        let pair = Pair::new(k, rel_id);
 
         self.pairs.push(pair);
     }

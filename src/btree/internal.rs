@@ -1,18 +1,18 @@
-use std::mem::size_of;
+use std::{collections::BinaryHeap, mem::size_of};
 
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    btree::BTreeHeader,
+    btree::{BTreeHeader, PageType},
     get_bytes,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
-    pair::Pair2,
+    pair::Pair,
     storable::Storable,
 };
 
 pub struct InternalNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    header: BTreeHeader,
-    pairs: Vec<Pair2<K, PageID>>,
+    pub header: BTreeHeader,
+    pairs: BinaryHeap<Pair<K, PageID>>,
 }
 
 impl<'a, const PAGE_SIZE: usize, K> InternalNode<K, PAGE_SIZE>
@@ -25,7 +25,7 @@ where
         let k_size = size_of::<K>();
         let v_size = size_of::<PageID>();
 
-        let mut pairs = Vec::new();
+        let mut pairs = BinaryHeap::new();
         let mut pos = BTreeHeader::SIZE;
 
         while pos < PAGE_SIZE {
@@ -42,10 +42,14 @@ where
 
             let key = K::from_bytes(k_bytes);
 
-            pairs.push(Pair2::new(key, page_id));
+            pairs.push(Pair::new(key, page_id));
         }
 
         Self { header, pairs }
+    }
+
+    pub fn init(&mut self, size: u32, max_size: u32) {
+        self.header.init(PageType::Internal, size, max_size);
     }
 
     pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
@@ -69,5 +73,9 @@ where
 
     pub fn len(&self) -> usize {
         self.pairs.len()
+    }
+
+    pub fn insert(&mut self, k: K, page_id: PageID) {
+        self.pairs.push(Pair::new(k, page_id));
     }
 }

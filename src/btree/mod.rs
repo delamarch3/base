@@ -7,7 +7,7 @@ pub mod internal;
 pub mod leaf;
 
 #[derive(PartialEq, Clone, Copy)]
-enum PageType {
+pub enum PageType {
     Invalid,
     Internal,
     Leaf,
@@ -33,7 +33,7 @@ impl Into<PageType> for u32 {
     }
 }
 
-struct BTreeHeader {
+pub struct BTreeHeader {
     t: PageType,
     size: u32,
     max_size: u32,
@@ -60,11 +60,9 @@ impl BTreeHeader {
         put_bytes!(page, self.max_size.to_be_bytes(), 8, 12);
     }
 
-    pub fn set_page_type(&mut self, t: PageType) {
+    pub fn init(&mut self, t: PageType, size: u32, max_size: u32) {
         self.t = t;
-    }
-
-    pub fn is_leaf(&self) -> bool {
-        self.t == PageType::Leaf
+        self.size = size;
+        self.max_size = max_size;
     }
 }
