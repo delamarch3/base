@@ -1,8 +1,8 @@
 use std::mem::size_of;
 
-use bytes::BytesMut;
+use bytes::{Buf, BufMut, BytesMut};
 
-use crate::{byte_array, copy_bytes, table_page::RelationID};
+use crate::{byte_array, copy_bytes, get_u32, get_u64, table_page::RelationID};
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub struct PairType<T>(pub T);
@@ -127,6 +127,86 @@ where
 impl<K> Ord for Pair<K, RelationID>
 where
     PairType<K>: Ord,
+    K: Ord,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.a.cmp(&other.a)
+    }
+}
+
+pub trait Storable {
+    const SIZE: usize;
+    type ByteArray;
+
+    fn into_bytes(self) -> Self::ByteArray;
+
+    fn from_bytes(bytes: &[u8]) -> Self;
+}
+
+impl Storable for u32 {
+    const SIZE: usize = 4;
+    type ByteArray = [u8; Self::SIZE];
+
+    fn into_bytes(self) -> [u8; Self::SIZE] {
+        self.to_be_bytes()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u32::from_be_bytes(bytes.try_into().unwrap())
+    }
+}
+
+impl Storable for RelationID {
+    const SIZE: usize = 12;
+    type ByteArray = [u8; Self::SIZE];
+
+    fn into_bytes(self) -> Self::ByteArray {
+        let mut bytes = Vec::with_capacity(Self::SIZE);
+        bytes.put_u32(self.0);
+        bytes.put_u64(self.1);
+
+        bytes.try_into().unwrap()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(bytes.len() >= Self::SIZE);
+
+        let page_id = get_u32!(bytes, 0);
+        let rel_id = get_u64!(bytes, 4);
+
+        (page_id, rel_id)
+    }
+}
+
+pub trait IndexStorable: Storable + Ord {}
+
+#[derive(PartialEq, Eq)]
+pub struct Pair2<A, B> {
+    a: A,
+    b: B,
+}
+
+impl<A, B> Pair2<A, B>
+where
+    A: Storable,
+    B: Storable,
+{
+    pub fn new(a: A, b: B) -> Self {
+        Self { a, b }
+    }
+}
+
+impl<K> PartialOrd for Pair2<K, RelationID>
+where
+    K: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl<K> Ord for Pair2<K, RelationID>
+where
     K: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
