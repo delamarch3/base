@@ -1,8 +1,8 @@
 use std::mem::size_of;
 
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 
-use crate::{byte_array, copy_bytes, get_u32, get_u64, put_bytes, table_page::RelationID};
+use crate::{byte_array, copy_bytes, table_page::RelationID};
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub struct PairType<T>(pub T);
@@ -134,73 +134,13 @@ where
     }
 }
 
-pub trait Storable {
-    const SIZE: usize;
-    type ByteArray;
-
-    fn into_bytes(self) -> Self::ByteArray;
-    fn from_bytes(bytes: &[u8]) -> Self;
-    fn write_to(&self, dst: &mut [u8], pos: usize);
-
-    fn len(&self) -> usize {
-        Self::SIZE
-    }
-}
-
-impl Storable for u32 {
-    const SIZE: usize = 4;
-    type ByteArray = [u8; Self::SIZE];
-
-    fn into_bytes(self) -> [u8; Self::SIZE] {
-        self.to_be_bytes()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        u32::from_be_bytes(bytes.try_into().unwrap())
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
-    }
-}
-
-impl Storable for RelationID {
-    const SIZE: usize = 12;
-    type ByteArray = [u8; Self::SIZE];
-
-    fn into_bytes(self) -> Self::ByteArray {
-        let mut bytes = Vec::with_capacity(Self::SIZE);
-        bytes.put_u32(self.0);
-        bytes.put_u64(self.1);
-
-        bytes.try_into().unwrap()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        assert!(bytes.len() >= Self::SIZE);
-
-        let page_id = get_u32!(bytes, 0);
-        let rel_id = get_u64!(bytes, 4);
-
-        (page_id, rel_id)
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
-    }
-}
-
 #[derive(PartialEq, Eq)]
 pub struct Pair2<A, B> {
     pub a: A,
     pub b: B,
 }
 
-impl<A, B> Pair2<A, B>
-where
-    A: Storable,
-    B: Storable,
-{
+impl<A, B> Pair2<A, B> {
     pub fn new(a: A, b: B) -> Self {
         Self { a, b }
     }

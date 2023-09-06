@@ -6,8 +6,9 @@ use crate::{
     btree::BTreeHeader,
     get_bytes, get_u32,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
-    pair::{Pair2, Storable},
+    pair::Pair2,
     put_bytes,
+    storable::Storable,
     table_page::RelationID,
 };
 

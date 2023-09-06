@@ -1,12 +1,13 @@
 pub mod bitmap;
+pub mod btree;
 pub mod disk;
 pub mod hash_table;
 pub mod page;
 pub mod page_manager;
 pub mod pair;
 pub mod replacer;
+pub mod storable;
 pub mod table_page;
-pub mod btree;
 
 #[cfg(test)]
 mod test {

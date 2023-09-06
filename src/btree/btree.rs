@@ -6,7 +6,8 @@ use crate::{
     btree::{internal::InternalNode, leaf::LeafNode},
     page::{PageID, DEFAULT_PAGE_SIZE},
     page_manager::PageManager,
-    pair::{PairType, Storable},
+    pair::PairType,
+    storable::Storable,
     table_page::RelationID,
 };
 
