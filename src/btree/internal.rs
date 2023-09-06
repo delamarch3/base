@@ -1,24 +1,23 @@
 use std::mem::size_of;
 
-use bytes::BytesMut;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
     btree::BTreeHeader,
     get_bytes,
     page::{Page, PageID, DEFAULT_PAGE_SIZE},
-    pair::{Pair, PairType},
-    put_bytes,
+    pair::Pair2,
+    storable::Storable,
 };
 
 pub struct InternalNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
     header: BTreeHeader,
-    pairs: Vec<Pair<K, PageID>>,
+    pairs: Vec<Pair2<K, PageID>>,
 }
 
 impl<'a, const PAGE_SIZE: usize, K> InternalNode<K, PAGE_SIZE>
 where
-    PairType<K>: Into<BytesMut> + From<&'a [u8]> + Copy,
+    K: Storable + Ord,
 {
     pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
         let header = BTreeHeader::new(data);
@@ -36,14 +35,14 @@ where
             pos += v_bytes.len();
 
             // Check invalid page id
-            let page_id: PairType<PageID> = v_bytes.into();
+            let page_id = PageID::from_bytes(v_bytes);
             if page_id == 0 {
                 continue;
             }
-            let key: PairType<K> = k_bytes.into();
 
-            // Pair::from_bytes funny behaviour here
-            pairs.push(Pair { a: key, b: page_id });
+            let key = K::from_bytes(k_bytes);
+
+            pairs.push(Pair2::new(key, page_id));
         }
 
         Self { header, pairs }
@@ -59,13 +58,10 @@ where
                 break;
             }
 
-            let key: BytesMut = pair.a.into();
-            let value: BytesMut = pair.b.into();
-
-            put_bytes!(page.data, key, pos, key.len());
-            pos += key.len();
-            put_bytes!(page.data, value, pos, value.len());
-            pos += value.len();
+            pair.a.write_to(&mut page.data, pos);
+            pos += pair.a.len();
+            pair.b.write_to(&mut page.data, pos);
+            pos += pair.b.len();
         }
 
         page.dirty = true;

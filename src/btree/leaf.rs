@@ -39,12 +39,12 @@ where
             pos += v_bytes.len();
 
             // Check invalid rel id
-            let rel_id = <RelationID as Storable>::from_bytes(v_bytes);
+            let rel_id = RelationID::from_bytes(v_bytes);
             if rel_id.0 == 0 || rel_id.1 == 0 {
                 continue;
             }
 
-            let key = <K as Storable>::from_bytes(k_bytes);
+            let key = K::from_bytes(k_bytes);
 
             pairs.push(Pair2::new(key, rel_id));
         }
