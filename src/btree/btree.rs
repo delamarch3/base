@@ -6,7 +6,7 @@ use crate::{
     btree::{internal::InternalNode, leaf::LeafNode},
     page::{PageID, DEFAULT_PAGE_SIZE},
     page_manager::PageManager,
-    pair::PairType,
+    pair::{PairType, Storable},
     table_page::RelationID,
 };
 
@@ -19,7 +19,7 @@ pub struct BTree<K, const POOL_SIZE: usize, const PAGE_SIZE: usize = DEFAULT_PAG
 impl<const POOL_SIZE: usize, const PAGE_SIZE: usize, K> BTree<K, POOL_SIZE, PAGE_SIZE>
 where
     for<'a> PairType<K>: Into<BytesMut> + From<&'a [u8]> + Copy + Ord,
-    K: Ord,
+    K: Storable + Ord,
 {
     pub fn new(header_page_id: PageID, pm: PageManager<POOL_SIZE, PAGE_SIZE>) -> Self {
         Self {

@@ -1,8 +1,8 @@
 use std::mem::size_of;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{BufMut, BytesMut};
 
-use crate::{byte_array, copy_bytes, get_u32, get_u64, table_page::RelationID};
+use crate::{byte_array, copy_bytes, get_u32, get_u64, put_bytes, table_page::RelationID};
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub struct PairType<T>(pub T);
@@ -139,8 +139,12 @@ pub trait Storable {
     type ByteArray;
 
     fn into_bytes(self) -> Self::ByteArray;
-
     fn from_bytes(bytes: &[u8]) -> Self;
+    fn write_to(&self, dst: &mut [u8], pos: usize);
+
+    fn len(&self) -> usize {
+        Self::SIZE
+    }
 }
 
 impl Storable for u32 {
@@ -153,6 +157,10 @@ impl Storable for u32 {
 
     fn from_bytes(bytes: &[u8]) -> Self {
         u32::from_be_bytes(bytes.try_into().unwrap())
+    }
+
+    fn write_to(&self, dst: &mut [u8], pos: usize) {
+        put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
     }
 }
 
@@ -176,14 +184,16 @@ impl Storable for RelationID {
 
         (page_id, rel_id)
     }
-}
 
-pub trait IndexStorable: Storable + Ord {}
+    fn write_to(&self, dst: &mut [u8], pos: usize) {
+        put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
+    }
+}
 
 #[derive(PartialEq, Eq)]
 pub struct Pair2<A, B> {
-    a: A,
-    b: B,
+    pub a: A,
+    pub b: B,
 }
 
 impl<A, B> Pair2<A, B>
