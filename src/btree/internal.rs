@@ -3,19 +3,19 @@ use std::{collections::BinaryHeap, mem::size_of};
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    btree::{BTreeHeader, PageType},
+    btree::{BTreeHeader, BTreeNodeType},
     get_bytes,
-    page::{Page, PageID, DEFAULT_PAGE_SIZE},
+    page::{PageId, PageInner, PAGE_SIZE},
     pair::Pair,
     storable::Storable,
 };
 
-pub struct InternalNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
+pub struct InternalNode<K> {
     pub header: BTreeHeader,
-    pairs: BinaryHeap<Pair<K, PageID>>,
+    pub pairs: BinaryHeap<Pair<K, PageId>>,
 }
 
-impl<'a, const PAGE_SIZE: usize, K> InternalNode<K, PAGE_SIZE>
+impl<'a, K> InternalNode<K>
 where
     K: Storable + Ord,
 {
@@ -23,7 +23,7 @@ where
         let header = BTreeHeader::new(data);
 
         let k_size = size_of::<K>();
-        let v_size = size_of::<PageID>();
+        let v_size = size_of::<PageId>();
 
         let mut pairs = BinaryHeap::new();
         let mut pos = BTreeHeader::SIZE;
@@ -35,7 +35,7 @@ where
             pos += v_bytes.len();
 
             // Check invalid page id
-            let page_id = PageID::from_bytes(v_bytes);
+            let page_id = PageId::from_bytes(v_bytes);
             if page_id == 0 {
                 continue;
             }
@@ -49,14 +49,14 @@ where
     }
 
     pub fn init(&mut self, size: u32, max_size: u32) {
-        self.header.init(PageType::Internal, size, max_size);
+        self.header.init(BTreeNodeType::Internal, size, max_size);
     }
 
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
         self.header.write_data(&mut page.data);
 
         let mut pos = BTreeHeader::SIZE;
-        let p_size = size_of::<K>() + size_of::<PageID>();
+        let p_size = size_of::<K>() + size_of::<PageId>();
         for pair in &self.pairs {
             if pos + p_size >= PAGE_SIZE {
                 break;
@@ -71,11 +71,12 @@ where
         page.dirty = true;
     }
 
-    pub fn len(&self) -> usize {
-        self.pairs.len()
+    pub fn insert(&mut self, k: K, page_id: PageId) {
+        self.pairs.push(Pair::new(k, page_id));
+        self.header.size += 1;
     }
 
-    pub fn insert(&mut self, k: K, page_id: PageID) {
-        self.pairs.push(Pair::new(k, page_id));
+    pub fn r#type(&self) -> BTreeNodeType {
+        self.header.r#type()
     }
 }

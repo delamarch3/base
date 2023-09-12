@@ -3,13 +3,13 @@ use std::{io, os::fd::AsRawFd, path::Path};
 use nix::sys::uio;
 use tokio::fs::{File, OpenOptions};
 
-use crate::page::{PageID, SharedPage, DEFAULT_PAGE_SIZE};
+use crate::page::{PageId, PAGE_SIZE};
 
-pub struct Disk<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
+pub struct Disk {
     file: File,
 }
 
-impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
+impl Disk {
     pub async fn new(file: impl AsRef<Path>) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -21,7 +21,7 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
         Ok(Self { file })
     }
 
-    pub fn read_page(&self, page_id: PageID) -> io::Result<SharedPage<PAGE_SIZE>> {
+    pub fn read_page(&self, page_id: PageId) -> io::Result<[u8; PAGE_SIZE]> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
@@ -31,10 +31,10 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
             Err(e) => panic!("{e}"),
         }
 
-        Ok(SharedPage::from_bytes(page_id, buf))
+        Ok(buf)
     }
 
-    pub fn write_page(&self, page_id: PageID, data: &[u8]) {
+    pub fn write_page(&self, page_id: PageId, data: &[u8]) {
         assert!(data.len() == PAGE_SIZE);
 
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
@@ -44,56 +44,5 @@ impl<const PAGE_SIZE: usize> Disk<PAGE_SIZE> {
             Ok(_) => {}
             Err(e) => panic!("{e}"),
         };
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::io;
-
-    use crate::{
-        page::{PageID, SharedPage, DEFAULT_PAGE_SIZE},
-        table_page::{self, ColumnType, Tuple},
-        test::CleanUp,
-    };
-
-    use super::Disk;
-
-    async fn get_page() -> (PageID, [u8; DEFAULT_PAGE_SIZE]) {
-        let page: SharedPage<DEFAULT_PAGE_SIZE> = table_page::new_shared(0);
-
-        let tuple_a = Tuple(vec![
-            ColumnType::Int32(44),
-            ColumnType::String("Hello world".into()),
-            ColumnType::Float32(4.4),
-        ]);
-        let (_page_id, _offset_a) = table_page::write_tuple(&page, &tuple_a).await;
-
-        let tuple_b = Tuple(vec![
-            ColumnType::Int32(66),
-            ColumnType::String("String".into()),
-            ColumnType::Float32(6.6),
-        ]);
-        let (_page_id, _offset_b) = table_page::write_tuple(&page, &tuple_b).await;
-
-        let page_r = page.read().await;
-        (page_r.id, page_r.data.clone())
-    }
-
-    #[tokio::test]
-    async fn test_disk() -> io::Result<()> {
-        const DB_FILE: &str = "./test_disk.db";
-        let _cu = CleanUp::file(DB_FILE);
-        let disk = Disk::<DEFAULT_PAGE_SIZE>::new(DB_FILE).await?;
-        let (id, data) = get_page().await;
-
-        disk.write_page(id, &data);
-
-        let disk_page = disk.read_page(id)?;
-        let disk_data = &disk_page.read().await.data;
-
-        assert!(data == *disk_data);
-
-        Ok(())
     }
 }

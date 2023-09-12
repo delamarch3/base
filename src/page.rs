@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[macro_export]
@@ -52,60 +50,51 @@ macro_rules! byte_array {
     }};
 }
 
-pub type PageID = u32;
-pub const DEFAULT_PAGE_SIZE: usize = 4 * 1024;
+pub const PAGE_SIZE: usize = 4 * 1024;
 
-#[derive(Clone)]
-pub struct SharedPage<const SIZE: usize = DEFAULT_PAGE_SIZE> {
-    id: PageID,
-    inner: Arc<RwLock<Page<SIZE>>>,
-}
+pub type PageId = u32;
 
-impl<const SIZE: usize> SharedPage<SIZE> {
-    pub fn new(id: PageID) -> Self {
-        let inner = Arc::new(RwLock::new(Page {
-            id,
-            pin: 0,
-            dirty: false,
-            data: [0; SIZE],
-        }));
+pub struct Page(RwLock<PageInner>);
 
-        Self { id, inner }
-    }
+impl Default for Page {
+    fn default() -> Self {
+        let inner = PageInner::default();
 
-    pub fn from_bytes(id: PageID, data: [u8; SIZE]) -> Self {
-        let inner = Arc::new(RwLock::new(Page {
-            id,
-            pin: 0,
-            dirty: false,
-            data,
-        }));
-
-        Self { id, inner }
-    }
-
-    pub async fn read(&self) -> RwLockReadGuard<'_, Page<SIZE>> {
-        self.inner.read().await
-    }
-
-    pub async fn write(&self) -> RwLockWriteGuard<'_, Page<SIZE>> {
-        self.inner.write().await
-    }
-
-    pub fn get_id(&self) -> PageID {
-        self.id
+        Self(RwLock::new(inner))
     }
 }
 
-pub struct Page<const SIZE: usize = DEFAULT_PAGE_SIZE> {
-    pub id: PageID,
-    pub pin: u32,
+impl Page {
+    pub async fn read(&self) -> RwLockReadGuard<'_, PageInner> {
+        self.0.read().await
+    }
+
+    pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
+        self.0.write().await
+    }
+}
+
+pub struct PageInner {
+    pub id: PageId,
+    pub pin: u64,
     pub dirty: bool,
-    pub data: [u8; SIZE],
+    pub data: [u8; PAGE_SIZE],
 }
 
-impl<const SIZE: usize> Page<SIZE> {
-    pub fn reset_data(&mut self) {
-        self.data = [0; SIZE]
+impl Default for PageInner {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            pin: 0,
+            dirty: false,
+            data: [0; PAGE_SIZE],
+        }
+    }
+}
+
+impl PageInner {
+    pub fn reset(&mut self) {
+        self.id = 0;
+        self.data.fill(0);
     }
 }

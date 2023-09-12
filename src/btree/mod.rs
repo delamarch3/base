@@ -7,34 +7,34 @@ pub mod internal;
 pub mod leaf;
 
 #[derive(PartialEq, Clone, Copy)]
-pub enum PageType {
+pub enum BTreeNodeType {
     Invalid,
     Internal,
     Leaf,
 }
 
-impl Into<u32> for PageType {
+impl Into<u32> for BTreeNodeType {
     fn into(self) -> u32 {
         match self {
-            PageType::Invalid => 0,
-            PageType::Internal => 1,
-            PageType::Leaf => 2,
+            BTreeNodeType::Invalid => 0,
+            BTreeNodeType::Internal => 1,
+            BTreeNodeType::Leaf => 2,
         }
     }
 }
 
-impl Into<PageType> for u32 {
-    fn into(self) -> PageType {
+impl Into<BTreeNodeType> for u32 {
+    fn into(self) -> BTreeNodeType {
         match self {
-            1 => PageType::Internal,
-            2 => PageType::Leaf,
-            _ => PageType::Invalid,
+            1 => BTreeNodeType::Internal,
+            2 => BTreeNodeType::Leaf,
+            _ => BTreeNodeType::Invalid,
         }
     }
 }
 
 pub struct BTreeHeader {
-    t: PageType,
+    t: BTreeNodeType,
     size: u32,
     max_size: u32,
 }
@@ -60,9 +60,17 @@ impl BTreeHeader {
         put_bytes!(page, self.max_size.to_be_bytes(), 8, 12);
     }
 
-    pub fn init(&mut self, t: PageType, size: u32, max_size: u32) {
+    pub fn init(&mut self, t: BTreeNodeType, size: u32, max_size: u32) {
         self.t = t;
         self.size = size;
         self.max_size = max_size;
+    }
+
+    pub fn r#type(&self) -> BTreeNodeType {
+        self.t
+    }
+
+    pub fn len(&self) -> u32 {
+        self.size
     }
 }

@@ -1,39 +1,35 @@
 use std::marker::PhantomData;
 
 use crate::{
-    btree::{internal::InternalNode, leaf::LeafNode},
-    page::{PageID, DEFAULT_PAGE_SIZE},
-    page_manager::PageManager,
-    storable::Storable,
+    btree::leaf::LeafNode, page::PageId, page_manager::PageCache, storable::Storable,
     table_page::RelationID,
 };
 
-pub struct BTree<K, const POOL_SIZE: usize, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
-    pm: PageManager<POOL_SIZE, PAGE_SIZE>,
-    root_page_id: PageID,
+use super::{BTreeHeader, BTreeNodeType};
+
+pub struct BTree<K, const POOL_SIZE: usize> {
+    pm: PageCache<POOL_SIZE>,
+    root_page_id: PageId,
     _data: PhantomData<K>,
 
-    internal_max_size: u32,
-    leaf_max_size: u32,
+    // Branching factor/order (o). Max number of keys will be o - 1. Must satisfy ⌈o / 2⌉ <= m <= o - 1
+    order: u32,
+    // Max number of values must satisfy ⌈o / 2⌉ <= n <= o - 1
+    leaf_size: u32,
 }
 
-impl<const POOL_SIZE: usize, const PAGE_SIZE: usize, K> BTree<K, POOL_SIZE, PAGE_SIZE>
+impl<const POOL_SIZE: usize, K> BTree<K, POOL_SIZE>
 where
     K: Storable + Ord + Copy,
 {
-    pub fn new(
-        pm: PageManager<POOL_SIZE, PAGE_SIZE>,
-        root_page_id: PageID,
-        internal_max_size: u32,
-        leaf_max_size: u32,
-    ) -> Self {
+    pub fn new(pm: PageCache<POOL_SIZE>, root_page_id: PageId, order: u32, leaf_size: u32) -> Self {
         Self {
             pm,
             root_page_id,
             _data: PhantomData,
 
-            internal_max_size,
-            leaf_max_size,
+            order,
+            leaf_size,
         }
     }
 
@@ -43,24 +39,30 @@ where
             None => unimplemented!("could not fetch btree root page"),
         };
         let root_page_w = root_page.write().await;
-        let mut root: InternalNode<K, PAGE_SIZE> = InternalNode::new(&root_page_w.data);
+        let header = BTreeHeader::new(&root_page_w.data);
+        // let mut root: InternalNode<K, PAGE_SIZE> = InternalNode::new(&root_page_w.data);
 
-        // First insert - create a new page, insert into internal and leaf nodes:
-        if root.len() == 0 {
-            root.init(1, self.internal_max_size);
+        // TODO: First insert, node will be leaf. Will essentially be linked list until correct
+        // conditions met.
+        if header.len() == 0 {
+            // root.init(1, self.leaf_size);
 
-            let new_leaf_page = match self.pm.new_page().await {
+            let new_leaf_page = match self.pm.fetch_page(self.root_page_id).await {
                 Some(p) => p,
                 None => unimplemented!("could not create a new leaf page"),
             };
             let new_leaf_page_w = new_leaf_page.write().await;
-            let mut new_leaf: LeafNode<K, PAGE_SIZE> = LeafNode::new(&new_leaf_page_w.data);
-            new_leaf.init(1, self.leaf_max_size);
+            let mut new_leaf: LeafNode<K> = LeafNode::new(&new_leaf_page_w.data);
+            new_leaf.init(1, self.leaf_size);
 
-            root.insert(k, new_leaf_page.get_id());
             new_leaf.insert(k, rel_id);
 
             return;
+        }
+
+        // Traverse linked list
+        if header.r#type() == BTreeNodeType::Leaf {
+            //
         }
     }
 }

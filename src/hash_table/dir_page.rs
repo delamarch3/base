@@ -4,7 +4,7 @@ use tokio::sync::RwLockWriteGuard;
 
 use crate::{
     copy_bytes, get_u32,
-    page::{Page, PageID, DEFAULT_PAGE_SIZE},
+    page::{PageId, PageInner, PAGE_SIZE},
     put_bytes,
 };
 
@@ -12,13 +12,13 @@ pub const DEFAULT_BUCKET_PAGE_IDS_SIZE: usize = 512;
 pub const DEFAULT_BUCKET_PAGE_IDS_SIZE_U8: usize = 512 * 4;
 
 #[derive(Debug)]
-pub struct Directory<const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
+pub struct Directory {
     global_depth: u32,
     local_depths: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE],
     bucket_page_ids: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE_U8],
 }
 
-impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
+impl Directory {
     pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let global_depth = get_u32!(data, 0);
         let mut local_depths = [0; DEFAULT_BUCKET_PAGE_IDS_SIZE];
@@ -43,7 +43,7 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         }
     }
 
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
         put_bytes!(
             page.data,
             self.global_depth.to_be_bytes(),
@@ -66,11 +66,11 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
         page.dirty = true;
     }
 
-    pub fn get_page_id(&self, i: usize) -> PageID {
+    pub fn get_page_id(&self, i: usize) -> PageId {
         get_u32!(self.bucket_page_ids, i * size_of::<u32>())
     }
 
-    pub fn set_bucket_page_id(&mut self, i: usize, id: PageID) {
+    pub fn set_bucket_page_id(&mut self, i: usize, id: PageId) {
         put_bytes!(
             self.bucket_page_ids,
             u32::to_be_bytes(id),
@@ -138,12 +138,12 @@ impl<const PAGE_SIZE: usize> Directory<PAGE_SIZE> {
 mod test {
     use crate::{
         hash_table::dir_page::Directory,
-        page::{SharedPage, DEFAULT_PAGE_SIZE},
+        page::{Page, PAGE_SIZE},
     };
 
     #[test]
     fn test_depth_mask() {
-        let mut dir = Directory::new(&[0; DEFAULT_PAGE_SIZE]);
+        let mut dir = Directory::new(&[0; PAGE_SIZE]);
 
         assert!(dir.get_global_depth_mask() == 0);
 
@@ -159,7 +159,7 @@ mod test {
 
     #[tokio::test]
     async fn test_directory() {
-        let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
+        let page = Page::default();
         let mut page_w = page.write().await;
 
         let mut dir = Directory::new(&page_w.data);

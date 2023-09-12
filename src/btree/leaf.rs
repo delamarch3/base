@@ -3,26 +3,26 @@ use std::{collections::BinaryHeap, mem::size_of};
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    btree::{BTreeHeader, PageType},
+    btree::{BTreeHeader, BTreeNodeType},
     get_bytes, get_u32,
-    page::{Page, PageID, DEFAULT_PAGE_SIZE},
+    page::{PageId, PageInner, PAGE_SIZE},
     pair::Pair,
     put_bytes,
     storable::Storable,
     table_page::RelationID,
 };
 
-pub struct LeafNode<K, const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE> {
+pub struct LeafNode<K> {
     pub header: BTreeHeader,
-    next_page_id: PageID,
+    next_page_id: PageId,
     pairs: BinaryHeap<Pair<K, RelationID>>,
 }
 
-impl<'a, const PAGE_SIZE: usize, K> LeafNode<K, PAGE_SIZE>
+impl<'a, K> LeafNode<K>
 where
-    K: Storable + Ord,
+    K: Storable + Ord + 'a,
 {
-    pub fn new(data: &'a [u8; PAGE_SIZE]) -> Self {
+    pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let header = BTreeHeader::new(data);
         let next_page_id = get_u32!(data, BTreeHeader::SIZE);
 
@@ -57,20 +57,20 @@ where
     }
 
     pub fn init(&mut self, size: u32, max_size: u32) {
-        self.header.init(PageType::Leaf, size, max_size);
+        self.header.init(BTreeNodeType::Leaf, size, max_size);
     }
 
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
         self.header.write_data(&mut page.data);
         put_bytes!(
             page.data,
             self.next_page_id.to_be_bytes(),
             BTreeHeader::SIZE,
-            size_of::<PageID>()
+            size_of::<PageId>()
         );
 
         let mut pos = BTreeHeader::SIZE;
-        let p_size = size_of::<K>() + size_of::<PageID>();
+        let p_size = size_of::<K>() + size_of::<PageId>();
         for pair in &self.pairs {
             if pos + p_size >= PAGE_SIZE {
                 break;

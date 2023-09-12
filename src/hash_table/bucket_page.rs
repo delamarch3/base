@@ -5,7 +5,7 @@ use tokio::sync::RwLockWriteGuard;
 use crate::{
     bitmap::BitMap,
     copy_bytes, get_bytes,
-    page::{Page, DEFAULT_PAGE_SIZE},
+    page::{PageInner, PAGE_SIZE},
     pair::Pair,
     put_bytes,
     storable::Storable,
@@ -14,18 +14,13 @@ use crate::{
 pub const DEFAULT_BIT_SIZE: usize = 512 / 8;
 pub const VALUES_START: usize = DEFAULT_BIT_SIZE * 2;
 
-pub struct Bucket<
-    K,
-    V,
-    const PAGE_SIZE: usize = DEFAULT_PAGE_SIZE,
-    const BIT_SIZE: usize = DEFAULT_BIT_SIZE,
-> {
+pub struct Bucket<K, V, const BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
     pub occupied: BitMap<BIT_SIZE>,
     pub readable: BitMap<BIT_SIZE>,
     pairs: [Option<Pair<K, V>>; 512],
 }
 
-impl<'a, const PAGE_SIZE: usize, const BIT_SIZE: usize, K, V> Bucket<K, V, PAGE_SIZE, BIT_SIZE>
+impl<'a, const BIT_SIZE: usize, K, V> Bucket<K, V, BIT_SIZE>
 where
     K: Storable + Copy + Eq,
     V: Storable + Copy + Eq,
@@ -68,7 +63,7 @@ where
         }
     }
 
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, Page<PAGE_SIZE>>) {
+    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
         put_bytes!(page.data, self.occupied.as_slice(), 0, BIT_SIZE);
         put_bytes!(page.data, self.readable.as_slice(), BIT_SIZE, BIT_SIZE);
 
@@ -166,16 +161,15 @@ where
 mod test {
     use crate::{
         hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
-        page::{SharedPage, DEFAULT_PAGE_SIZE},
+        page::Page,
     };
 
     #[tokio::test]
     async fn test_bucket() {
-        let page = SharedPage::<DEFAULT_PAGE_SIZE>::new(0);
+        let page = Page::default();
         let mut page_w = page.write().await;
 
-        let mut bucket: Bucket<i32, i32, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
-            Bucket::new(&page_w.data);
+        let mut bucket: Bucket<i32, i32, DEFAULT_BIT_SIZE> = Bucket::new(&page_w.data);
 
         bucket.insert(&1, &2);
         bucket.insert(&3, &4);
@@ -193,8 +187,7 @@ mod test {
         drop(bucket);
 
         // Make sure it reads back ok
-        let bucket: Bucket<i32, i32, DEFAULT_PAGE_SIZE, DEFAULT_BIT_SIZE> =
-            Bucket::new(&page_w.data);
+        let bucket: Bucket<i32, i32, DEFAULT_BIT_SIZE> = Bucket::new(&page_w.data);
         assert!(bucket.get_at(0).unwrap() == (1, 2));
         assert!(bucket.get_at(1).unwrap() == (3, 4));
         assert!(bucket.get_at(2).unwrap() == (5, 6));
