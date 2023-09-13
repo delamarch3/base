@@ -4,7 +4,7 @@ use bytes::BufMut;
 
 use crate::{get_u32, get_u64, put_bytes, table_page::RelationID};
 
-pub trait Storable {
+pub trait Storable: std::fmt::Debug {
     const SIZE: usize;
     type ByteArray;
 

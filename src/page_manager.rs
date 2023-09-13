@@ -16,6 +16,43 @@ use crate::{
 
 pub type FrameId = usize;
 
+pub struct FreeList<const SIZE: usize> {
+    free: [FrameId; SIZE],
+    tail: usize,
+}
+
+impl<const SIZE: usize> FreeList<SIZE> {
+    pub fn new() -> Self {
+        let free: [FrameId; SIZE] = std::array::from_fn(|i| i);
+
+        Self { free, tail: SIZE }
+    }
+
+    pub fn pop(&mut self) -> Option<FrameId> {
+        if self.tail == 0 {
+            return None;
+        }
+
+        let ret = self.free[self.tail - 1];
+        self.tail -= 1;
+
+        Some(ret)
+    }
+
+    pub fn push(&mut self, frame_id: FrameId) {
+        if self.tail == SIZE {
+            eprintln!("warn: trying to push frame to full free list");
+        }
+
+        self.tail += 1;
+        self.free[self.tail - 1] = frame_id;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tail == 0
+    }
+}
+
 #[derive(Clone)]
 pub struct PageCache<const SIZE: usize>(Arc<PageCacheInner<SIZE>>);
 
@@ -44,47 +81,6 @@ impl<const SIZE: usize> PageCache<SIZE> {
 
     pub async fn flush_all_pages(&self) {
         self.0.flush_all_pages().await
-    }
-}
-
-pub struct FreeList<const SIZE: usize> {
-    free: [FrameId; SIZE],
-    tail: usize,
-}
-
-impl<const SIZE: usize> FreeList<SIZE> {
-    pub fn new() -> Self {
-        let free: [FrameId; SIZE] = std::array::from_fn(|mut i| {
-            let ret = i;
-            i += 1;
-            ret
-        });
-
-        Self { free, tail: SIZE }
-    }
-
-    pub fn pop(&mut self) -> Option<FrameId> {
-        if self.tail == 0 {
-            return None;
-        }
-
-        let ret = self.free[self.tail - 1];
-        self.tail -= 1;
-
-        Some(ret)
-    }
-
-    pub fn push(&mut self, frame_id: FrameId) {
-        if self.tail == SIZE {
-            eprintln!("warn: trying to push frame to full free list");
-        }
-
-        self.tail += 1;
-        self.free[self.tail] = frame_id;
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.tail == 0
     }
 }
 
@@ -120,17 +116,18 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
     }
 
     pub async fn new_page<'a>(&self) -> Option<&Page> {
-        let i = if let Some(i) = self.free.lock().await.pop() {
-            i
-        } else {
-            let Some(i) = self.replacer.lock().await.evict() else { return None };
+        let i = match self.free.lock().await.pop() {
+            Some(i) => i,
+            None => {
+                let Some(i) = self.replacer.lock().await.evict() else { return None };
 
-            let page_r = &self.pages[i].read().await;
+                let page_r = self.pages[i].read().await;
 
-            self.disk.write_page(page_r.id, &page_r.data);
-            self.page_table.write().await.remove(&page_r.id);
+                self.disk.write_page(page_r.id, &page_r.data);
+                self.page_table.write().await.remove(&page_r.id);
 
-            i
+                i
+            }
         };
 
         self.replacer
@@ -163,26 +160,40 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
             return Some(&self.pages[*i]);
         };
 
-        let i = if let Some(i) = self.free.lock().await.pop() {
-            i
-        } else {
-            let Some(i) = self.replacer.lock().await.evict() else { return None };
+        // // TODO: avoid attempt to acquire lock on empty free list
+        // let mut replacer = self.replacer.lock().await;
+        // let i = match self.free.lock().await.pop() {
+        //     Some(i) => i,
+        //     None => {
+        //         let Some(i) = replacer.evict() else { return None };
+        //         i
+        //     }
+        // };
 
-            let page_r = self.pages[i].read().await;
+        if let Some(i) = self.free.lock().await.pop() {
+            let mut page_w = self.pages[i].write().await;
+            self.replacer
+                .lock()
+                .await
+                .record_access(i, &AccessType::Get);
+            let data = self.disk.read_page(page_id).expect("Couldn't read page");
+            page_w.reset();
+            page_w.id = page_id;
+            page_w.data = data;
 
-            self.disk.write_page(page_r.id, &page_r.data);
-            self.page_table.write().await.remove(&page_id);
-
-            i
+            return Some(&self.pages[i]);
         };
 
-        self.replacer
-            .lock()
-            .await
-            .record_access(i, &AccessType::Get);
-        let data = self.disk.read_page(page_id).expect("Couldn't read page");
-
+        let mut replacer = self.replacer.lock().await;
+        let Some(i) = replacer.evict() else { return None };
         let mut page_w = self.pages[i].write().await;
+        replacer.remove(i);
+        replacer.record_access(i, &AccessType::Get);
+
+        self.disk.write_page(page_w.id, &page_w.data);
+        self.page_table.write().await.remove(&page_w.id);
+
+        let data = self.disk.read_page(page_id).expect("Couldn't read page");
         page_w.reset();
         page_w.id = page_id;
         page_w.data = data;
@@ -190,6 +201,7 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
         Some(&self.pages[i])
     }
 
+    // TODO: move pins inside replacer
     pub async fn unpin_page(&self, page_id: PageId) {
         let page_table = self.page_table.read().await;
         let Some(i) = page_table.get(&page_id) else { return };
@@ -208,6 +220,11 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
         let Some(i) = page_table.get(&page_id) else { return };
 
         let mut page_w = self.pages[*i].write().await;
+
+        let test = [0; 1024 * 4];
+        if page_w.data == test {
+            eprintln!("writing empty page");
+        }
         self.disk.write_page(page_w.id, &page_w.data);
         page_w.dirty = false;
     }

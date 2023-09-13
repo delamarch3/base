@@ -238,11 +238,12 @@ mod test {
         let disk = Disk::new(file).await.expect("could not open db file");
         let _cu = CleanUp::file(file);
         let replacer = LRUKReplacer::new(2);
+        let dir_page_id = 0;
         const POOL_SIZE: usize = 8;
-        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, 0);
+        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, dir_page_id);
         let _dir_page = pm.new_page().await;
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(0, pm.clone());
+            ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         ht.insert(&0, &1).await;
         ht.insert(&2, &3).await;
@@ -263,9 +264,9 @@ mod test {
         // Make sure it reads back ok
         let disk = Disk::new(file).await.expect("could not open db file");
         let replacer = LRUKReplacer::new(2);
-        let pm = PageCache::<8>::new(disk, replacer, 0);
+        let pm = PageCache::<8>::new(disk, replacer, dir_page_id + 1);
         let ht: ExtendibleHashTable<i32, i32, 8, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(0, pm.clone());
+            ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         let r1 = ht.get(&0).await;
         let r2 = ht.get(&2).await;
@@ -277,17 +278,18 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_extendible_hash_table_split() {
-        let file = "test_extendible_hash_table_split.db";
+    async fn test_split() {
+        let file = "test_split.db";
         let disk = Disk::new(file).await.expect("could not open db file");
         let _cu = CleanUp::file(file);
         let replacer = LRUKReplacer::new(2);
+        let dir_page_id = 0;
         const POOL_SIZE: usize = 8;
         const BIT_SIZE: usize = 1; // 8 slots
-        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, 0);
+        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, dir_page_id);
         let _dir_page = pm.new_page().await;
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, BIT_SIZE> =
-            ExtendibleHashTable::new(0, pm.clone());
+            ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         assert!(ht.get_num_buckets().await == 1);
 

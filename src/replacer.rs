@@ -1,7 +1,9 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use crate::page_manager::FrameId;
+
 struct LRUKNode {
-    i: usize,
+    i: FrameId,
     history: Vec<u64>,
     is_evictable: bool,
 }
@@ -30,8 +32,7 @@ impl LRUKNode {
 
 #[derive(Default)]
 pub struct LRUKReplacer {
-    /// Maps index inside page manager to LRUK node
-    nodes: HashMap<usize, LRUKNode>,
+    nodes: HashMap<FrameId, LRUKNode>,
     current_ts: u64,
     k: usize,
 }
@@ -86,7 +87,7 @@ impl LRUKReplacer {
         Some(earliest.0)
     }
 
-    pub fn record_access(&mut self, i: usize, _access_type: &AccessType) {
+    pub fn record_access(&mut self, i: FrameId, _access_type: &AccessType) {
         match self.nodes.entry(i) {
             Entry::Occupied(mut node) => {
                 node.get_mut().history.push(self.current_ts);
@@ -99,13 +100,13 @@ impl LRUKReplacer {
         }
     }
 
-    pub fn set_evictable(&mut self, i: usize, evictable: bool) {
+    pub fn set_evictable(&mut self, i: FrameId, evictable: bool) {
         if let Some(node) = self.nodes.get_mut(&i) {
             node.is_evictable = evictable;
         }
     }
 
-    pub fn remove(&mut self, i: usize) {
+    pub fn remove(&mut self, i: FrameId) {
         match self.nodes.entry(i) {
             Entry::Occupied(node) => {
                 assert!(node.get().is_evictable);
@@ -113,7 +114,7 @@ impl LRUKReplacer {
             }
             Entry::Vacant(_) => {
                 eprintln!(
-                    "ERROR: Attempt to remove frame that has not been registered in the replacer \
+                    "warn: attempt to remove frame that has not been registered in the replacer: \
                     {i}"
                 );
             }
