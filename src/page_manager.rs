@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering::*},
+        atomic::{AtomicI32, Ordering::*},
         Arc,
     },
 };
@@ -123,13 +123,9 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
 
     pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<&Page> {
         if let Some(i) = self.page_table.read().await.get(&page_id) {
-            self.replacer
-                .lock()
-                .await
-                .record_access(*i, &AccessType::Get);
-
-            // TODO: move pin to replacer
-            self.pages[*i].write().await.pin += 1;
+            let mut replacer = self.replacer.lock().await;
+            replacer.record_access(*i, &AccessType::Get);
+            replacer.pin(*i);
 
             return Some(&self.pages[*i]);
         };
@@ -148,8 +144,11 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
         let mut page_w = self.pages[i].write().await;
         replacer.remove(i);
         replacer.record_access(i, &AccessType::Get);
+        replacer.pin(i);
 
-        self.disk.write_page(page_w.id, &page_w.data);
+        if page_w.dirty {
+            self.disk.write_page(page_w.id, &page_w.data);
+        }
 
         let mut page_table = self.page_table.write().await;
         page_table.remove(&page_w.id);
@@ -163,18 +162,10 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
         Some(&self.pages[i])
     }
 
-    // TODO: move pins inside replacer
     pub async fn unpin_page(&self, page_id: PageId) {
         let page_table = self.page_table.read().await;
         let Some(i) = page_table.get(&page_id) else { return };
-
-        let mut page_w = self.pages[*i].write().await;
-        if page_w.pin > 0 {
-            page_w.pin -= 1;
-        }
-        if page_w.pin == 0 {
-            self.replacer.lock().await.set_evictable(*i, true);
-        }
+        self.replacer.lock().await.unpin(*i);
     }
 
     pub async fn flush_page(&self, page_id: PageId) {
@@ -218,11 +209,13 @@ mod test {
         let _page_2 = pc.new_page().await.expect("should return page 2"); // id = 2 ts = 2
 
         let inner = pc.0.clone();
+        let page_table = inner.page_table.read().await;
         assert!(inner.free.lock().await.is_empty());
-        assert!(inner.page_table.read().await.len() == 3);
-        assert!(inner.page_table.read().await.contains_key(&2));
-        assert!(inner.page_table.read().await.contains_key(&1));
-        assert!(inner.page_table.read().await.contains_key(&0));
+        assert!(page_table.len() == 3);
+        assert!(page_table.contains_key(&2));
+        assert!(page_table.contains_key(&1));
+        assert!(page_table.contains_key(&0));
+        drop(page_table);
         drop(inner);
 
         pc.fetch_page(0).await; // ts = 3
@@ -243,18 +236,26 @@ mod test {
 
         // Unpin pages so they can be evicted:
         pc.unpin_page(0).await;
+        pc.unpin_page(0).await;
+        pc.unpin_page(0).await;
+        pc.unpin_page(0).await;
+        pc.unpin_page(0).await;
+
         pc.unpin_page(1).await;
+        pc.unpin_page(1).await;
+        pc.unpin_page(1).await;
+
         pc.unpin_page(2).await;
-        // TODO: debug this
         pc.unpin_page(2).await;
 
         let _page_3 = pc.new_page().await.expect("should return page 3");
 
         let inner = pc.0;
-        assert!(inner.page_table.read().await.len() == 3);
-        assert!(inner.page_table.read().await.contains_key(&3));
-        assert!(inner.page_table.read().await.contains_key(&1));
-        assert!(inner.page_table.read().await.contains_key(&0));
+        let page_table = inner.page_table.read().await;
+        assert!(page_table.len() == 3);
+        assert!(page_table.contains_key(&3));
+        assert!(page_table.contains_key(&1));
+        assert!(page_table.contains_key(&0));
 
         Ok(())
     }

@@ -118,12 +118,8 @@ where
             // TODO: mark original page on disk as ready to be allocated
         }
 
-        let dir_page_id = dir_page_w.id;
-        let bucket_page_id = bucket_page_w.id;
-        drop(dir_page_w);
-        drop(bucket_page_w);
-        self.pm.unpin_page(dir_page_id).await;
-        self.pm.unpin_page(bucket_page_id).await;
+        self.pm.unpin_page(dir_page_w.id).await;
+        self.pm.unpin_page(bucket_page_w.id).await;
 
         true
     }
@@ -154,12 +150,8 @@ where
 
         // TODO: attempt to merge if empty
 
-        let dir_page_id = dir_page_r.id;
-        let bucket_page_id = bucket_page_w.id;
-        drop(dir_page_r);
-        drop(bucket_page_w);
-        self.pm.unpin_page(dir_page_id).await;
-        self.pm.unpin_page(bucket_page_id).await;
+        self.pm.unpin_page(dir_page_r.id).await;
+        self.pm.unpin_page(bucket_page_w.id).await;
 
         ret
     }
@@ -186,12 +178,8 @@ where
         let bucket_page_w = bucket_page.read().await;
         let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
 
-        let dir_page_id = dir_page_r.id;
-        let bucket_page_id = bucket_page_w.id;
-        drop(dir_page_r);
-        drop(bucket_page_w);
-        self.pm.unpin_page(dir_page_id).await;
-        self.pm.unpin_page(bucket_page_id).await;
+        self.pm.unpin_page(dir_page_r.id).await;
+        self.pm.unpin_page(bucket_page_w.id).await;
 
         bucket.find(k)
     }

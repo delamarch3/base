@@ -83,7 +83,6 @@ impl Page {
 
 pub struct PageInner {
     pub id: PageId,
-    pub pin: u64,
     pub dirty: bool,
     pub data: [u8; PAGE_SIZE],
 }
@@ -92,7 +91,6 @@ impl Default for PageInner {
     fn default() -> Self {
         Self {
             id: -1,
-            pin: 0,
             dirty: false,
             data: [0; PAGE_SIZE],
         }
@@ -102,6 +100,7 @@ impl Default for PageInner {
 impl PageInner {
     pub fn reset(&mut self) {
         self.id = 0;
+        self.dirty = false;
         self.data.fill(0);
     }
 }

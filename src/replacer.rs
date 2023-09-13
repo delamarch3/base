@@ -5,7 +5,7 @@ use crate::page_manager::FrameId;
 struct LRUKNode {
     i: FrameId,
     history: Vec<u64>,
-    is_evictable: bool,
+    pin: u64,
 }
 
 impl LRUKNode {
@@ -13,7 +13,7 @@ impl LRUKNode {
         Self {
             i,
             history: vec![ts],
-            is_evictable: false,
+            pin: 0,
         }
     }
 
@@ -54,7 +54,7 @@ impl LRUKReplacer {
         let mut max: (usize, u64) = (0, 0);
         let mut single_access: Vec<&LRUKNode> = Vec::new();
         for (id, node) in &self.nodes {
-            if !node.is_evictable {
+            if node.pin != 0 {
                 continue;
             }
 
@@ -100,16 +100,22 @@ impl LRUKReplacer {
         }
     }
 
-    pub fn set_evictable(&mut self, i: FrameId, evictable: bool) {
+    pub fn pin(&mut self, i: FrameId) {
         if let Some(node) = self.nodes.get_mut(&i) {
-            node.is_evictable = evictable;
+            node.pin += 1;
+        }
+    }
+
+    pub fn unpin(&mut self, i: FrameId) {
+        if let Some(node) = self.nodes.get_mut(&i) {
+            node.pin -= 1;
         }
     }
 
     pub fn remove(&mut self, i: FrameId) {
         match self.nodes.entry(i) {
             Entry::Occupied(node) => {
-                assert!(node.get().is_evictable);
+                assert!(node.get().pin == 0);
                 node.remove();
             }
             Entry::Vacant(_) => {
