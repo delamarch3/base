@@ -12,6 +12,14 @@ use crate::{
     storable::Storable,
 };
 
+// TODO: proper errors
+#[derive(Debug)]
+pub enum ExtendibleError {
+    Error,
+}
+pub type ExtendibleResult<T> = Result<T, ExtendibleError>;
+use ExtendibleError::*;
+
 pub struct ExtendibleHashTable<
     K,
     V,
@@ -37,30 +45,21 @@ where
         }
     }
 
-    pub async fn insert(&self, k: &K, v: &V) -> bool {
-        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
-            Some(p) => p,
-            None => unimplemented!("could not fetch directory page"),
-        };
+    pub async fn insert(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
+        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let mut dir_page_w = dir_page.write().await;
         let mut dir = Directory::new(&dir_page_w.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get_page_id(bucket_index);
-        let bucket_page = if bucket_page_id == 0 {
-            match self.pm.new_page().await {
-                Some(p) => {
-                    dir.set_bucket_page_id(bucket_index, p.read().await.id);
-                    dir.write_data(&mut dir_page_w);
-                    p
-                }
-                None => unimplemented!("could not create bucket page"),
+        let bucket_page = match bucket_page_id {
+            0 => {
+                let p = self.pm.new_page().await.ok_or(Error)?;
+                dir.set_bucket_page_id(bucket_index, p.read().await.id);
+                dir.write_data(&mut dir_page_w);
+                p
             }
-        } else {
-            match self.pm.fetch_page(bucket_page_id).await {
-                Some(p) => p,
-                None => unimplemented!("cound not fetch bucket page"),
-            }
+            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
         let mut bucket_page_w = bucket_page.write().await;
@@ -79,17 +78,11 @@ where
             // 2. Get the high bit of the old bucket (1 << local_depth)
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
-            let page0 = match self.pm.new_page().await {
-                Some(p) => p,
-                None => unimplemented!("could not create a new page for bucket split"),
-            };
+            let page0 = self.pm.new_page().await.ok_or(Error)?;
             let page0_w = page0.write().await;
             let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
 
-            let page1 = match self.pm.new_page().await {
-                Some(p) => p,
-                None => unimplemented!("could not create a new page for bucket split"),
-            };
+            let page1 = self.pm.new_page().await.ok_or(Error)?;
             let page1_w = page1.write().await;
             let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
@@ -121,26 +114,19 @@ where
         self.pm.unpin_page(dir_page_w.id).await;
         self.pm.unpin_page(bucket_page_w.id).await;
 
-        true
+        Ok(true)
     }
 
-    pub async fn remove(&self, k: &K, v: &V) -> bool {
-        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
-            Some(p) => p,
-            None => unimplemented!("could not fetch directory page"),
-        };
+    pub async fn remove(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
+        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get_page_id(bucket_index);
-        let bucket_page = if bucket_page_id == 0 {
-            return false;
-        } else {
-            match self.pm.fetch_page(bucket_page_id).await {
-                Some(p) => p,
-                None => unimplemented!("cound not fetch bucket page"),
-            }
+        let bucket_page = match bucket_page_id {
+            0 => return Ok(false),
+            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
         let mut bucket_page_w = bucket_page.write().await;
         let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
@@ -153,26 +139,19 @@ where
         self.pm.unpin_page(dir_page_r.id).await;
         self.pm.unpin_page(bucket_page_w.id).await;
 
-        ret
+        Ok(ret)
     }
 
-    pub async fn get(&self, k: &K) -> Vec<V> {
-        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
-            Some(p) => p,
-            None => unimplemented!("could not fetch directory page"),
-        };
+    pub async fn get(&self, k: &K) -> ExtendibleResult<Vec<V>> {
+        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get_page_id(bucket_index);
-        let bucket_page = if bucket_page_id == 0 {
-            return vec![];
-        } else {
-            match self.pm.fetch_page(bucket_page_id).await {
-                Some(p) => p,
-                None => unimplemented!("cound not fetch bucket page"),
-            }
+        let bucket_page = match bucket_page_id {
+            0 => return Ok(vec![]),
+            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
         let bucket_page_w = bucket_page.read().await;
@@ -181,18 +160,15 @@ where
         self.pm.unpin_page(dir_page_r.id).await;
         self.pm.unpin_page(bucket_page_w.id).await;
 
-        bucket.find(k)
+        Ok(bucket.find(k))
     }
 
-    pub async fn get_num_buckets(&self) -> u32 {
-        let dir_page = match self.pm.fetch_page(self.dir_page_id).await {
-            Some(p) => p,
-            None => unimplemented!("could not fetch directory page"),
-        };
+    pub async fn get_num_buckets(&self) -> ExtendibleResult<u32> {
+        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
-        1 << dir.get_global_depth()
+        Ok(1 << dir.get_global_depth())
     }
 
     fn hash(k: &K) -> usize {
@@ -233,19 +209,19 @@ mod test {
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
-        ht.insert(&0, &1).await;
-        ht.insert(&2, &3).await;
-        ht.insert(&4, &5).await;
+        ht.insert(&0, &1).await.unwrap();
+        ht.insert(&2, &3).await.unwrap();
+        ht.insert(&4, &5).await.unwrap();
 
-        let r1 = ht.get(&0).await;
-        let r2 = ht.get(&2).await;
-        let r3 = ht.get(&4).await;
+        let r1 = ht.get(&0).await.unwrap();
+        let r2 = ht.get(&2).await.unwrap();
+        let r3 = ht.get(&4).await.unwrap();
 
         assert!(r1[0] == 1);
         assert!(r2[0] == 3);
         assert!(r3[0] == 5);
 
-        ht.remove(&4, &5).await;
+        ht.remove(&4, &5).await.unwrap();
 
         pm.flush_all_pages().await;
 
@@ -256,9 +232,9 @@ mod test {
         let ht: ExtendibleHashTable<i32, i32, 8, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
-        let r1 = ht.get(&0).await;
-        let r2 = ht.get(&2).await;
-        let r3 = ht.get(&4).await;
+        let r1 = ht.get(&0).await.unwrap();
+        let r2 = ht.get(&2).await.unwrap();
+        let r3 = ht.get(&4).await.unwrap();
 
         assert!(r1[0] == 1);
         assert!(r2[0] == 3);
@@ -279,19 +255,19 @@ mod test {
         let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
-        assert!(ht.get_num_buckets().await == 1);
+        assert!(ht.get_num_buckets().await.unwrap() == 1);
 
         // Global depth should be 1 after this
-        ht.insert(&0, &1).await;
-        ht.insert(&2, &2).await;
-        ht.insert(&0, &3).await;
-        ht.insert(&2, &4).await;
-        ht.insert(&0, &5).await;
-        ht.insert(&2, &6).await;
-        ht.insert(&0, &7).await;
-        ht.insert(&2, &8).await;
+        ht.insert(&0, &1).await.unwrap();
+        ht.insert(&2, &2).await.unwrap();
+        ht.insert(&0, &3).await.unwrap();
+        ht.insert(&2, &4).await.unwrap();
+        ht.insert(&0, &5).await.unwrap();
+        ht.insert(&2, &6).await.unwrap();
+        ht.insert(&0, &7).await.unwrap();
+        ht.insert(&2, &8).await.unwrap();
 
-        assert!(ht.get_num_buckets().await == 2);
+        assert!(ht.get_num_buckets().await.unwrap() == 2);
 
         let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
         let dir_page_w = dir_page.write().await;
