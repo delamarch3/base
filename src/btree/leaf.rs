@@ -4,7 +4,7 @@ use tokio::sync::RwLockWriteGuard;
 
 use crate::{
     btree::{BTreeHeader, BTreeNodeType},
-    get_bytes, get_u32,
+    get_bytes, get_i32,
     page::{PageId, PageInner, PAGE_SIZE},
     pair::Pair,
     put_bytes,
@@ -24,7 +24,7 @@ where
 {
     pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let header = BTreeHeader::new(data);
-        let next_page_id = get_u32!(data, BTreeHeader::SIZE);
+        let next_page_id = get_i32!(data, BTreeHeader::SIZE);
 
         let k_size = size_of::<K>();
         let v_size = size_of::<RelationID>();

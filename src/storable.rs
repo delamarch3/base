@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use bytes::BufMut;
 
-use crate::{get_u32, get_u64, put_bytes, table_page::RelationID};
+use crate::{get_i32, get_u64, put_bytes, table_page::RelationID};
 
 pub trait Storable: std::fmt::Debug {
     const SIZE: usize;
@@ -48,7 +48,7 @@ impl Storable for RelationID {
 
     fn into_bytes(self) -> Self::ByteArray {
         let mut bytes = Vec::with_capacity(Self::SIZE);
-        bytes.put_u32(self.0);
+        bytes.put_i32(self.0);
         bytes.put_u64(self.1);
 
         bytes.try_into().unwrap()
@@ -57,7 +57,7 @@ impl Storable for RelationID {
     fn from_bytes(bytes: &[u8]) -> Self {
         assert!(bytes.len() >= Self::SIZE);
 
-        let page_id = get_u32!(bytes, 0);
+        let page_id = get_i32!(bytes, 0);
         let rel_id = get_u64!(bytes, 4);
 
         (page_id, rel_id)

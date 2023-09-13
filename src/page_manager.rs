@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU32, Ordering::*},
+        atomic::{AtomicI32, AtomicU32, Ordering::*},
         Arc,
     },
 };
@@ -89,7 +89,7 @@ struct PageCacheInner<const SIZE: usize> {
     page_table: RwLock<HashMap<PageId, FrameId>>,
     free: Mutex<FreeList<SIZE>>,
     disk: Disk,
-    next_page_id: AtomicU32,
+    next_page_id: AtomicI32,
     replacer: Mutex<LRUKReplacer>,
 }
 
@@ -99,7 +99,7 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
         let page_table = RwLock::new(HashMap::new());
         let free = Mutex::new(FreeList::new());
         let replacer = Mutex::new(replacer);
-        let next_page_id = AtomicU32::new(next_page_id);
+        let next_page_id = AtomicI32::new(next_page_id);
 
         Self {
             pages,
@@ -116,36 +116,9 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
     }
 
     pub async fn new_page<'a>(&self) -> Option<&Page> {
-        let i = match self.free.lock().await.pop() {
-            Some(i) => i,
-            None => {
-                let Some(i) = self.replacer.lock().await.evict() else { return None };
-
-                let page_r = self.pages[i].read().await;
-
-                self.disk.write_page(page_r.id, &page_r.data);
-                self.page_table.write().await.remove(&page_r.id);
-
-                i
-            }
-        };
-
-        self.replacer
-            .lock()
-            .await
-            .record_access(i, &AccessType::Get);
-
         let page_id = self.allocate_page();
-        let page = &self.pages[i];
-        let mut page_w = page.write().await;
-        self.disk.write_page(page_id, &page_w.data);
 
-        page_w.reset();
-        page_w.id = page_id;
-
-        self.page_table.write().await.insert(page_id, i);
-
-        Some(&self.pages[i])
+        self.try_get_page(page_id).await
     }
 
     pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<&Page> {
@@ -155,43 +128,32 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
                 .await
                 .record_access(*i, &AccessType::Get);
 
+            // TODO: move pin to replacer
             self.pages[*i].write().await.pin += 1;
 
             return Some(&self.pages[*i]);
         };
 
-        // // TODO: avoid attempt to acquire lock on empty free list
-        // let mut replacer = self.replacer.lock().await;
-        // let i = match self.free.lock().await.pop() {
-        //     Some(i) => i,
-        //     None => {
-        //         let Some(i) = replacer.evict() else { return None };
-        //         i
-        //     }
-        // };
+        self.try_get_page(page_id).await
+    }
 
-        if let Some(i) = self.free.lock().await.pop() {
-            let mut page_w = self.pages[i].write().await;
-            self.replacer
-                .lock()
-                .await
-                .record_access(i, &AccessType::Get);
-            let data = self.disk.read_page(page_id).expect("Couldn't read page");
-            page_w.reset();
-            page_w.id = page_id;
-            page_w.data = data;
-
-            return Some(&self.pages[i]);
+    async fn try_get_page(&self, page_id: PageId) -> Option<&Page> {
+        // TODO: avoid attempt to acquire lock on empty free list
+        let mut replacer = self.replacer.lock().await;
+        let i = match self.free.lock().await.pop() {
+            Some(i) => i,
+            None => replacer.evict()?,
         };
 
-        let mut replacer = self.replacer.lock().await;
-        let Some(i) = replacer.evict() else { return None };
         let mut page_w = self.pages[i].write().await;
         replacer.remove(i);
         replacer.record_access(i, &AccessType::Get);
 
         self.disk.write_page(page_w.id, &page_w.data);
-        self.page_table.write().await.remove(&page_w.id);
+
+        let mut page_table = self.page_table.write().await;
+        page_table.remove(&page_w.id);
+        page_table.insert(page_id, i);
 
         let data = self.disk.read_page(page_id).expect("Couldn't read page");
         page_w.reset();

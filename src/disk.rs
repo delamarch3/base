@@ -34,8 +34,11 @@ impl Disk {
         Ok(buf)
     }
 
-    pub fn write_page(&self, page_id: PageId, data: &[u8]) {
-        assert!(data.len() == PAGE_SIZE);
+    pub fn write_page(&self, page_id: PageId, data: &[u8; PAGE_SIZE]) {
+        if page_id < 0 {
+            eprintln!("warn: attempt to write invalid page id");
+            return;
+        }
 
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();

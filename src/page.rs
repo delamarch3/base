@@ -15,6 +15,13 @@ macro_rules! get_u32 {
 }
 
 #[macro_export]
+macro_rules! get_i32 {
+    ($src:expr, $o:expr) => {
+        i32::from_be_bytes($src[$o as usize..$o as usize + 4].try_into().unwrap())
+    };
+}
+
+#[macro_export]
 macro_rules! get_bytes {
     ($src:expr, $o:expr, $l:expr) => {
         &$src[$o as usize..$o as usize + $l as usize]
@@ -52,7 +59,7 @@ macro_rules! byte_array {
 
 pub const PAGE_SIZE: usize = 4 * 1024;
 
-pub type PageId = u32;
+pub type PageId = i32;
 
 pub struct Page(RwLock<PageInner>);
 
@@ -84,7 +91,7 @@ pub struct PageInner {
 impl Default for PageInner {
     fn default() -> Self {
         Self {
-            id: 0,
+            id: -1,
             pin: 0,
             dirty: false,
             data: [0; PAGE_SIZE],

@@ -3,7 +3,7 @@ use std::mem::size_of;
 use tokio::sync::RwLockWriteGuard;
 
 use crate::{
-    copy_bytes, get_u32,
+    copy_bytes, get_i32, get_u32,
     page::{PageId, PageInner, PAGE_SIZE},
     put_bytes,
 };
@@ -67,13 +67,13 @@ impl Directory {
     }
 
     pub fn get_page_id(&self, i: usize) -> PageId {
-        get_u32!(self.bucket_page_ids, i * size_of::<u32>())
+        get_i32!(self.bucket_page_ids, i * size_of::<u32>())
     }
 
     pub fn set_bucket_page_id(&mut self, i: usize, id: PageId) {
         put_bytes!(
             self.bucket_page_ids,
-            u32::to_be_bytes(id),
+            i32::to_be_bytes(id),
             i * size_of::<u32>(),
             size_of::<u32>()
         );
