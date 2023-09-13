@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    btree::leaf::LeafNode, page::PageId, page_manager::PageCache, storable::Storable,
+    btree::leaf::LeafNode, page::PageId, page_cache::PageCache, storable::Storable,
     table_page::RelationID,
 };
 

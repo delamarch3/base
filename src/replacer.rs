@@ -1,6 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use crate::page_manager::FrameId;
+use crate::page_cache::FrameId;
 
 struct LRUKNode {
     i: FrameId,

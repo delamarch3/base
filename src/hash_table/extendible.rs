@@ -8,7 +8,7 @@ use crate::{
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
     page::PageId,
-    page_manager::PageCache,
+    page_cache::PageCache,
     storable::Storable,
 };
 
@@ -79,11 +79,11 @@ where
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
             let page0 = self.pm.new_page().await.ok_or(Error)?;
-            let page0_w = page0.write().await;
+            let mut page0_w = page0.write().await;
             let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
 
             let page1 = self.pm.new_page().await.ok_or(Error)?;
-            let page1_w = page1.write().await;
+            let mut page1_w = page1.write().await;
             let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
             let bit = dir.get_local_high_bit(bucket_index);
@@ -107,6 +107,11 @@ where
             }
 
             dir.write_data(&mut dir_page_w);
+            bucket0.write_data(&mut page0_w);
+            bucket0.write_data(&mut page1_w);
+
+            self.pm.unpin_page(page0_w.id).await;
+            self.pm.unpin_page(page1_w.id).await;
 
             // TODO: mark original page on disk as ready to be allocated
         }
@@ -191,7 +196,7 @@ mod test {
         disk::Disk,
         hash_table::extendible::ExtendibleHashTable,
         hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
-        page_manager::PageCache,
+        page_cache::PageCache,
         replacer::LRUKReplacer,
         test::CleanUp,
     };

@@ -189,7 +189,7 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
 mod test {
     use std::io;
 
-    use crate::{disk::Disk, page_manager::PageCache, replacer::LRUKReplacer, test::CleanUp};
+    use crate::{disk::Disk, page_cache::PageCache, replacer::LRUKReplacer, test::CleanUp};
 
     #[tokio::test]
     async fn test_pm_replacer() -> io::Result<()> {
