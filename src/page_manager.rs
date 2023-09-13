@@ -174,10 +174,6 @@ impl<const SIZE: usize> PageCacheInner<SIZE> {
 
         let mut page_w = self.pages[*i].write().await;
 
-        let test = [0; 1024 * 4];
-        if page_w.data == test {
-            eprintln!("writing empty page");
-        }
         self.disk.write_page(page_w.id, &page_w.data);
         page_w.dirty = false;
     }
