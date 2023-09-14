@@ -7,8 +7,8 @@ use crate::{
 
 use super::{BTreeHeader, BTreeNodeType};
 
-pub struct BTree<K, const POOL_SIZE: usize> {
-    pm: PageCache<POOL_SIZE>,
+pub struct BTree<K> {
+    pm: PageCache,
     root_page_id: PageId,
     _data: PhantomData<K>,
 
@@ -18,11 +18,11 @@ pub struct BTree<K, const POOL_SIZE: usize> {
     leaf_size: u32,
 }
 
-impl<const POOL_SIZE: usize, K> BTree<K, POOL_SIZE>
+impl<K> BTree<K>
 where
     K: Storable + Ord + Copy,
 {
-    pub fn new(pm: PageCache<POOL_SIZE>, root_page_id: PageId, order: u32, leaf_size: u32) -> Self {
+    pub fn new(pm: PageCache, root_page_id: PageId, order: u32, leaf_size: u32) -> Self {
         Self {
             pm,
             root_page_id,

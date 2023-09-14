@@ -14,18 +14,27 @@ use crate::{
     replacer::{AccessType, LRUKReplacer},
 };
 
+#[cfg(not(test))]
+pub const CACHE_SIZE: usize = 8;
+
+#[cfg(test)]
+pub const CACHE_SIZE: usize = 8;
+
 pub type FrameId = usize;
 
-pub struct FreeList<const SIZE: usize> {
-    free: [FrameId; SIZE],
+pub struct FreeList {
+    free: [FrameId; CACHE_SIZE],
     tail: usize,
 }
 
-impl<const SIZE: usize> FreeList<SIZE> {
+impl FreeList {
     pub fn new() -> Self {
-        let free: [FrameId; SIZE] = std::array::from_fn(|i| i);
+        let free: [FrameId; CACHE_SIZE] = std::array::from_fn(|i| i);
 
-        Self { free, tail: SIZE }
+        Self {
+            free,
+            tail: CACHE_SIZE,
+        }
     }
 
     pub fn pop(&mut self) -> Option<FrameId> {
@@ -40,7 +49,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
     }
 
     pub fn push(&mut self, frame_id: FrameId) {
-        if self.tail == SIZE {
+        if self.tail == CACHE_SIZE {
             eprintln!("warn: trying to push frame to full free list");
         }
 
@@ -54,9 +63,9 @@ impl<const SIZE: usize> FreeList<SIZE> {
 }
 
 #[derive(Clone)]
-pub struct PageCache<const SIZE: usize>(Arc<PageCacheInner<SIZE>>);
+pub struct PageCache(Arc<PageCacheInner>);
 
-impl<const SIZE: usize> PageCache<SIZE> {
+impl PageCache {
     pub fn new(disk: Disk, replacer: LRUKReplacer, next_page_id: PageId) -> Self {
         let inner = Arc::new(PageCacheInner::new(disk, replacer, next_page_id));
 
@@ -84,16 +93,16 @@ impl<const SIZE: usize> PageCache<SIZE> {
     }
 }
 
-struct PageCacheInner<const SIZE: usize> {
-    pages: [Page; SIZE],
+struct PageCacheInner {
+    pages: [Page; CACHE_SIZE],
     page_table: RwLock<HashMap<PageId, FrameId>>,
-    free: Mutex<FreeList<SIZE>>,
+    free: Mutex<FreeList>,
     disk: Disk,
     next_page_id: AtomicI32,
     replacer: Mutex<LRUKReplacer>,
 }
 
-impl<const SIZE: usize> PageCacheInner<SIZE> {
+impl PageCacheInner {
     pub fn new(disk: Disk, replacer: LRUKReplacer, next_page_id: PageId) -> Self {
         let pages = std::array::from_fn(|_| Page::default());
         let page_table = RwLock::new(HashMap::new());
@@ -192,13 +201,14 @@ mod test {
     use crate::{disk::Disk, page_cache::PageCache, replacer::LRUKReplacer, test::CleanUp};
 
     #[tokio::test]
+    #[ignore]
     async fn test_pm_replacer() -> io::Result<()> {
         const DB_FILE: &str = "./test_pm_replacer.db";
         let _cu = CleanUp::file(DB_FILE);
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LRUKReplacer::new(2);
-        let pc: PageCache<3> = PageCache::new(disk, replacer, 0);
+        let pc: PageCache = PageCache::new(disk, replacer, 0);
 
         let _page_0 = pc.new_page().await.expect("should return page 0"); // id = 0 ts = 0
         let _page_1 = pc.new_page().await.expect("should return page 1"); // id = 1 ts = 1

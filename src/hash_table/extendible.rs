@@ -20,24 +20,18 @@ pub enum ExtendibleError {
 pub type ExtendibleResult<T> = Result<T, ExtendibleError>;
 use ExtendibleError::*;
 
-pub struct ExtendibleHashTable<
-    K,
-    V,
-    const POOL_SIZE: usize,
-    const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE,
-> {
+pub struct ExtendibleHashTable<K, V, const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
     dir_page_id: PageId,
-    pm: PageCache<POOL_SIZE>,
+    pm: PageCache,
     _data: PhantomData<(K, V)>,
 }
 
-impl<const POOL_SIZE: usize, const BUCKET_BIT_SIZE: usize, K, V>
-    ExtendibleHashTable<K, V, POOL_SIZE, BUCKET_BIT_SIZE>
+impl<const BUCKET_BIT_SIZE: usize, K, V> ExtendibleHashTable<K, V, BUCKET_BIT_SIZE>
 where
     K: Storable + Copy + Eq + Hash,
     V: Storable + Copy + Eq,
 {
-    pub fn new(dir_page_id: PageId, pm: PageCache<POOL_SIZE>) -> Self {
+    pub fn new(dir_page_id: PageId, pm: PageCache) -> Self {
         Self {
             dir_page_id,
             pm,
@@ -209,9 +203,9 @@ mod test {
         let replacer = LRUKReplacer::new(2);
         let dir_page_id = 0;
         const POOL_SIZE: usize = 8;
-        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, dir_page_id);
+        let pm = PageCache::new(disk, replacer, dir_page_id);
         let _dir_page = pm.new_page().await;
-        let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, DEFAULT_BIT_SIZE> =
+        let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         ht.insert(&0, &1).await.unwrap();
@@ -233,8 +227,8 @@ mod test {
         // Make sure it reads back ok
         let disk = Disk::new(file).await.expect("could not open db file");
         let replacer = LRUKReplacer::new(2);
-        let pm = PageCache::<8>::new(disk, replacer, dir_page_id + 1);
-        let ht: ExtendibleHashTable<i32, i32, 8, DEFAULT_BIT_SIZE> =
+        let pm = PageCache::new(disk, replacer, dir_page_id + 1);
+        let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         let r1 = ht.get(&0).await.unwrap();
@@ -255,9 +249,9 @@ mod test {
         let dir_page_id = 0;
         const POOL_SIZE: usize = 8;
         const BIT_SIZE: usize = 1; // 8 slots
-        let pm = PageCache::<POOL_SIZE>::new(disk, replacer, dir_page_id);
+        let pm = PageCache::new(disk, replacer, dir_page_id);
         let _dir_page = pm.new_page().await;
-        let ht: ExtendibleHashTable<i32, i32, POOL_SIZE, BIT_SIZE> =
+        let ht: ExtendibleHashTable<i32, i32, BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         assert!(ht.get_num_buckets().await.unwrap() == 1);
