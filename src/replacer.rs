@@ -191,22 +191,14 @@ impl LRUKHandle {
         Self { tx }
     }
 
-    pub async fn evict(&self) -> Option<FrameId> {
+    pub fn evict(&self) -> oneshot::Receiver<Option<FrameId>> {
         let (tx, rx) = oneshot::channel();
 
         if let Err(e) = self.tx.send(LRUKMessage::Evict { reply: tx }) {
             eprintln!("replacer channel error: {e}");
         }
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        match rx.await {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("replacer channel error: {e}");
-                None
-            }
-        }
+        rx
     }
 
     pub fn record_access(&self, i: FrameId, a: AccessType) {

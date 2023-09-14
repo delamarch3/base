@@ -158,7 +158,10 @@ impl PageCacheInner {
         // TODO: avoid attempt to acquire lock on empty free list
         let i = match self.free.lock().await.pop() {
             Some(i) => i,
-            None => self.replacer.evict().await?,
+            None => match self.replacer.evict().await {
+                Ok(i) => i?,
+                Err(_e) => todo!(),
+            },
         };
 
         let mut page_w = self.pages[i].write().await;
