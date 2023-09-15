@@ -1,10 +1,10 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    time::Duration,
-};
+use std::collections::{hash_map::Entry, HashMap};
+
+use tokio::sync::{mpsc, oneshot};
 
 use crate::page_cache::FrameId;
 
+#[derive(Debug)]
 struct LRUKNode {
     i: FrameId,
     history: Vec<u64>,
@@ -33,7 +33,7 @@ impl LRUKNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LRUKReplacer {
     nodes: HashMap<FrameId, LRUKNode>,
     current_ts: u64,
@@ -131,11 +131,7 @@ impl LRUKReplacer {
     }
 }
 
-use std::sync::mpsc;
-use tokio::sync::oneshot;
-
 pub enum LRUKMessage {
-    // Evict { reply: Oneshot<Option<FrameId>> },
     Evict {
         reply: oneshot::Sender<Option<FrameId>>,
     },
@@ -157,8 +153,8 @@ impl LRUKActor {
         Self { inner, rx }
     }
 
-    pub fn run(&mut self) {
-        while let Ok(m) = self.rx.recv() {
+    pub async fn run(&mut self) {
+        while let Some(m) = self.rx.recv().await {
             match m {
                 LRUKMessage::Evict { reply } => {
                     let ret = self.inner.evict();
@@ -183,44 +179,44 @@ pub struct LRUKHandle {
 
 impl LRUKHandle {
     pub fn new(k: usize) -> Self {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::channel(256);
 
         let mut replacer = LRUKActor::new(k, rx);
-        let _jh = tokio::spawn(async move { replacer.run() });
+        let _jh = tokio::spawn(async move { replacer.run().await });
 
         Self { tx }
     }
 
-    pub fn evict(&self) -> oneshot::Receiver<Option<FrameId>> {
+    pub async fn evict(&self) -> Option<FrameId> {
         let (tx, rx) = oneshot::channel();
 
-        if let Err(e) = self.tx.send(LRUKMessage::Evict { reply: tx }) {
+        if let Err(e) = self.tx.send(LRUKMessage::Evict { reply: tx }).await {
             eprintln!("replacer channel error: {e}");
         }
 
-        rx
+        rx.await.expect("replacer has been killed")
     }
 
-    pub fn record_access(&self, i: FrameId, a: AccessType) {
-        if let Err(e) = self.tx.send(LRUKMessage::RecordAccess(i, a)) {
+    pub async fn record_access(&self, i: FrameId, a: AccessType) {
+        if let Err(e) = self.tx.send(LRUKMessage::RecordAccess(i, a)).await {
             eprintln!("replacer channel error: {e}");
         }
     }
 
-    pub fn pin(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Pin(i)) {
+    pub async fn pin(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Pin(i)).await {
             eprintln!("replacer channel error: {e}");
         }
     }
 
     pub fn unpin(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Unpin(i)) {
+        if let Err(e) = self.tx.try_send(LRUKMessage::Unpin(i)) {
             eprintln!("replacer channel error: {e}");
         }
     }
 
-    pub fn remove(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Remove(i)) {
+    pub async fn remove(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Remove(i)).await {
             eprintln!("replacer channel error: {e}");
         }
     }

@@ -64,9 +64,14 @@ pub struct Pin<'a> {
     replacer: LRUKHandle,
 }
 
-impl<'a> Drop for Pin<'a> {
+impl Drop for Pin<'_> {
     fn drop(&mut self) {
-        self.replacer.unpin(self.i);
+        let r = self.replacer.clone();
+        let i = self.i;
+
+        // Using tx.try_send might become problematic but this works for now
+        // tokio::spawn(async move { r.unpin(i) });
+        r.unpin(i);
     }
 }
 
@@ -145,8 +150,8 @@ impl PageCacheInner {
 
     pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<Pin> {
         if let Some(i) = self.page_table.read().await.get(&page_id) {
-            self.replacer.record_access(*i, AccessType::Get);
-            self.replacer.pin(*i);
+            self.replacer.record_access(*i, AccessType::Get).await;
+            self.replacer.pin(*i).await;
 
             return Some(Pin::new(&self.pages[*i], *i, self.replacer.clone()));
         };
@@ -158,16 +163,13 @@ impl PageCacheInner {
         // TODO: avoid attempt to acquire lock on empty free list
         let i = match self.free.lock().await.pop() {
             Some(i) => i,
-            None => match self.replacer.evict().await {
-                Ok(i) => i?,
-                Err(_e) => todo!(),
-            },
+            None => self.replacer.evict().await?,
         };
 
         let mut page_w = self.pages[i].write().await;
-        self.replacer.remove(i);
-        self.replacer.record_access(i, AccessType::Get);
-        self.replacer.pin(i);
+        self.replacer.remove(i).await;
+        self.replacer.record_access(i, AccessType::Get).await;
+        self.replacer.pin(i).await;
 
         if page_w.dirty {
             self.disk.write_page(page_w.id, &page_w.data);
@@ -225,14 +227,19 @@ mod test {
         let pc: PageCache = PageCache::new(disk, replacer, 0);
 
         {
-            let _page_0 = pc.new_page().await.expect("should return page 0"); // id = 0 ts = 0
-            let _page_1 = pc.new_page().await.expect("should return page 1"); // id = 1 ts = 1
-            let _page_2 = pc.new_page().await.expect("should return page 2"); // id = 2 ts = 2
+            let _p0 = pc.new_page().await.expect("should return page 0"); // id = 0 ts = 0
+            let _p1 = pc.new_page().await.expect("should return page 1"); // id = 1 ts = 1
+            let _p2 = pc.new_page().await.expect("should return page 2"); // id = 2 ts = 2
+
+            let _p3 = pc.new_page().await.expect("should return page 3");
+            let _p4 = pc.new_page().await.expect("should return page 4");
+            let _p5 = pc.new_page().await.expect("should return page 5");
+            let _p6 = pc.new_page().await.expect("should return page 6");
+            let _p7 = pc.new_page().await.expect("should return page 7");
 
             let inner = pc.0.clone();
             let page_table = inner.page_table.read().await;
             assert!(inner.free.lock().await.is_empty());
-            assert!(page_table.len() == 3);
             assert!(page_table.contains_key(&2));
             assert!(page_table.contains_key(&1));
             assert!(page_table.contains_key(&0));
@@ -256,25 +263,10 @@ mod test {
         // Page 1 should have a k distance of 3
         // Page 0 should have a k distance of 1
 
-        // Unpin pages so they can be evicted:
-        // pc.unpin_page(0).await;
-        // pc.unpin_page(0).await;
-        // pc.unpin_page(0).await;
-        // pc.unpin_page(0).await;
-        // pc.unpin_page(0).await;
-
-        // pc.unpin_page(1).await;
-        // pc.unpin_page(1).await;
-        // pc.unpin_page(1).await;
-
-        // pc.unpin_page(2).await;
-        // pc.unpin_page(2).await;
-
         let _page_3 = pc.new_page().await.expect("should return page 3");
 
         let inner = &pc.0;
         let page_table = inner.page_table.read().await;
-        assert!(page_table.len() == 3);
         assert!(page_table.contains_key(&3));
         assert!(page_table.contains_key(&1));
         assert!(page_table.contains_key(&0));
