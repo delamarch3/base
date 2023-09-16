@@ -1,7 +1,10 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use tokio::sync::{mpsc, oneshot};
+
 use crate::page_cache::FrameId;
 
+#[derive(Debug)]
 struct LRUKNode {
     i: FrameId,
     history: Vec<u64>,
@@ -30,7 +33,7 @@ impl LRUKNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LRUKReplacer {
     nodes: HashMap<FrameId, LRUKNode>,
     current_ts: u64,
@@ -50,8 +53,8 @@ impl LRUKReplacer {
         }
     }
 
-    pub fn evict(&mut self) -> Option<usize> {
-        let mut max: (usize, u64) = (0, 0);
+    pub fn evict(&mut self) -> Option<FrameId> {
+        let mut max: (FrameId, u64) = (0, 0);
         let mut single_access: Vec<&LRUKNode> = Vec::new();
         for (id, node) in &self.nodes {
             if node.pin != 0 {
@@ -87,7 +90,7 @@ impl LRUKReplacer {
         Some(earliest.0)
     }
 
-    pub fn record_access(&mut self, i: FrameId, _access_type: &AccessType) {
+    pub fn record_access(&mut self, i: FrameId, _access_type: AccessType) {
         match self.nodes.entry(i) {
             Entry::Occupied(mut node) => {
                 node.get_mut().history.push(self.current_ts);
@@ -124,6 +127,97 @@ impl LRUKReplacer {
                     {i}"
                 );
             }
+        }
+    }
+}
+
+pub enum LRUKMessage {
+    Evict {
+        reply: oneshot::Sender<Option<FrameId>>,
+    },
+    RecordAccess(FrameId, AccessType),
+    Pin(FrameId),
+    Unpin(FrameId),
+    Remove(FrameId),
+}
+
+pub struct LRUKActor {
+    inner: LRUKReplacer,
+    rx: mpsc::Receiver<LRUKMessage>,
+}
+
+impl LRUKActor {
+    pub fn new(k: usize, rx: mpsc::Receiver<LRUKMessage>) -> Self {
+        let inner = LRUKReplacer::new(k);
+
+        Self { inner, rx }
+    }
+
+    pub async fn run(&mut self) {
+        while let Some(m) = self.rx.recv().await {
+            match m {
+                LRUKMessage::Evict { reply } => {
+                    let ret = self.inner.evict();
+
+                    if let Err(_) = reply.send(ret) {
+                        eprintln!("replacer channel error: could not reply to evict message");
+                    }
+                }
+                LRUKMessage::RecordAccess(i, a) => self.inner.record_access(i, a),
+                LRUKMessage::Pin(i) => self.inner.pin(i),
+                LRUKMessage::Unpin(i) => self.inner.unpin(i),
+                LRUKMessage::Remove(i) => self.inner.remove(i),
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct LRUKHandle {
+    tx: mpsc::Sender<LRUKMessage>,
+}
+
+impl LRUKHandle {
+    pub fn new(k: usize) -> Self {
+        let (tx, rx) = mpsc::channel(256);
+
+        let mut replacer = LRUKActor::new(k, rx);
+        let _jh = tokio::spawn(async move { replacer.run().await });
+
+        Self { tx }
+    }
+
+    pub async fn evict(&self) -> Option<FrameId> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Err(e) = self.tx.send(LRUKMessage::Evict { reply: tx }).await {
+            eprintln!("replacer channel error: {e}");
+        }
+
+        rx.await.expect("replacer has been killed")
+    }
+
+    pub async fn record_access(&self, i: FrameId, a: AccessType) {
+        if let Err(e) = self.tx.send(LRUKMessage::RecordAccess(i, a)).await {
+            eprintln!("replacer channel error: {e}");
+        }
+    }
+
+    pub async fn pin(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Pin(i)).await {
+            eprintln!("replacer channel error: {e}");
+        }
+    }
+
+    pub async fn unpin(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Unpin(i)).await {
+            eprintln!("replacer channel error: {e}");
+        }
+    }
+
+    pub async fn remove(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Remove(i)).await {
+            eprintln!("replacer channel error: {e}");
         }
     }
 }

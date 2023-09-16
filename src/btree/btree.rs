@@ -38,7 +38,7 @@ where
             Some(p) => p,
             None => unimplemented!("could not fetch btree root page"),
         };
-        let root_page_w = root_page.write().await;
+        let root_page_w = root_page.page.write().await;
         let header = BTreeHeader::new(&root_page_w.data);
         // let mut root: InternalNode<K, PAGE_SIZE> = InternalNode::new(&root_page_w.data);
 
@@ -51,7 +51,7 @@ where
                 Some(p) => p,
                 None => unimplemented!("could not create a new leaf page"),
             };
-            let new_leaf_page_w = new_leaf_page.write().await;
+            let new_leaf_page_w = new_leaf_page.page.write().await;
             let mut new_leaf: LeafNode<K> = LeafNode::new(&new_leaf_page_w.data);
             new_leaf.init(1, self.leaf_size);
 

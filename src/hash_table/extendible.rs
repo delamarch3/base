@@ -41,7 +41,7 @@ where
 
     pub async fn insert(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
         let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
-        let mut dir_page_w = dir_page.write().await;
+        let mut dir_page_w = dir_page.page.write().await;
         let mut dir = Directory::new(&dir_page_w.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
@@ -49,14 +49,14 @@ where
         let bucket_page = match bucket_page_id {
             0 => {
                 let p = self.pm.new_page().await.ok_or(Error)?;
-                dir.set_bucket_page_id(bucket_index, p.read().await.id);
+                dir.set_bucket_page_id(bucket_index, p.page.read().await.id);
                 dir.write_data(&mut dir_page_w);
                 p
             }
             _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
-        let mut bucket_page_w = bucket_page.write().await;
+        let mut bucket_page_w = bucket_page.page.write().await;
         let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
 
         bucket.insert(k, v);
@@ -73,11 +73,11 @@ where
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
             let page0 = self.pm.new_page().await.ok_or(Error)?;
-            let mut page0_w = page0.write().await;
+            let mut page0_w = page0.page.write().await;
             let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
 
             let page1 = self.pm.new_page().await.ok_or(Error)?;
-            let mut page1_w = page1.write().await;
+            let mut page1_w = page1.page.write().await;
             let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
             let bit = dir.get_local_high_bit(bucket_index);
@@ -104,21 +104,15 @@ where
             bucket0.write_data(&mut page0_w);
             bucket0.write_data(&mut page1_w);
 
-            self.pm.unpin_page(page0_w.id).await;
-            self.pm.unpin_page(page1_w.id).await;
-
             // TODO: mark original page on disk as ready to be allocated
         }
-
-        self.pm.unpin_page(dir_page_w.id).await;
-        self.pm.unpin_page(bucket_page_w.id).await;
 
         Ok(true)
     }
 
     pub async fn remove(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
         let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
-        let dir_page_r = dir_page.read().await;
+        let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
@@ -127,7 +121,7 @@ where
             0 => return Ok(false),
             _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
-        let mut bucket_page_w = bucket_page.write().await;
+        let mut bucket_page_w = bucket_page.page.write().await;
         let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
 
         let ret = bucket.remove(k, v);
@@ -135,15 +129,12 @@ where
 
         // TODO: attempt to merge if empty
 
-        self.pm.unpin_page(dir_page_r.id).await;
-        self.pm.unpin_page(bucket_page_w.id).await;
-
         Ok(ret)
     }
 
     pub async fn get(&self, k: &K) -> ExtendibleResult<Vec<V>> {
         let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
-        let dir_page_r = dir_page.read().await;
+        let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
@@ -153,18 +144,15 @@ where
             _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
-        let bucket_page_w = bucket_page.read().await;
+        let bucket_page_w = bucket_page.page.read().await;
         let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
-
-        self.pm.unpin_page(dir_page_r.id).await;
-        self.pm.unpin_page(bucket_page_w.id).await;
 
         Ok(bucket.find(k))
     }
 
     pub async fn get_num_buckets(&self) -> ExtendibleResult<u32> {
         let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
-        let dir_page_r = dir_page.read().await;
+        let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
         Ok(1 << dir.get_global_depth())
@@ -191,42 +179,45 @@ mod test {
         hash_table::extendible::ExtendibleHashTable,
         hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
         page_cache::PageCache,
-        replacer::LRUKReplacer,
+        replacer::LRUKHandle,
         test::CleanUp,
     };
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_extendible_hash_table() {
         let file = "test_extendible_hash_table.db";
-        let disk = Disk::new(file).await.expect("could not open db file");
         let _cu = CleanUp::file(file);
-        let replacer = LRUKReplacer::new(2);
         let dir_page_id = 0;
-        const POOL_SIZE: usize = 8;
-        let pm = PageCache::new(disk, replacer, dir_page_id);
-        let _dir_page = pm.new_page().await;
-        let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(dir_page_id, pm.clone());
 
-        ht.insert(&0, &1).await.unwrap();
-        ht.insert(&2, &3).await.unwrap();
-        ht.insert(&4, &5).await.unwrap();
+        {
+            let disk = Disk::new(file).await.expect("could not open db file");
+            let replacer = LRUKHandle::new(2);
+            const POOL_SIZE: usize = 8;
+            let pm = PageCache::new(disk, replacer, dir_page_id);
+            let _dir_page = pm.new_page().await;
+            let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
+                ExtendibleHashTable::new(dir_page_id, pm.clone());
 
-        let r1 = ht.get(&0).await.unwrap();
-        let r2 = ht.get(&2).await.unwrap();
-        let r3 = ht.get(&4).await.unwrap();
+            ht.insert(&0, &1).await.unwrap();
+            ht.insert(&2, &3).await.unwrap();
+            ht.insert(&4, &5).await.unwrap();
 
-        assert!(r1[0] == 1);
-        assert!(r2[0] == 3);
-        assert!(r3[0] == 5);
+            let r1 = ht.get(&0).await.unwrap();
+            let r2 = ht.get(&2).await.unwrap();
+            let r3 = ht.get(&4).await.unwrap();
 
-        ht.remove(&4, &5).await.unwrap();
+            assert!(r1[0] == 1);
+            assert!(r2[0] == 3);
+            assert!(r3[0] == 5);
 
-        pm.flush_all_pages().await;
+            ht.remove(&4, &5).await.unwrap();
+
+            pm.flush_all_pages().await;
+        }
 
         // Make sure it reads back ok
         let disk = Disk::new(file).await.expect("could not open db file");
-        let replacer = LRUKReplacer::new(2);
+        let replacer = LRUKHandle::new(2);
         let pm = PageCache::new(disk, replacer, dir_page_id + 1);
         let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
@@ -240,12 +231,13 @@ mod test {
         assert!(r3.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_split() {
         let file = "test_split.db";
         let disk = Disk::new(file).await.expect("could not open db file");
         let _cu = CleanUp::file(file);
-        let replacer = LRUKReplacer::new(2);
+        // let replacer = LRUKReplacer::new(2);
+        let replacer = LRUKHandle::new(2);
         let dir_page_id = 0;
         const POOL_SIZE: usize = 8;
         const BIT_SIZE: usize = 1; // 8 slots
@@ -269,7 +261,7 @@ mod test {
         assert!(ht.get_num_buckets().await.unwrap() == 2);
 
         let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
-        let dir_page_w = dir_page.write().await;
+        let dir_page_w = dir_page.page.write().await;
         let dir = Directory::new(&dir_page_w.data);
 
         assert!(dir.get_global_depth() == 1);
