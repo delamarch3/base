@@ -104,14 +104,8 @@ where
             bucket0.write_data(&mut page0_w);
             bucket0.write_data(&mut page1_w);
 
-            // self.pm.unpin_page(page0_w.id).await;
-            // self.pm.unpin_page(page1_w.id).await;
-
             // TODO: mark original page on disk as ready to be allocated
         }
-
-        // self.pm.unpin_page(dir_page_w.id).await;
-        // self.pm.unpin_page(bucket_page_w.id).await;
 
         Ok(true)
     }
@@ -135,9 +129,6 @@ where
 
         // TODO: attempt to merge if empty
 
-        // self.pm.unpin_page(dir_page_r.id).await;
-        // self.pm.unpin_page(bucket_page_w.id).await;
-
         Ok(ret)
     }
 
@@ -155,9 +146,6 @@ where
 
         let bucket_page_w = bucket_page.page.read().await;
         let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
-
-        // self.pm.unpin_page(dir_page_r.id).await;
-        // self.pm.unpin_page(bucket_page_w.id).await;
 
         Ok(bucket.find(k))
     }
