@@ -191,7 +191,6 @@ mod test {
 
         {
             let disk = Disk::new(file).await.expect("could not open db file");
-            // let replacer = LRUKReplacer::new(2);
             let replacer = LRUKHandle::new(2);
             const POOL_SIZE: usize = 8;
             let pm = PageCache::new(disk, replacer, dir_page_id);
@@ -218,7 +217,6 @@ mod test {
 
         // Make sure it reads back ok
         let disk = Disk::new(file).await.expect("could not open db file");
-        // let replacer = LRUKReplacer::new(2);
         let replacer = LRUKHandle::new(2);
         let pm = PageCache::new(disk, replacer, dir_page_id + 1);
         let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =

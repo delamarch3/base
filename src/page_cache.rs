@@ -211,7 +211,6 @@ mod test {
         let _cu = CleanUp::file(DB_FILE);
         let disk = Disk::new(DB_FILE).await?;
 
-        // let replacer = LRUKReplacer::new(2);
         let replacer = LRUKHandle::new(2);
         let pc: PageCache = PageCache::new(disk, replacer, 0);
 
