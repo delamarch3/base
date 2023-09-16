@@ -91,7 +91,7 @@ where
                 new_bucket.insert(&pair.a, &pair.b);
             }
 
-            for i in (Self::get_bucket_index(&k, &dir) & (bit - 1)
+            for i in (Self::get_bucket_index(k, &dir) & (bit - 1)
                 ..dir_page::DEFAULT_BUCKET_PAGE_IDS_SIZE)
                 .step_by(bit)
             {

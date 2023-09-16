@@ -1,4 +1,4 @@
-#[derive(PartialEq, Eq, Clone, Copy, PartialOrd)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Pair<A, B> {
     pub a: A,
     pub b: B,
@@ -17,6 +17,16 @@ where
 {
     fn eq(&self, other: &(A, B)) -> bool {
         self.a == other.0 && self.b == other.1
+    }
+}
+
+impl<A, B> PartialOrd for Pair<A, B>
+where
+    A: Ord,
+    B: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

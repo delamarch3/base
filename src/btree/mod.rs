@@ -13,9 +13,9 @@ pub enum BTreeNodeType {
     Leaf,
 }
 
-impl Into<u32> for BTreeNodeType {
-    fn into(self) -> u32 {
-        match self {
+impl From<BTreeNodeType> for u32 {
+    fn from(value: BTreeNodeType) -> Self {
+        match value {
             BTreeNodeType::Invalid => 0,
             BTreeNodeType::Internal => 1,
             BTreeNodeType::Leaf => 2,
@@ -23,12 +23,13 @@ impl Into<u32> for BTreeNodeType {
     }
 }
 
-impl Into<BTreeNodeType> for u32 {
-    fn into(self) -> BTreeNodeType {
-        match self {
+impl From<u32> for BTreeNodeType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => BTreeNodeType::Invalid,
             1 => BTreeNodeType::Internal,
             2 => BTreeNodeType::Leaf,
-            _ => BTreeNodeType::Invalid,
+            _ => unreachable!(),
         }
     }
 }
@@ -55,7 +56,8 @@ impl BTreeHeader {
     }
 
     pub fn write_data(&self, page: &mut [u8]) {
-        put_bytes!(page, Into::<u32>::into(self.t).to_be_bytes(), 0, 4);
+        let t: u32 = self.t.into();
+        put_bytes!(page, t.to_be_bytes(), 0, 4);
         put_bytes!(page, self.size.to_be_bytes(), 4, 8);
         put_bytes!(page, self.max_size.to_be_bytes(), 8, 12);
     }
@@ -70,7 +72,7 @@ impl BTreeHeader {
         self.t
     }
 
-    pub fn len(&self) -> u32 {
+    pub fn size(&self) -> u32 {
         self.size
     }
 }

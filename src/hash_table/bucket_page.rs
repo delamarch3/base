@@ -40,7 +40,7 @@ where
 
         let size = BIT_SIZE * 8;
         let mut pos = BIT_SIZE * 2;
-        for i in 0..size {
+        for (i, pair) in pairs.iter_mut().enumerate().take(size) {
             if !occupied.check(i) {
                 continue;
             }
@@ -53,7 +53,7 @@ where
             let key = K::from_bytes(k_bytes);
             let value = V::from_bytes(v_bytes);
 
-            pairs[i] = Some(Pair::new(key, value));
+            *pair = Some(Pair::new(key, value));
         }
 
         Self {
@@ -76,9 +76,9 @@ where
 
             if let Some(pair) = pair {
                 pair.a.write_to(&mut page.data, pos);
-                pos += pair.a.len();
+                pos += pair.a.size();
                 pair.b.write_to(&mut page.data, pos);
-                pos += pair.b.len();
+                pos += pair.b.size();
             }
         }
     }
@@ -142,10 +142,8 @@ where
 
     pub fn get_pairs(&self) -> Vec<Pair<K, V>> {
         let mut ret = Vec::new();
-        for pair in &self.pairs {
-            if let Some(pair) = pair {
-                ret.push(*pair);
-            }
+        for pair in self.pairs.iter().flatten() {
+            ret.push(*pair);
         }
 
         ret

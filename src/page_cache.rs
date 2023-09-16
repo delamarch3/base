@@ -23,8 +23,8 @@ pub struct FreeList {
     tail: usize,
 }
 
-impl FreeList {
-    pub fn new() -> Self {
+impl Default for FreeList {
+    fn default() -> Self {
         let free: [FrameId; CACHE_SIZE] = std::array::from_fn(|i| i);
 
         Self {
@@ -32,7 +32,9 @@ impl FreeList {
             tail: CACHE_SIZE,
         }
     }
+}
 
+impl FreeList {
     pub fn pop(&mut self) -> Option<FrameId> {
         if self.tail == 0 {
             return None;
@@ -120,7 +122,7 @@ impl PageCacheInner {
     pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Self {
         let pages = std::array::from_fn(|_| Page::default());
         let page_table = RwLock::new(HashMap::new());
-        let free = Mutex::new(FreeList::new());
+        let free = Mutex::new(FreeList::default());
         let next_page_id = AtomicI32::new(next_page_id);
 
         Self {

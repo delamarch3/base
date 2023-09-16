@@ -159,7 +159,7 @@ impl LRUKActor {
                 LRUKMessage::Evict { reply } => {
                     let ret = self.inner.evict();
 
-                    if let Err(_) = reply.send(ret) {
+                    if reply.send(ret).is_err() {
                         eprintln!("replacer channel error: could not reply to evict message");
                     }
                 }

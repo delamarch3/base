@@ -44,7 +44,7 @@ where
 
         // TODO: First insert, node will be leaf. Will essentially be linked list until correct
         // conditions met.
-        if header.len() == 0 {
+        if header.size() == 0 {
             // root.init(1, self.leaf_size);
 
             let new_leaf_page = match self.pm.fetch_page(self.root_page_id).await {

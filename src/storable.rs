@@ -12,7 +12,7 @@ pub trait Storable: std::fmt::Debug {
     fn from_bytes(bytes: &[u8]) -> Self;
     fn write_to(&self, dst: &mut [u8], pos: usize);
 
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         Self::SIZE
     }
 }

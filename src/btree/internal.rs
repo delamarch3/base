@@ -63,9 +63,9 @@ where
             }
 
             pair.a.write_to(&mut page.data, pos);
-            pos += pair.a.len();
+            pos += pair.a.size();
             pair.b.write_to(&mut page.data, pos);
-            pos += pair.b.len();
+            pos += pair.b.size();
         }
 
         page.dirty = true;
