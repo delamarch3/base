@@ -209,8 +209,8 @@ impl LRUKHandle {
         }
     }
 
-    pub fn unpin(&self, i: FrameId) {
-        if let Err(e) = self.tx.try_send(LRUKMessage::Unpin(i)) {
+    pub async fn unpin(&self, i: FrameId) {
+        if let Err(e) = self.tx.send(LRUKMessage::Unpin(i)).await {
             eprintln!("replacer channel error: {e}");
         }
     }

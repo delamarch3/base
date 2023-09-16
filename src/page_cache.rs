@@ -66,12 +66,11 @@ pub struct Pin<'a> {
 
 impl Drop for Pin<'_> {
     fn drop(&mut self) {
-        let r = self.replacer.clone();
-        let i = self.i;
-
-        // Using tx.try_send might become problematic but this works for now
-        // tokio::spawn(async move { r.unpin(i) });
-        r.unpin(i);
+        tokio::task::block_in_place(|| {
+            futures::executor::block_on(async {
+                self.replacer.unpin(self.i).await;
+            })
+        });
     }
 }
 
@@ -97,10 +96,6 @@ impl PageCache {
 
     pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<Pin> {
         self.0.fetch_page(page_id).await
-    }
-
-    pub async fn unpin_page(&self, page_id: PageId) {
-        self.0.unpin_page(page_id).await
     }
 
     pub async fn flush_page(&self, page_id: PageId) {
@@ -187,12 +182,6 @@ impl PageCacheInner {
         Some(Pin::new(&self.pages[i], i, self.replacer.clone()))
     }
 
-    pub async fn unpin_page(&self, page_id: PageId) {
-        let page_table = self.page_table.read().await;
-        let Some(i) = page_table.get(&page_id) else { return };
-        self.replacer.unpin(*i);
-    }
-
     pub async fn flush_page(&self, page_id: PageId) {
         let page_table = self.page_table.read().await;
         let Some(i) = page_table.get(&page_id) else { return };
@@ -216,7 +205,7 @@ mod test {
 
     use crate::{disk::Disk, page_cache::PageCache, replacer::LRUKHandle, test::CleanUp};
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_pm_replacer() -> io::Result<()> {
         const DB_FILE: &str = "./test_pm_replacer.db";
         let _cu = CleanUp::file(DB_FILE);

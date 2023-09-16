@@ -195,7 +195,7 @@ mod test {
         test::CleanUp,
     };
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_extendible_hash_table() {
         let file = "test_extendible_hash_table.db";
         let _cu = CleanUp::file(file);
@@ -245,7 +245,7 @@ mod test {
         assert!(r3.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_split() {
         let file = "test_split.db";
         let disk = Disk::new(file).await.expect("could not open db file");
