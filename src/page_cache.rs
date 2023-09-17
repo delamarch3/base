@@ -281,17 +281,16 @@ mod test {
             pc.fetch_page(2).await; // ts = 9
         }
 
-        // Page 2 is the least regularly accessed and should have the largest k distance of 7
+        // Page 2 was accessed the least and should have the largest k distance of 7
         // Page 1 should have a k distance of 3
         // Page 0 should have a k distance of 1
 
-        let _page_3 = pc.new_page().await.expect("should return page 3");
+        let _p8 = pc.new_page().await.expect("should return page 8");
 
         let inner = &pc.0;
         let page_table = inner.page_table.read().await;
-        assert!(page_table.contains_key(&3));
-        assert!(page_table.contains_key(&1));
-        assert!(page_table.contains_key(&0));
+        assert!(page_table.contains_key(&8));
+        assert!(!page_table.contains_key(&2));
 
         Ok(())
     }
