@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 use crate::{
     disk::Disk,
@@ -19,23 +19,25 @@ pub const CACHE_SIZE: usize = 8;
 
 pub type FrameId = usize;
 
-pub struct FreeList {
-    free: UnsafeCell<[FrameId; CACHE_SIZE]>,
+pub struct FreeList<const SIZE: usize> {
+    free: UnsafeCell<[FrameId; SIZE]>,
     tail: AtomicUsize,
 }
 
-impl Default for FreeList {
+unsafe impl<const SIZE: usize> Sync for FreeList<SIZE> {}
+
+impl<const SIZE: usize> Default for FreeList<SIZE> {
     fn default() -> Self {
-        let free: UnsafeCell<[FrameId; CACHE_SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
+        let free: UnsafeCell<[FrameId; SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
 
         Self {
             free,
-            tail: AtomicUsize::new(CACHE_SIZE),
+            tail: AtomicUsize::new(SIZE),
         }
     }
 }
 
-impl FreeList {
+impl<const SIZE: usize> FreeList<SIZE> {
     pub fn pop(&self) -> Option<FrameId> {
         let mut tail = self.tail.load(SeqCst);
         let mut new_tail;
@@ -58,7 +60,7 @@ impl FreeList {
         let mut tail = self.tail.load(SeqCst);
         let mut new_tail;
         loop {
-            if tail == CACHE_SIZE {
+            if tail == SIZE {
                 panic!("trying to push frame to full free list");
             }
 
@@ -131,7 +133,7 @@ impl PageCache {
 struct PageCacheInner {
     pages: [Page; CACHE_SIZE],
     page_table: RwLock<HashMap<PageId, FrameId>>,
-    free: FreeList,
+    free: FreeList<CACHE_SIZE>,
     disk: Disk,
     next_page_id: AtomicI32,
     replacer: LRUKHandle,
@@ -228,9 +230,14 @@ impl PageCacheInner {
 
 #[cfg(test)]
 mod test {
-    use std::io;
+    use std::{io, sync::Arc, thread};
 
-    use crate::{disk::Disk, page_cache::PageCache, replacer::LRUKHandle, test::CleanUp};
+    use crate::{
+        disk::Disk,
+        page_cache::{FreeList, PageCache},
+        replacer::LRUKHandle,
+        test::CleanUp,
+    };
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pm_replacer() -> io::Result<()> {
@@ -287,5 +294,65 @@ mod test {
         assert!(page_table.contains_key(&0));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_free_list() {
+        thread::scope(|s| {
+            const SIZE: usize = 8;
+            let list = Arc::new(FreeList::<SIZE>::default());
+
+            // Pop
+            let list_a = list.clone();
+            let a = s.spawn(move || {
+                let mut got = vec![];
+                for _ in 0..SIZE / 2 {
+                    got.push(list_a.pop().unwrap());
+                }
+
+                got
+            });
+
+            let list_b = list.clone();
+            let b = s.spawn(move || {
+                let mut got = vec![];
+                for _ in 4..SIZE {
+                    got.push(list_b.pop().unwrap());
+                }
+
+                got
+            });
+
+            let mut got = a.join().unwrap();
+            let got_b = b.join().unwrap();
+
+            got.extend(&got_b);
+            got.sort();
+
+            assert!(got == vec![0, 1, 2, 3, 4, 5, 6, 7], "Got: {got:?}");
+
+            // Push
+            let list_c = list.clone();
+            let c = s.spawn(move || {
+                for i in 4..8 {
+                    list_c.push(i);
+                }
+            });
+
+            let list_d = list.clone();
+            let d = s.spawn(move || {
+                for i in 8..12 {
+                    list_d.push(i);
+                }
+            });
+
+            c.join().unwrap();
+            d.join().unwrap();
+
+            let mut got = unsafe { *list.free.get() };
+            got.sort();
+
+            assert!(got == [4, 5, 6, 7, 8, 9, 10, 11]);
+        });
     }
 }
