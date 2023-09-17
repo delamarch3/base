@@ -1,7 +1,8 @@
 use std::{
+    cell::UnsafeCell,
     collections::HashMap,
     sync::{
-        atomic::{AtomicI32, Ordering::*},
+        atomic::{AtomicI32, AtomicUsize, Ordering::*},
         Arc,
     },
 };
@@ -19,44 +20,64 @@ pub const CACHE_SIZE: usize = 8;
 pub type FrameId = usize;
 
 pub struct FreeList {
-    free: [FrameId; CACHE_SIZE],
-    tail: usize,
+    free: UnsafeCell<[FrameId; CACHE_SIZE]>,
+    tail: AtomicUsize,
 }
 
 impl Default for FreeList {
     fn default() -> Self {
-        let free: [FrameId; CACHE_SIZE] = std::array::from_fn(|i| i);
+        let free: UnsafeCell<[FrameId; CACHE_SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
 
         Self {
             free,
-            tail: CACHE_SIZE,
+            tail: AtomicUsize::new(CACHE_SIZE),
         }
     }
 }
 
 impl FreeList {
-    pub fn pop(&mut self) -> Option<FrameId> {
-        if self.tail == 0 {
-            return None;
+    pub fn pop(&self) -> Option<FrameId> {
+        let mut tail = self.tail.load(SeqCst);
+        let mut new_tail;
+        loop {
+            if tail == 0 {
+                return None;
+            }
+
+            new_tail = tail - 1;
+            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+                Ok(_) => break,
+                Err(t) => tail = t,
+            };
         }
 
-        let ret = self.free[self.tail - 1];
-        self.tail -= 1;
-
-        Some(ret)
+        unsafe { Some((*self.free.get())[new_tail]) }
     }
 
-    pub fn push(&mut self, frame_id: FrameId) {
-        if self.tail == CACHE_SIZE {
-            eprintln!("warn: trying to push frame to full free list");
+    pub fn push(&self, frame_id: FrameId) {
+        let mut tail = self.tail.load(SeqCst);
+        let mut new_tail;
+        loop {
+            if tail == CACHE_SIZE {
+                panic!("trying to push frame to full free list");
+            }
+
+            new_tail = tail + 1;
+            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+                Ok(_) => break,
+                Err(t) => tail = t,
+            }
         }
 
-        self.tail += 1;
-        self.free[self.tail - 1] = frame_id;
+        unsafe { (*self.free.get())[new_tail - 1] = frame_id }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.tail == 0
+        self.tail.load(Relaxed) == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.tail.load(Relaxed)
     }
 }
 
@@ -69,9 +90,7 @@ pub struct Pin<'a> {
 impl Drop for Pin<'_> {
     fn drop(&mut self) {
         tokio::task::block_in_place(|| {
-            futures::executor::block_on(async {
-                self.replacer.unpin(self.i).await;
-            })
+            self.replacer.blocking_unpin(self.i);
         });
     }
 }
@@ -112,7 +131,7 @@ impl PageCache {
 struct PageCacheInner {
     pages: [Page; CACHE_SIZE],
     page_table: RwLock<HashMap<PageId, FrameId>>,
-    free: Mutex<FreeList>,
+    free: FreeList,
     disk: Disk,
     next_page_id: AtomicI32,
     replacer: LRUKHandle,
@@ -122,7 +141,7 @@ impl PageCacheInner {
     pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Self {
         let pages = std::array::from_fn(|_| Page::default());
         let page_table = RwLock::new(HashMap::new());
-        let free = Mutex::new(FreeList::default());
+        let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
 
         Self {
@@ -157,8 +176,7 @@ impl PageCacheInner {
     }
 
     async fn try_get_page(&self, page_id: PageId) -> Option<Pin> {
-        // TODO: avoid attempt to acquire lock on empty free list
-        let i = match self.free.lock().await.pop() {
+        let i = match self.free.pop() {
             Some(i) => i,
             None => self.replacer.evict().await?,
         };
@@ -182,6 +200,13 @@ impl PageCacheInner {
         page_w.data = data;
 
         Some(Pin::new(&self.pages[i], i, self.replacer.clone()))
+    }
+
+    pub async fn remove_page(&self, page_id: PageId) {
+        // Check page table
+        // Remove from replacer
+        // Add to free list
+        todo!()
     }
 
     pub async fn flush_page(&self, page_id: PageId) {
@@ -229,7 +254,7 @@ mod test {
 
             let inner = pc.0.clone();
             let page_table = inner.page_table.read().await;
-            assert!(inner.free.lock().await.is_empty());
+            assert!(inner.free.is_empty());
             assert!(page_table.contains_key(&2));
             assert!(page_table.contains_key(&1));
             assert!(page_table.contains_key(&0));
