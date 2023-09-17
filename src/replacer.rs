@@ -215,6 +215,12 @@ impl LRUKHandle {
         }
     }
 
+    pub fn blocking_unpin(&self, i: FrameId) {
+        if let Err(e) = self.tx.blocking_send(LRUKMessage::Unpin(i)) {
+            eprintln!("replacer channel error: {e}");
+        }
+    }
+
     pub async fn remove(&self, i: FrameId) {
         if let Err(e) = self.tx.send(LRUKMessage::Remove(i)).await {
             eprintln!("replacer channel error: {e}");
