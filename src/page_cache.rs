@@ -7,11 +7,11 @@ use std::{
     },
 };
 
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
     disk::Disk,
-    page::{Page, PageId},
+    page::{Page, PageId, PageInner},
     replacer::{AccessType, LRUKHandle},
 };
 
@@ -100,6 +100,14 @@ impl Drop for Pin<'_> {
 impl<'a> Pin<'a> {
     pub fn new(page: &'a Page, i: FrameId, replacer: LRUKHandle) -> Self {
         Self { page, i, replacer }
+    }
+
+    pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
+        self.page.write().await
+    }
+
+    pub async fn read(&self) -> RwLockReadGuard<'_, PageInner> {
+        self.page.read().await
     }
 }
 

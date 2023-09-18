@@ -22,7 +22,7 @@ use ExtendibleError::*;
 
 pub struct ExtendibleHashTable<K, V, const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
     dir_page_id: PageId,
-    pm: PageCache,
+    pc: PageCache,
     _data: PhantomData<(K, V)>,
 }
 
@@ -34,13 +34,13 @@ where
     pub fn new(dir_page_id: PageId, pm: PageCache) -> Self {
         Self {
             dir_page_id,
-            pm,
+            pc: pm,
             _data: PhantomData,
         }
     }
 
     pub async fn insert(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
-        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let mut dir_page_w = dir_page.page.write().await;
         let mut dir = Directory::new(&dir_page_w.data);
 
@@ -48,12 +48,12 @@ where
         let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
-                let p = self.pm.new_page().await.ok_or(Error)?;
+                let p = self.pc.new_page().await.ok_or(Error)?;
                 dir.set_bucket_page_id(bucket_index, p.page.read().await.id);
                 dir.write_data(&mut dir_page_w);
                 p
             }
-            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
         let mut bucket_page_w = bucket_page.page.write().await;
@@ -72,11 +72,11 @@ where
             // 2. Get the high bit of the old bucket (1 << local_depth)
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
-            let page0 = self.pm.new_page().await.ok_or(Error)?;
+            let page0 = self.pc.new_page().await.ok_or(Error)?;
             let mut page0_w = page0.page.write().await;
             let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
 
-            let page1 = self.pm.new_page().await.ok_or(Error)?;
+            let page1 = self.pc.new_page().await.ok_or(Error)?;
             let mut page1_w = page1.page.write().await;
             let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
 
@@ -105,14 +105,14 @@ where
             bucket0.write_data(&mut page1_w);
 
             // TODO: mark original page on disk as ready to be allocated
-            self.pm.remove_page(bucket_page_w.id).await;
+            self.pc.remove_page(bucket_page_w.id).await;
         }
 
         Ok(true)
     }
 
     pub async fn remove(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
-        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
@@ -120,7 +120,7 @@ where
         let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(false),
-            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
         let mut bucket_page_w = bucket_page.page.write().await;
         let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
@@ -134,7 +134,7 @@ where
     }
 
     pub async fn get(&self, k: &K) -> ExtendibleResult<Vec<V>> {
-        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 
@@ -142,7 +142,7 @@ where
         let bucket_page_id = dir.get_page_id(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(vec![]),
-            _ => self.pm.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
 
         let bucket_page_w = bucket_page.page.read().await;
@@ -152,7 +152,7 @@ where
     }
 
     pub async fn get_num_buckets(&self) -> ExtendibleResult<u32> {
-        let dir_page = self.pm.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::new(&dir_page_r.data);
 

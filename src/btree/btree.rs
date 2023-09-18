@@ -7,15 +7,23 @@ use crate::{
 
 use super::{BTreeHeader, BTreeNodeType};
 
+// TODO: proper errors
+#[derive(Debug)]
+pub enum BTreeError {
+    Error,
+}
+pub type BTreeResult<T> = Result<T, BTreeError>;
+use BTreeError::*;
+
 pub struct BTree<K> {
-    pm: PageCache,
+    pc: PageCache,
     root_page_id: PageId,
     _data: PhantomData<K>,
 
     // Branching factor/order (o). Max number of keys will be o - 1. Must satisfy ⌈o / 2⌉ <= m <= o - 1
     order: u32,
     // Max number of values must satisfy ⌈o / 2⌉ <= n <= o - 1
-    leaf_size: u32,
+    leaf_max_len: u32,
 }
 
 impl<K> BTree<K>
@@ -24,45 +32,46 @@ where
 {
     pub fn new(pm: PageCache, root_page_id: PageId, order: u32, leaf_size: u32) -> Self {
         Self {
-            pm,
+            pc: pm,
             root_page_id,
             _data: PhantomData,
 
             order,
-            leaf_size,
+            leaf_max_len: leaf_size,
         }
     }
 
-    pub async fn insert(&self, k: K, rel_id: RelationID) {
-        let root_page = match self.pm.fetch_page(self.root_page_id).await {
-            Some(p) => p,
-            None => unimplemented!("could not fetch btree root page"),
-        };
-        let root_page_w = root_page.page.write().await;
+    pub async fn insert(&self, k: K, rel_id: RelationID) -> BTreeResult<()> {
+        let root_page = self.pc.fetch_page(self.root_page_id).await.ok_or(Error)?;
+        let mut root_page_w = root_page.write().await;
         let header = BTreeHeader::new(&root_page_w.data);
-        // let mut root: InternalNode<K, PAGE_SIZE> = InternalNode::new(&root_page_w.data);
 
-        // TODO: First insert, node will be leaf. Will essentially be linked list until correct
-        // conditions met.
-        if header.size() == 0 {
-            // root.init(1, self.leaf_size);
+        if header.is_empty() {
+            let mut leaf: LeafNode<K> = LeafNode::new(&root_page_w.data);
+            leaf.init(0, self.leaf_max_len);
+            leaf.insert(k, rel_id);
+            leaf.write_data(&mut root_page_w);
 
-            let new_leaf_page = match self.pm.fetch_page(self.root_page_id).await {
-                Some(p) => p,
-                None => unimplemented!("could not create a new leaf page"),
-            };
-            let new_leaf_page_w = new_leaf_page.page.write().await;
-            let mut new_leaf: LeafNode<K> = LeafNode::new(&new_leaf_page_w.data);
-            new_leaf.init(1, self.leaf_size);
-
-            new_leaf.insert(k, rel_id);
-
-            return;
+            return Ok(());
         }
 
-        // Traverse linked list
-        if header.r#type() == BTreeNodeType::Leaf {
-            //
+        match header.r#type() {
+            BTreeNodeType::Invalid => Err(Error)?,
+            BTreeNodeType::Internal => {
+                // Tree
+            }
+            BTreeNodeType::Leaf => {
+                // List
+                if header.almost_full() {
+                    // Split
+                }
+
+                let mut leaf: LeafNode<K> = LeafNode::new(&root_page_w.data);
+                leaf.insert(k, rel_id);
+                leaf.write_data(&mut root_page_w);
+            }
         }
+
+        todo!()
     }
 }

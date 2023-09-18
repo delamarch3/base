@@ -56,8 +56,8 @@ where
         }
     }
 
-    pub fn init(&mut self, size: u32, max_size: u32) {
-        self.header.init(BTreeNodeType::Leaf, size, max_size);
+    pub fn init(&mut self, len: u32, max_len: u32) {
+        self.header.init(BTreeNodeType::Leaf, len, max_len);
     }
 
     pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
@@ -95,7 +95,7 @@ where
 
     pub fn insert(&mut self, k: K, rel_id: RelationID) {
         let pair = Pair::new(k, rel_id);
-
         self.pairs.push(pair);
+        self.header.len += 1;
     }
 }

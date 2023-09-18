@@ -36,8 +36,8 @@ impl From<u32> for BTreeNodeType {
 
 pub struct BTreeHeader {
     t: BTreeNodeType,
-    size: u32,
-    max_size: u32,
+    len: u32,
+    max_len: u32,
 }
 
 impl BTreeHeader {
@@ -50,29 +50,38 @@ impl BTreeHeader {
 
         Self {
             t: t.into(),
-            size,
-            max_size,
+            len: size,
+            max_len: max_size,
         }
     }
 
     pub fn write_data(&self, page: &mut [u8]) {
         let t: u32 = self.t.into();
         put_bytes!(page, t.to_be_bytes(), 0, 4);
-        put_bytes!(page, self.size.to_be_bytes(), 4, 8);
-        put_bytes!(page, self.max_size.to_be_bytes(), 8, 12);
+        put_bytes!(page, self.len.to_be_bytes(), 4, 8);
+        put_bytes!(page, self.max_len.to_be_bytes(), 8, 12);
     }
 
-    pub fn init(&mut self, t: BTreeNodeType, size: u32, max_size: u32) {
+    pub fn init(&mut self, t: BTreeNodeType, len: u32, max_len: u32) {
         self.t = t;
-        self.size = size;
-        self.max_size = max_size;
+        self.len = len;
+        self.max_len = max_len;
     }
 
     pub fn r#type(&self) -> BTreeNodeType {
         self.t
     }
 
-    pub fn size(&self) -> u32 {
-        self.size
+    pub fn len(&self) -> u32 {
+        self.len
+    }
+
+    // TODO: this isn't the correct criteria for "full"
+    pub fn almost_full(&self) -> bool {
+        self.len + 1 == self.max_len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
