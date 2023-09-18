@@ -105,6 +105,7 @@ where
             bucket0.write_data(&mut page1_w);
 
             // TODO: mark original page on disk as ready to be allocated
+            self.pm.remove_page(bucket_page_w.id).await;
         }
 
         Ok(true)

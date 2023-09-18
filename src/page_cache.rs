@@ -121,6 +121,10 @@ impl PageCache {
         self.0.fetch_page(page_id).await
     }
 
+    pub async fn remove_page(&self, page_id: PageId) {
+        self.0.remove_page(page_id).await
+    }
+
     pub async fn flush_page(&self, page_id: PageId) {
         self.0.flush_page(page_id).await
     }
@@ -205,10 +209,18 @@ impl PageCacheInner {
     }
 
     pub async fn remove_page(&self, page_id: PageId) {
-        // Check page table
-        // Remove from replacer
-        // Add to free list
-        todo!()
+        use std::collections::hash_map::Entry;
+        let i = match self.page_table.write().await.entry(page_id) {
+            Entry::Occupied(entry) => {
+                let i = *entry.get();
+                entry.remove();
+                i
+            }
+            Entry::Vacant(_) => return,
+        };
+
+        self.replacer.remove(i).await;
+        self.free.push(i);
     }
 
     pub async fn flush_page(&self, page_id: PageId) {
