@@ -14,13 +14,13 @@ use crate::{
 
 pub struct LeafNode<K> {
     pub header: BTreeHeader,
-    next_page_id: PageId,
+    pub next_page_id: PageId,
     pairs: BinaryHeap<Pair<K, RelationID>>,
 }
 
 impl<'a, K> LeafNode<K>
 where
-    K: Storable + Ord + 'a,
+    K: Storable + Ord + Copy + 'a,
 {
     pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
         let header = BTreeHeader::new(data);
@@ -97,5 +97,14 @@ where
         let pair = Pair::new(k, rel_id);
         self.pairs.push(pair);
         self.header.len += 1;
+    }
+
+    pub fn clear(&mut self) -> BinaryHeap<Pair<K, RelationID>> {
+        self.header.len = 0;
+        self.pairs.clone()
+    }
+
+    pub fn pairs(&self) -> &BinaryHeap<Pair<K, RelationID>> {
+        &self.pairs
     }
 }

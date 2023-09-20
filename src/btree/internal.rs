@@ -73,7 +73,7 @@ where
 
     pub fn insert(&mut self, k: K, page_id: PageId) {
         self.pairs.push(Pair::new(k, page_id));
-        self.header.size += 1;
+        self.header.len += 1;
     }
 
     pub fn r#type(&self) -> BTreeNodeType {

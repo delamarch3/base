@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-recursion = "1.0.5"
 bytes = "1.4.0"
 nix = "0.26.2"
 tokio = { version = "1.32", features = ["io-util", "sync", "macros", "rt-multi-thread", "fs", "time"] }
