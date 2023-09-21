@@ -107,4 +107,8 @@ where
     pub fn pairs(&self) -> &BinaryHeap<Pair<K, RelationID>> {
         &self.pairs
     }
+
+    pub fn almost_full(&self) -> bool {
+        self.header.almost_full()
+    }
 }

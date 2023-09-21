@@ -16,6 +16,7 @@ pub enum BTreeError {
     Error,
 }
 pub type BTreeResult<T> = Result<T, BTreeError>;
+use futures::{future::BoxFuture, FutureExt};
 use BTreeError::*;
 
 pub struct BTree<K> {
@@ -31,7 +32,7 @@ pub struct BTree<K> {
 
 impl<K> BTree<K>
 where
-    for<'async_recursion> K: Storable + Ord + Copy + Send + 'async_recursion,
+    for<'a> K: Storable + Ord + Copy + Send + 'a,
 {
     pub fn new(pm: PageCache, root_page_id: PageId, order: u32, leaf_size: u32) -> Self {
         Self {
@@ -66,12 +67,13 @@ where
                 todo!()
             }
             BTreeNodeType::Leaf => {
-                if !header.almost_full() {
-                    return Self::insert_list(&self.pc, root_page, k, rel_id).await;
-                }
+                let split = match Self::insert_list(&self.pc, root_page, k, rel_id).await? {
+                    Some(p) => p,
+                    None => return Ok(()), // Insert doesn't require split
+                };
 
-                let mut root_page_w = root_page.write().await;
-                let mut leaf: LeafNode<K> = LeafNode::new(&root_page_w.data);
+                let mut split_page_w = split.write().await;
+                let mut leaf = LeafNode::<K>::new(&split_page_w.data);
 
                 // Split
                 let mut pairs = leaf.clear();
@@ -93,7 +95,7 @@ where
 
                 leaf.next_page_id = new_leaf_page_w.id;
 
-                leaf.write_data(&mut root_page_w);
+                leaf.write_data(&mut split_page_w);
                 new_leaf.write_data(&mut new_leaf_page_w);
 
                 Ok(())
@@ -101,33 +103,38 @@ where
         }
     }
 
-    #[async_recursion::async_recursion]
-    async fn insert_list<'a: 'async_recursion>(
-        pc: &PageCache,
-        first: Pin<'a>,
+    fn insert_list<'a>(
+        pc: &'a PageCache,
+        page: Pin<'a>,
         k: K,
         rel_id: RelationID,
-    ) -> BTreeResult<()> {
-        // Check if the key is greater than the last
-        // If the key is greater than the last element of the page, or there is no next
-        // page (page_id = 0), insert into the page
+    ) -> BoxFuture<'a, BTreeResult<Option<Pin<'a>>>> {
+        // If the key is greater than the last element of the page, or there is no nexe page
+        // (page_id = 0), insert into the page
         // Else do the same checks on the next page
 
-        let mut first_page_w = first.write().await;
-        let mut first = LeafNode::<K>::new(&first_page_w.data);
+        async move {
+            let mut w = page.write().await;
+            let mut leaf = LeafNode::<K>::new(&w.data);
 
-        let cur = &mut first;
-        let next_page_id = cur.next_page_id;
-        let last = cur.pairs().iter().last().unwrap().a;
-        if k > last || next_page_id == 0 {
-            cur.insert(k, rel_id);
-            cur.write_data(&mut first_page_w);
+            if leaf.almost_full() {
+                // Return page to be split
+                drop(w);
+                return Ok(Some(page));
+            }
+            let next_page_id = leaf.next_page_id;
+            let last = leaf.pairs().iter().last().unwrap().a;
+            if k > last || next_page_id == 0 {
+                leaf.insert(k, rel_id);
+                leaf.write_data(&mut w);
 
-            return Ok(());
+                return Ok(None);
+            }
+
+            let next_page = pc.fetch_page(next_page_id).await.ok_or(Error)?;
+
+            Self::insert_list(pc, next_page, k, rel_id).await
         }
-
-        let next_page = pc.fetch_page(next_page_id).await.ok_or(Error)?;
-
-        Self::insert_list(pc, next_page, k, rel_id).await
+        .boxed()
     }
 }
