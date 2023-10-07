@@ -111,38 +111,9 @@ impl<'a> Pin<'a> {
     }
 }
 
-#[derive(Clone)]
-pub struct PageCache(Arc<PageCacheInner>);
+pub type SharedPageCache = Arc<PageCache>;
 
-impl PageCache {
-    pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Self {
-        let inner = Arc::new(PageCacheInner::new(disk, replacer, next_page_id));
-
-        Self(inner)
-    }
-
-    pub async fn new_page<'a>(&self) -> Option<Pin> {
-        self.0.new_page().await
-    }
-
-    pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<Pin> {
-        self.0.fetch_page(page_id).await
-    }
-
-    pub async fn remove_page(&self, page_id: PageId) {
-        self.0.remove_page(page_id).await
-    }
-
-    pub async fn flush_page(&self, page_id: PageId) {
-        self.0.flush_page(page_id).await
-    }
-
-    pub async fn flush_all_pages(&self) {
-        self.0.flush_all_pages().await
-    }
-}
-
-struct PageCacheInner {
+pub struct PageCache {
     pages: [Page; CACHE_SIZE],
     page_table: RwLock<HashMap<PageId, FrameId>>,
     free: FreeList<CACHE_SIZE>,
@@ -151,21 +122,21 @@ struct PageCacheInner {
     replacer: LRUKHandle,
 }
 
-impl PageCacheInner {
-    pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Self {
+impl PageCache {
+    pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
         let pages = std::array::from_fn(|_| Page::default());
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
 
-        Self {
+        Arc::new(Self {
             pages,
             page_table,
             free,
             disk,
             next_page_id,
             replacer,
-        }
+        })
     }
 
     fn allocate_page(&self) -> PageId {
@@ -266,7 +237,7 @@ mod test {
         let disk = Disk::new(DB_FILE).await?;
 
         let replacer = LRUKHandle::new(2);
-        let pc: PageCache = PageCache::new(disk, replacer, 0);
+        let pc = PageCache::new(disk, replacer, 0);
 
         {
             let _p0 = pc.new_page().await.expect("should return page 0"); // id = 0 ts = 0
@@ -279,7 +250,7 @@ mod test {
             let _p6 = pc.new_page().await.expect("should return page 6");
             let _p7 = pc.new_page().await.expect("should return page 7");
 
-            let inner = pc.0.clone();
+            let inner = pc.clone();
             let page_table = inner.page_table.read().await;
             assert!(inner.free.is_empty());
             assert!(page_table.contains_key(&2));
@@ -307,7 +278,7 @@ mod test {
 
         let _p8 = pc.new_page().await.expect("should return page 8");
 
-        let inner = &pc.0;
+        let inner = &pc;
         let page_table = inner.page_table.read().await;
         assert!(page_table.contains_key(&8));
         assert!(!page_table.contains_key(&2));

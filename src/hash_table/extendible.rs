@@ -8,7 +8,7 @@ use crate::{
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
     page::PageId,
-    page_cache::PageCache,
+    page_cache::SharedPageCache,
     storable::Storable,
 };
 
@@ -22,7 +22,7 @@ use ExtendibleError::*;
 
 pub struct ExtendibleHashTable<K, V, const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
     dir_page_id: PageId,
-    pc: PageCache,
+    pc: SharedPageCache,
     _data: PhantomData<(K, V)>,
 }
 
@@ -31,10 +31,10 @@ where
     K: Storable + Copy + Eq + Hash,
     V: Storable + Copy + Eq,
 {
-    pub fn new(dir_page_id: PageId, pm: PageCache) -> Self {
+    pub fn new(dir_page_id: PageId, pc: SharedPageCache) -> Self {
         Self {
             dir_page_id,
-            pc: pm,
+            pc,
             _data: PhantomData,
         }
     }

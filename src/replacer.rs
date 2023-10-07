@@ -34,7 +34,7 @@ impl LRUKNode {
 }
 
 #[derive(Default, Debug)]
-pub struct LRUKReplacer {
+struct LRUKReplacer {
     nodes: HashMap<FrameId, LRUKNode>,
     current_ts: u64,
     k: usize,
