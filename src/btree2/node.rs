@@ -69,7 +69,6 @@ where
         while rem > 0 {
             let bytes = &left[from..to];
             let slot = Slot::from(bytes);
-            dbg!(&slot);
             values.insert(slot);
             from += size;
             to += size;
