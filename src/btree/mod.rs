@@ -26,10 +26,9 @@ impl From<BTreeNodeType> for u32 {
 impl From<u32> for BTreeNodeType {
     fn from(value: u32) -> Self {
         match value {
-            0 => BTreeNodeType::Invalid,
             1 => BTreeNodeType::Internal,
             2 => BTreeNodeType::Leaf,
-            _ => unreachable!(),
+            _ => BTreeNodeType::Invalid,
         }
     }
 }

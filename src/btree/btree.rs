@@ -89,7 +89,7 @@ where
                 for pair in pairs.iter().take(pairs.len() / 2) {
                     leaf.insert(pair.a, pair.b);
                 }
-                for pair in pairs.iter().skip(pairs.len() / 2).take(pairs.len() / 2) {
+                for pair in pairs.iter().skip(pairs.len() / 2) {
                     new_leaf.insert(pair.a, pair.b);
                 }
 

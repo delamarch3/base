@@ -83,5 +83,19 @@ mod test {
         assert!(bm.check(177));
         assert!(bm.check(200));
         assert!(bm.check(512));
+
+        bm.set(0, false);
+        bm.set(1, false);
+        bm.set(8, false);
+        bm.set(177, false);
+        bm.set(200, false);
+        bm.set(512, false);
+
+        assert!(!bm.check(0));
+        assert!(!bm.check(1));
+        assert!(!bm.check(8));
+        assert!(!bm.check(177));
+        assert!(!bm.check(200));
+        assert!(!bm.check(512));
     }
 }
