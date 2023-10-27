@@ -1,6 +1,6 @@
-use std::{io::Cursor, mem::size_of};
+use std::mem::size_of;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::BytesMut;
 
 use crate::{page::PageId, storable::Storable};
 
