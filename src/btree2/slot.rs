@@ -4,7 +4,7 @@ use bytes::BytesMut;
 
 use crate::{page::PageId, storable::Storable};
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Either<V> {
     Value(V),
     Pointer(PageId),
@@ -61,7 +61,7 @@ where
 
 // Size = 1 + size_of::<K>() + size_of::<V>()
 // | Key | Flag (1) | Value
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct Slot<K, V>(pub K, pub Either<V>);
 
 impl<K, V> Slot<K, V> {

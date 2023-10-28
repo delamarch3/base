@@ -9,7 +9,7 @@ use crate::{
 
 use super::slot::Slot;
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeType {
     Internal,
     Leaf,
@@ -39,9 +39,10 @@ const NODE_IS_ROOT: usize = 1;
 const NODE_LEN: Range<usize> = 2..6;
 const NODE_MAX: Range<usize> = 6..10;
 const NODE_NEXT: Range<usize> = 10..14;
-const NODE_VALUES_START: usize = 14;
+const NODE_ID: Range<usize> = 14..18;
+const NODE_VALUES_START: usize = 18;
 
-// | NodeType (1) | Root (1) | Len(4) | Max (4) | Next (4) | Values
+// | NodeType (1) | Root (1) | Len(4) | Max (4) | Next (4) | PageId (4) | Values
 #[derive(PartialEq, Clone, Debug)]
 pub struct Node<K, V> {
     t: NodeType,
@@ -49,6 +50,7 @@ pub struct Node<K, V> {
     len: u32,
     max: u32,
     next: PageId,
+    id: PageId,
     values: BTreeSet<Slot<K, V>>,
 }
 
@@ -62,7 +64,8 @@ where
         let is_root = value[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(value[NODE_LEN].try_into().unwrap());
         let max = u32::from_be_bytes(value[NODE_MAX].try_into().unwrap());
-        let next = i32::from_be_bytes(value[NODE_NEXT].try_into().unwrap());
+        let next = PageId::from_be_bytes(value[NODE_NEXT].try_into().unwrap());
+        let id = PageId::from_be_bytes(value[NODE_ID].try_into().unwrap());
 
         let mut values = BTreeSet::new();
         let size = Slot::<K, V>::SIZE;
@@ -86,6 +89,7 @@ where
             len,
             max,
             next,
+            id,
             values,
         }
     }
@@ -104,6 +108,7 @@ where
         ret[NODE_LEN].copy_from_slice(&node.len.to_be_bytes());
         ret[NODE_MAX].copy_from_slice(&node.max.to_be_bytes());
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
+        ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
 
         let size = Slot::<K, V>::SIZE;
         let mut from = NODE_VALUES_START;
@@ -119,6 +124,41 @@ where
     }
 }
 
+impl<K, V> Node<K, V>
+where
+    K: Storable + Copy + Ord,
+    V: Storable + Copy + Eq,
+{
+    /// Split out half of self's values into a new node.
+    pub fn split(&mut self, id: PageId) -> Node<K, V> {
+        let mid = *self
+            .values
+            .iter()
+            .nth(self.values.len() / 2)
+            .expect("there should be a mid node");
+
+        // All values in the greater half end up in `rest`
+        let rest = self.values.split_off(&mid);
+        self.len = self.values.len() as u32;
+
+        let new = Node {
+            t: self.t,
+            is_root: false,
+            len: rest.len() as u32,
+            max: self.max,
+            next: -1,
+            id,
+            values: rest,
+        };
+
+        if self.t == NodeType::Leaf {
+            self.next = new.id;
+        }
+
+        new
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::btree2::slot::Either;
@@ -126,13 +166,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_node() {
+    fn test_node_from() {
         let node = Node {
             t: NodeType::Leaf,
             is_root: true,
             len: 10,
             max: 20,
             next: -1,
+            id: 0,
             values: BTreeSet::from([
                 Slot(10, Either::Value(20)),
                 Slot(0, Either::Pointer(1)),
@@ -152,5 +193,79 @@ mod test {
         let node2: Node<i32, i32> = Node::from(&bytes[..]);
 
         assert!(node == node2, "Node: {:?}\n Node2: {:?}", node, node2);
+    }
+
+    #[test]
+    fn test_node_split() {
+        let mut node = Node {
+            t: NodeType::Leaf,
+            is_root: true,
+            len: 11,
+            max: 20,
+            next: -1,
+            id: 0,
+            values: BTreeSet::from([
+                Slot(10, Either::Value(1)),
+                Slot(20, Either::Value(2)),
+                Slot(30, Either::Value(3)),
+                Slot(40, Either::Value(4)),
+                Slot(50, Either::Value(5)),
+                Slot(60, Either::Value(6)),
+                Slot(70, Either::Value(7)),
+                Slot(80, Either::Value(8)),
+                Slot(90, Either::Value(9)),
+                Slot(100, Either::Value(10)),
+                Slot(110, Either::Value(11)),
+            ]),
+        };
+
+        let new = node.split(1);
+
+        let expected = Node {
+            t: NodeType::Leaf,
+            is_root: true,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: BTreeSet::from([
+                Slot(10, Either::Value(1)),
+                Slot(20, Either::Value(2)),
+                Slot(30, Either::Value(3)),
+                Slot(40, Either::Value(4)),
+                Slot(50, Either::Value(5)),
+            ]),
+        };
+
+        assert!(
+            node == expected,
+            "\nExpected: {:?}\n    Node: {:?}\n",
+            expected,
+            node
+        );
+
+        let expected_new = Node {
+            t: NodeType::Leaf,
+            is_root: false,
+            len: 6,
+            max: 20,
+            next: -1,
+            id: 1,
+            values: BTreeSet::from([
+                Slot(60, Either::Value(6)),
+                Slot(70, Either::Value(7)),
+                Slot(80, Either::Value(8)),
+                Slot(90, Either::Value(9)),
+                Slot(100, Either::Value(10)),
+                Slot(110, Either::Value(11)),
+            ]),
+        };
+
+        assert!(
+            new == expected_new,
+            "\nExpected: {:?}\n    Node: {:?}\n",
+            expected_new,
+            new
+        );
     }
 }
