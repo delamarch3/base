@@ -1,6 +1,6 @@
-use std::{collections::BTreeSet, io::Cursor};
+use std::{collections::BTreeSet, ops::Range};
 
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 
 use crate::{
     page::{PageId, PAGE_SIZE},
@@ -34,6 +34,13 @@ impl From<NodeType> for u8 {
     }
 }
 
+const NODE_TYPE: usize = 0;
+const NODE_IS_ROOT: usize = 1;
+const NODE_LEN: Range<usize> = 2..6;
+const NODE_MAX: Range<usize> = 6..10;
+const NODE_NEXT: Range<usize> = 10..14;
+const NODE_VALUES_START: usize = 14;
+
 // | NodeType (1) | Root (1) | Len(4) | Max (4) | Next (4) | Values
 #[derive(PartialEq, Clone, Debug)]
 pub struct Node<K, V> {
@@ -51,18 +58,16 @@ where
     V: Storable + Eq,
 {
     fn from(value: &[u8]) -> Self {
-        let mut cursor = Cursor::new(value);
-
-        let t = NodeType::from(cursor.get_u8());
-        let is_root = cursor.get_u8() > 0;
-        let len = cursor.get_u32();
-        let max = cursor.get_u32();
-        let next = cursor.get_i32();
+        let t = NodeType::from(value[NODE_TYPE]);
+        let is_root = value[NODE_IS_ROOT] > 0;
+        let len = u32::from_be_bytes(value[NODE_LEN].try_into().unwrap());
+        let max = u32::from_be_bytes(value[NODE_MAX].try_into().unwrap());
+        let next = i32::from_be_bytes(value[NODE_NEXT].try_into().unwrap());
 
         let mut values = BTreeSet::new();
         let size = Slot::<K, V>::SIZE;
 
-        let left = &cursor.get_ref()[14..];
+        let left = &value[NODE_VALUES_START..];
         let mut from = 0;
         let mut to = size;
         let mut rem = len;
@@ -94,14 +99,14 @@ where
     fn from(node: Node<K, V>) -> Self {
         let mut ret: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
 
-        ret[0] = u8::from(node.t);
-        ret[1] = node.is_root as u8;
-        ret[2..6].copy_from_slice(&node.len.to_be_bytes());
-        ret[6..10].copy_from_slice(&node.max.to_be_bytes());
-        ret[10..14].copy_from_slice(&node.next.to_be_bytes());
+        ret[NODE_TYPE] = u8::from(node.t);
+        ret[NODE_IS_ROOT] = node.is_root as u8;
+        ret[NODE_LEN].copy_from_slice(&node.len.to_be_bytes());
+        ret[NODE_MAX].copy_from_slice(&node.max.to_be_bytes());
+        ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
 
         let size = Slot::<K, V>::SIZE;
-        let mut from = 14;
+        let mut from = NODE_VALUES_START;
         let mut to = from + size;
         for value in node.values {
             let slot = BytesMut::from(value);
@@ -121,7 +126,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_node_rw() {
+    fn test_node() {
         let node = Node {
             t: NodeType::Leaf,
             is_root: true,
