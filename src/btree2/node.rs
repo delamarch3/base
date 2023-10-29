@@ -127,7 +127,7 @@ where
 
 impl<K, V> Node<K, V>
 where
-    K: Storable + Copy + Ord + std::ops::AddAssign<u8>,
+    K: Storable + Copy + Ord,
     V: Storable + Copy + Eq,
 {
     /// Split out half of self's values into a new node.
@@ -159,7 +159,10 @@ where
         new
     }
 
-    pub fn get_separators(&self, other: Option<&Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)> {
+    pub fn get_separators(&self, other: Option<&Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
+    where
+        K: std::ops::AddAssign<u8>,
+    {
         other.map(|other| {
             let k = self.last_key().expect("there should be a last item");
             let mut s = Slot(k, Either::Pointer(self.id));
@@ -173,6 +176,17 @@ where
             }
 
             (s, os)
+        })
+    }
+
+    pub fn find_child(&self, key: K) -> Option<PageId> {
+        if self.t == NodeType::Leaf {
+            return None;
+        }
+
+        self.values.iter().find(|s| key < s.0).map(|s| match s.1 {
+            Either::Value(_) => unreachable!(),
+            Either::Pointer(ptr) => ptr,
         })
     }
 
@@ -296,7 +310,7 @@ mod test {
     fn test_get_separators_leaf() {
         let node = Node {
             t: NodeType::Leaf,
-            is_root: true,
+            is_root: false,
             len: 5,
             max: 20,
             next: 1,
@@ -334,7 +348,8 @@ mod test {
 
     #[test]
     fn test_get_separators_internal() {
-        let node = Node {
+        // FIXME: K stuck on u8 because of AddAssign constraint
+        let node: Node<u8, i32> = Node {
             t: NodeType::Internal,
             is_root: false,
             len: 5,
@@ -342,11 +357,11 @@ mod test {
             next: 1,
             id: 0,
             values: BTreeSet::from([
-                Slot(10, Either::Value(1)),
-                Slot(20, Either::Value(2)),
-                Slot(30, Either::Value(3)),
-                Slot(40, Either::Value(4)),
-                Slot(50, Either::Value(5)),
+                Slot(10, Either::Pointer(1)),
+                Slot(20, Either::Pointer(2)),
+                Slot(30, Either::Pointer(3)),
+                Slot(40, Either::Pointer(4)),
+                Slot(50, Either::Pointer(5)),
             ]),
         };
 
@@ -358,17 +373,44 @@ mod test {
             next: -1,
             id: 1,
             values: BTreeSet::from([
-                Slot(60, Either::Value(6)),
-                Slot(70, Either::Value(7)),
-                Slot(80, Either::Value(8)),
-                Slot(90, Either::Value(9)),
-                Slot(100, Either::Value(10)),
-                Slot(110, Either::Value(11)),
+                Slot(60, Either::Pointer(6)),
+                Slot(70, Either::Pointer(7)),
+                Slot(80, Either::Pointer(8)),
+                Slot(90, Either::Pointer(9)),
+                Slot(100, Either::Pointer(10)),
+                Slot(110, Either::Pointer(11)),
             ]),
         };
 
         let Some(slots) = node.get_separators(Some(&other)) else { panic!() };
         let expected = (Slot(50, Either::Pointer(0)), Slot(110, Either::Pointer(1)));
         assert!(slots == expected);
+    }
+
+    #[test]
+    fn test_find_child() {
+        let node: Node<i32, i32> = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: BTreeSet::from([
+                Slot(10, Either::Pointer(1)),
+                Slot(20, Either::Pointer(2)),
+                Slot(30, Either::Pointer(3)),
+                Slot(40, Either::Pointer(4)),
+                Slot(50, Either::Pointer(5)),
+            ]),
+        };
+
+        let a = node.find_child(25);
+        let b = node.find_child(30);
+        let c = node.find_child(60);
+
+        assert!(a == Some(3));
+        assert!(b == Some(4));
+        assert!(c == None); // TODO: use next field on internal nodes for last slot?
     }
 }
