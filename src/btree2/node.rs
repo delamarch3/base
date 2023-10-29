@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, ops::Range};
 use bytes::BytesMut;
 
 use crate::{
+    btree2::slot::Either,
     page::{PageId, PAGE_SIZE},
     storable::Storable,
 };
@@ -126,7 +127,7 @@ where
 
 impl<K, V> Node<K, V>
 where
-    K: Storable + Copy + Ord,
+    K: Storable + Copy + Ord + std::ops::AddAssign<u8>,
     V: Storable + Copy + Eq,
 {
     /// Split out half of self's values into a new node.
@@ -157,6 +158,28 @@ where
 
         new
     }
+
+    pub fn get_separators(&self, other: Option<&Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)> {
+        other.map(|other| {
+            let k = self.last_key().expect("there should be a last item");
+            let mut s = Slot(k, Either::Pointer(self.id));
+
+            let ok = other.last_key().expect("there should be a last item");
+            let mut os = Slot(ok, Either::Pointer(other.id));
+
+            if self.t == NodeType::Leaf {
+                s.incr_key();
+                os.incr_key();
+            }
+
+            (s, os)
+        })
+    }
+
+    #[inline]
+    fn last_key(&self) -> Option<K> {
+        self.values.last().map(|s| s.0)
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +189,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_node_from() {
+    fn test_from() {
         let node = Node {
             t: NodeType::Leaf,
             is_root: true,
@@ -196,7 +219,7 @@ mod test {
     }
 
     #[test]
-    fn test_node_split() {
+    fn test_split() {
         let mut node = Node {
             t: NodeType::Leaf,
             is_root: true,
@@ -267,5 +290,85 @@ mod test {
             expected_new,
             new
         );
+    }
+
+    #[test]
+    fn test_get_separators_leaf() {
+        let node = Node {
+            t: NodeType::Leaf,
+            is_root: true,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: BTreeSet::from([
+                Slot(10, Either::Value(1)),
+                Slot(20, Either::Value(2)),
+                Slot(30, Either::Value(3)),
+                Slot(40, Either::Value(4)),
+                Slot(50, Either::Value(5)),
+            ]),
+        };
+
+        let other = Node {
+            t: NodeType::Leaf,
+            is_root: false,
+            len: 6,
+            max: 20,
+            next: -1,
+            id: 1,
+            values: BTreeSet::from([
+                Slot(60, Either::Value(6)),
+                Slot(70, Either::Value(7)),
+                Slot(80, Either::Value(8)),
+                Slot(90, Either::Value(9)),
+                Slot(100, Either::Value(10)),
+                Slot(110, Either::Value(11)),
+            ]),
+        };
+
+        let Some(slots) = node.get_separators(Some(&other)) else { panic!() };
+        let expected = (Slot(51, Either::Pointer(0)), Slot(111, Either::Pointer(1)));
+        assert!(slots == expected);
+    }
+
+    #[test]
+    fn test_get_separators_internal() {
+        let node = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: BTreeSet::from([
+                Slot(10, Either::Value(1)),
+                Slot(20, Either::Value(2)),
+                Slot(30, Either::Value(3)),
+                Slot(40, Either::Value(4)),
+                Slot(50, Either::Value(5)),
+            ]),
+        };
+
+        let other = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 6,
+            max: 20,
+            next: -1,
+            id: 1,
+            values: BTreeSet::from([
+                Slot(60, Either::Value(6)),
+                Slot(70, Either::Value(7)),
+                Slot(80, Either::Value(8)),
+                Slot(90, Either::Value(9)),
+                Slot(100, Either::Value(10)),
+                Slot(110, Either::Value(11)),
+            ]),
+        };
+
+        let Some(slots) = node.get_separators(Some(&other)) else { panic!() };
+        let expected = (Slot(50, Either::Pointer(0)), Slot(110, Either::Pointer(1)));
+        assert!(slots == expected);
     }
 }

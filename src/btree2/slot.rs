@@ -66,6 +66,13 @@ pub struct Slot<K, V>(pub K, pub Either<V>);
 
 impl<K, V> Slot<K, V> {
     pub const SIZE: usize = size_of::<K>() + Either::<V>::SIZE;
+
+    pub fn incr_key(&mut self)
+    where
+        K: std::ops::AddAssign<u8>,
+    {
+        self.0 += 1;
+    }
 }
 
 impl<K, V> PartialOrd for Slot<K, V>
