@@ -10,6 +10,26 @@ pub enum Either<V> {
     Pointer(PageId),
 }
 
+#[macro_export]
+macro_rules! get_ptr {
+    ( $slot:ident ) => {
+        match $slot.1 {
+            Either::Value(_) => unreachable!(),
+            Either::Pointer(ptr) => ptr,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! get_value {
+    ( $slot:ident ) => {
+        match $slot.1 {
+            Either::Value(value) => value,
+            Either::Pointer(_) => unreachable!(),
+        }
+    };
+}
+
 impl<V> Either<V> {
     pub const SIZE: usize = 1 + size_of::<V>();
 }

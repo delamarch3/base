@@ -4,6 +4,7 @@ use bytes::BytesMut;
 
 use crate::{
     btree2::slot::Either,
+    get_ptr,
     page::{PageId, PAGE_SIZE},
     storable::Storable,
 };
@@ -142,7 +143,7 @@ where
         let rest = self.values.split_off(&mid);
         self.len = self.values.len() as u32;
 
-        let new = Node {
+        let mut new = Node {
             t: self.t,
             is_root: false,
             len: rest.len() as u32,
@@ -154,6 +155,11 @@ where
 
         if self.t == NodeType::Leaf {
             self.next = new.id;
+        }
+
+        if self.t == NodeType::Internal {
+            new.next = self.next;
+            self.next = -1;
         }
 
         new
@@ -184,10 +190,13 @@ where
             return None;
         }
 
-        self.values.iter().find(|s| key < s.0).map(|s| match s.1 {
-            Either::Value(_) => unreachable!(),
-            Either::Pointer(ptr) => ptr,
-        })
+        match self.values.iter().find(|s| key < s.0).map(|s| get_ptr!(s)) {
+            None => match self.next {
+                -1 => None,
+                ptr => Some(ptr),
+            },
+            ptr => ptr,
+        }
     }
 
     #[inline]
@@ -410,6 +419,6 @@ mod test {
 
         assert!(a == Some(3));
         assert!(b == Some(4));
-        assert!(c == None); // TODO: use next field on internal nodes for last slot?
+        assert!(c == Some(1));
     }
 }
