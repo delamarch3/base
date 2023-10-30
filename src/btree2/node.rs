@@ -8,7 +8,7 @@ use crate::{
     storable::Storable,
 };
 
-use super::slot::Slot;
+use super::slot::{Increment, Slot};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeType {
@@ -161,7 +161,7 @@ where
 
     pub fn get_separators(&self, other: Option<&Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
     where
-        K: std::ops::AddAssign<u8>,
+        K: Increment,
     {
         other.map(|other| {
             let k = self.last_key().expect("there should be a last item");
@@ -171,8 +171,8 @@ where
             let mut os = Slot(ok, Either::Pointer(other.id));
 
             if self.t == NodeType::Leaf {
-                s.incr_key();
-                os.incr_key();
+                s.increment();
+                os.increment();
             }
 
             (s, os)
@@ -348,8 +348,7 @@ mod test {
 
     #[test]
     fn test_get_separators_internal() {
-        // FIXME: K stuck on u8 because of AddAssign constraint
-        let node: Node<u8, i32> = Node {
+        let node: Node<u16, i32> = Node {
             t: NodeType::Internal,
             is_root: false,
             len: 5,
