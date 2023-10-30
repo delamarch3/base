@@ -47,13 +47,13 @@ const NODE_VALUES_START: usize = 18;
 // | NodeType (1) | Root (1) | Len(4) | Max (4) | Next (4) | PageId (4) | Values
 #[derive(PartialEq, Clone, Debug)]
 pub struct Node<K, V> {
-    t: NodeType,
+    pub t: NodeType,
     is_root: bool,
     len: u32,
     max: u32,
     next: PageId,
-    id: PageId,
-    values: BTreeSet<Slot<K, V>>,
+    pub id: PageId,
+    pub values: BTreeSet<Slot<K, V>>,
 }
 
 impl<K, V> From<&[u8]> for Node<K, V>
@@ -131,6 +131,18 @@ where
     K: Storable + Copy + Ord,
     V: Storable + Copy + Eq,
 {
+    pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool) -> Self {
+        Self {
+            t,
+            is_root,
+            len: 0,
+            max,
+            next: -1,
+            id,
+            values: BTreeSet::new(),
+        }
+    }
+
     /// Split out half of self's values into a new node.
     pub fn split(&mut self, id: PageId) -> Node<K, V> {
         let mid = *self
@@ -185,6 +197,7 @@ where
         })
     }
 
+    /// Returns `None` if node is a leaf or if no keys were matched and the next key is invalid
     pub fn find_child(&self, key: K) -> Option<PageId> {
         if self.t == NodeType::Leaf {
             return None;
@@ -200,8 +213,13 @@ where
     }
 
     #[inline]
-    fn last_key(&self) -> Option<K> {
+    pub fn last_key(&self) -> Option<K> {
         self.values.last().map(|s| s.0)
+    }
+
+    #[inline]
+    pub fn almost_full(&self) -> bool {
+        self.values.len() >= self.max as usize / 2
     }
 }
 

@@ -85,6 +85,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
 
 pub struct Pin<'a> {
     pub page: &'a Page,
+    pub id: PageId,
     i: FrameId,
     replacer: LRUKHandle,
 }
@@ -98,8 +99,13 @@ impl Drop for Pin<'_> {
 }
 
 impl<'a> Pin<'a> {
-    pub fn new(page: &'a Page, i: FrameId, replacer: LRUKHandle) -> Self {
-        Self { page, i, replacer }
+    pub fn new(page: &'a Page, i: FrameId, id: PageId, replacer: LRUKHandle) -> Self {
+        Self {
+            page,
+            i,
+            id,
+            replacer,
+        }
     }
 
     pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
@@ -154,12 +160,18 @@ impl PageCache {
             self.replacer.record_access(*i, AccessType::Get).await;
             self.replacer.pin(*i).await;
 
-            return Some(Pin::new(&self.pages[*i], *i, self.replacer.clone()));
+            return Some(Pin::new(
+                &self.pages[*i],
+                *i,
+                page_id,
+                self.replacer.clone(),
+            ));
         };
 
         self.try_get_page(page_id).await
     }
 
+    // TODO: should return Result
     async fn try_get_page(&self, page_id: PageId) -> Option<Pin> {
         let i = match self.free.pop() {
             Some(i) => i,
@@ -184,7 +196,7 @@ impl PageCache {
         page_w.id = page_id;
         page_w.data = data;
 
-        Some(Pin::new(&self.pages[i], i, self.replacer.clone()))
+        Some(Pin::new(&self.pages[i], i, page_id, self.replacer.clone()))
     }
 
     pub async fn remove_page(&self, page_id: PageId) {
