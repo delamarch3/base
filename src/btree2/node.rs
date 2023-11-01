@@ -56,12 +56,12 @@ pub struct Node<K, V> {
     pub values: BTreeSet<Slot<K, V>>,
 }
 
-impl<K, V> From<&[u8]> for Node<K, V>
+impl<K, V> From<&[u8; PAGE_SIZE]> for Node<K, V>
 where
     K: Storable + Ord,
     V: Storable + Eq,
 {
-    fn from(value: &[u8]) -> Self {
+    fn from(value: &[u8; PAGE_SIZE]) -> Self {
         let t = NodeType::from(value[NODE_TYPE]);
         let is_root = value[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(value[NODE_LEN].try_into().unwrap());
@@ -97,12 +97,12 @@ where
     }
 }
 
-impl<K, V> From<Node<K, V>> for [u8; PAGE_SIZE]
+impl<K, V> From<&Node<K, V>> for [u8; PAGE_SIZE]
 where
-    K: Storable,
-    V: Storable,
+    K: Copy + Storable,
+    V: Copy + Storable,
 {
-    fn from(node: Node<K, V>) -> Self {
+    fn from(node: &Node<K, V>) -> Self {
         let mut ret: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
 
         ret[NODE_TYPE] = u8::from(node.t);
@@ -115,14 +115,24 @@ where
         let size = Slot::<K, V>::SIZE;
         let mut from = NODE_VALUES_START;
         let mut to = from + size;
-        for value in node.values {
-            let slot = BytesMut::from(value);
+        for value in &node.values {
+            let slot = BytesMut::from(*value);
             ret[from..to].copy_from_slice(&slot);
             from += size;
             to += size;
         }
 
         ret
+    }
+}
+
+impl<K, V> From<Node<K, V>> for [u8; PAGE_SIZE]
+where
+    K: Copy + Storable,
+    V: Copy + Storable,
+{
+    fn from(node: Node<K, V>) -> Self {
+        <[u8; PAGE_SIZE]>::from(&node)
     }
 }
 
@@ -165,19 +175,20 @@ where
             values: rest,
         };
 
-        if self.t == NodeType::Leaf {
-            self.next = new.id;
-        }
-
-        if self.t == NodeType::Internal {
-            new.next = self.next;
-            self.next = -1;
+        match self.t {
+            NodeType::Internal => {
+                new.next = self.next;
+                self.next = -1;
+            }
+            NodeType::Leaf => {
+                self.next = new.id;
+            }
         }
 
         new
     }
 
-    pub fn get_separators(&self, other: Option<&Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
+    pub fn get_separators(&self, other: Option<Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
     where
         K: Increment,
     {
@@ -210,6 +221,14 @@ where
             },
             ptr => ptr,
         }
+    }
+
+    #[inline]
+    pub fn first_ptr(&self) -> Option<PageId> {
+        self.values.first().map(|s| match s.1 {
+            Either::Value(_) => unreachable!(),
+            Either::Pointer(ptr) => ptr,
+        })
     }
 
     #[inline]
@@ -254,7 +273,7 @@ mod test {
 
         let bytes = <[u8; PAGE_SIZE]>::from(node.clone());
 
-        let node2: Node<i32, i32> = Node::from(&bytes[..]);
+        let node2: Node<i32, i32> = Node::from(&bytes);
 
         assert!(node == node2, "Node: {:?}\n Node2: {:?}", node, node2);
     }
@@ -368,7 +387,7 @@ mod test {
             ]),
         };
 
-        let Some(slots) = node.get_separators(Some(&other)) else { panic!() };
+        let Some(slots) = node.get_separators(Some(other)) else { panic!() };
         let expected = (Slot(51, Either::Pointer(0)), Slot(111, Either::Pointer(1)));
         assert!(slots == expected);
     }
@@ -408,7 +427,7 @@ mod test {
             ]),
         };
 
-        let Some(slots) = node.get_separators(Some(&other)) else { panic!() };
+        let Some(slots) = node.get_separators(Some(other)) else { panic!() };
         let expected = (Slot(50, Either::Pointer(0)), Slot(110, Either::Pointer(1)));
         assert!(slots == expected);
     }
