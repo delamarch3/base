@@ -48,7 +48,7 @@ const NODE_VALUES_START: usize = 18;
 #[derive(PartialEq, Clone, Debug)]
 pub struct Node<K, V> {
     pub t: NodeType,
-    is_root: bool,
+    pub is_root: bool,
     len: u32,
     max: u32,
     next: PageId,
@@ -175,6 +175,7 @@ where
             values: rest,
         };
 
+        self.is_root = false;
         match self.t {
             NodeType::Internal => {
                 new.next = self.next;
@@ -306,7 +307,7 @@ mod test {
 
         let expected = Node {
             t: NodeType::Leaf,
-            is_root: true,
+            is_root: false,
             len: 5,
             max: 20,
             next: 1,
