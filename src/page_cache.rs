@@ -10,7 +10,7 @@ use std::{
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
-    disk::Disk,
+    disk::{Disk, FileSystem},
     page::{Page, PageId, PageInner},
     replacer::{AccessType, LRUKHandle},
 };
@@ -117,19 +117,19 @@ impl<'a> Pin<'a> {
     }
 }
 
-pub type SharedPageCache = Arc<PageCache>;
+pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
-pub struct PageCache {
+pub struct PageCache<D: Disk = FileSystem> {
     pages: [Page; CACHE_SIZE],
     page_table: RwLock<HashMap<PageId, FrameId>>,
     free: FreeList<CACHE_SIZE>,
-    disk: Disk,
+    disk: D,
     next_page_id: AtomicI32,
     replacer: LRUKHandle,
 }
 
-impl PageCache {
-    pub fn new(disk: Disk, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
+impl<D: Disk> PageCache<D> {
+    pub fn new(disk: D, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
         let pages = std::array::from_fn(|_| Page::default());
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
@@ -236,7 +236,7 @@ mod test {
     use std::{io, sync::Arc, thread};
 
     use crate::{
-        disk::Disk,
+        disk::FileSystem,
         page_cache::{FreeList, PageCache},
         replacer::LRUKHandle,
         test::CleanUp,
@@ -246,7 +246,7 @@ mod test {
     async fn test_pm_replacer() -> io::Result<()> {
         const DB_FILE: &str = "./test_pm_replacer.db";
         let _cu = CleanUp::file(DB_FILE);
-        let disk = Disk::new(DB_FILE).await?;
+        let disk = FileSystem::new(DB_FILE).await?;
 
         let replacer = LRUKHandle::new(2);
         let pc = PageCache::new(disk, replacer, 0);

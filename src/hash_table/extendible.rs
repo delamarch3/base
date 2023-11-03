@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    disk::{Disk, FileSystem},
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
     page::PageId,
@@ -20,18 +21,24 @@ pub enum ExtendibleError {
 pub type ExtendibleResult<T> = Result<T, ExtendibleError>;
 use ExtendibleError::*;
 
-pub struct ExtendibleHashTable<K, V, const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
+pub struct ExtendibleHashTable<
+    K,
+    V,
+    D: Disk = FileSystem,
+    const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE,
+> {
     dir_page_id: PageId,
-    pc: SharedPageCache,
+    pc: SharedPageCache<D>,
     _data: PhantomData<(K, V)>,
 }
 
-impl<const BUCKET_BIT_SIZE: usize, K, V> ExtendibleHashTable<K, V, BUCKET_BIT_SIZE>
+impl<const BUCKET_BIT_SIZE: usize, K, V, D> ExtendibleHashTable<K, V, D, BUCKET_BIT_SIZE>
 where
     K: Storable + Copy + Eq + Hash,
     V: Storable + Copy + Eq,
+    D: Disk,
 {
-    pub fn new(dir_page_id: PageId, pc: SharedPageCache) -> Self {
+    pub fn new(dir_page_id: PageId, pc: SharedPageCache<D>) -> Self {
         Self {
             dir_page_id,
             pc,
@@ -176,7 +183,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        disk::Disk,
+        disk::FileSystem,
         hash_table::extendible::ExtendibleHashTable,
         hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
         page_cache::PageCache,
@@ -191,12 +198,12 @@ mod test {
         let dir_page_id = 0;
 
         {
-            let disk = Disk::new(file).await.expect("could not open db file");
+            let disk = FileSystem::new(file).await.expect("could not open db file");
             let replacer = LRUKHandle::new(2);
             const POOL_SIZE: usize = 8;
             let pm = PageCache::new(disk, replacer, dir_page_id);
             let _dir_page = pm.new_page().await;
-            let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
+            let ht: ExtendibleHashTable<i32, i32, FileSystem, DEFAULT_BIT_SIZE> =
                 ExtendibleHashTable::new(dir_page_id, pm.clone());
 
             ht.insert(&0, &1).await.unwrap();
@@ -217,10 +224,10 @@ mod test {
         }
 
         // Make sure it reads back ok
-        let disk = Disk::new(file).await.expect("could not open db file");
+        let disk = FileSystem::new(file).await.expect("could not open db file");
         let replacer = LRUKHandle::new(2);
         let pm = PageCache::new(disk, replacer, dir_page_id + 1);
-        let ht: ExtendibleHashTable<i32, i32, DEFAULT_BIT_SIZE> =
+        let ht: ExtendibleHashTable<i32, i32, FileSystem, DEFAULT_BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         let r1 = ht.get(&0).await.unwrap();
@@ -235,7 +242,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_split() {
         let file = "test_split.db";
-        let disk = Disk::new(file).await.expect("could not open db file");
+        let disk = FileSystem::new(file).await.expect("could not open db file");
         let _cu = CleanUp::file(file);
         // let replacer = LRUKReplacer::new(2);
         let replacer = LRUKHandle::new(2);
@@ -244,7 +251,7 @@ mod test {
         const BIT_SIZE: usize = 1; // 8 slots
         let pm = PageCache::new(disk, replacer, dir_page_id);
         let _dir_page = pm.new_page().await;
-        let ht: ExtendibleHashTable<i32, i32, BIT_SIZE> =
+        let ht: ExtendibleHashTable<i32, i32, FileSystem, BIT_SIZE> =
             ExtendibleHashTable::new(dir_page_id, pm.clone());
 
         assert!(ht.get_num_buckets().await.unwrap() == 1);

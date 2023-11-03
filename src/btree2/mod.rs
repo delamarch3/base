@@ -10,6 +10,7 @@ use crate::{
         node::{Node, NodeType},
         slot::{Either, Slot},
     },
+    disk::{Disk, FileSystem},
     page::{PageId, PAGE_SIZE},
     page_cache::SharedPageCache,
     storable::Storable,
@@ -17,23 +18,25 @@ use crate::{
 
 use self::slot::Increment;
 
+#[derive(Debug)]
 pub enum BTreeError {
     OutOfMemory,
 }
 
-pub struct BTree<K, V> {
+pub struct BTree<K, V, D: Disk = FileSystem> {
     root: PageId,
-    pc: SharedPageCache,
+    pc: SharedPageCache<D>,
     max: u32,
     _data: PhantomData<(K, V)>,
 }
 
-impl<K, V> BTree<K, V>
+impl<K, V, D> BTree<K, V, D>
 where
     K: Storable + Copy + Send + Sync + Ord + Increment,
     V: Storable + Copy + Send + Sync + Eq,
+    D: Disk + Send + Sync,
 {
-    pub fn new(pc: SharedPageCache, max: u32) -> Self {
+    pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
         Self {
             root: -1,
             pc,
@@ -224,29 +227,63 @@ where
         }
     }
 
-    async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
+    pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
         if self.root == -1 {
             return Ok(None);
         }
 
-        let page = self
-            .pc
-            .fetch_page(self.root)
-            .await
-            .ok_or(BTreeError::OutOfMemory)?;
-        let r = page.read().await;
-        let node = Node::from(&r.data);
+        self._get(key, self.root).await
+    }
 
-        match node.find_child(key) {
-            Some(ptr) => {
-                // self.get(key);
-                todo!()
+    fn _get(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<Slot<K, V>>, BTreeError>> {
+        async move {
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node = Node::from(&r.data);
+
+            match node.find_child(key) {
+                Some(ptr) => self._get(key, ptr).await,
+                None if node.t == NodeType::Leaf => {
+                    let slot = Slot(key, Either::Pointer(0));
+                    Ok(node.values.get(&slot).map(|s| *s))
+                }
+                None => Ok(None),
             }
-            None if node.t == NodeType::Leaf => {
-                let slot = Slot(key, Either::Pointer(0));
-                Ok(node.values.get(&slot).map(|s| *s))
-            }
-            None => Ok(None),
         }
+        .boxed()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{disk::Memory, page_cache::PageCache, replacer::LRUKHandle};
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_btree() -> Result<(), BTreeError> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 16;
+        const K: usize = 2;
+
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRUKHandle::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
+
+        let mut btree = BTree::new(pc, MAX as u32);
+
+        btree.insert(8, 8).await?;
+        pc2.flush_all_pages().await;
+
+        let have = btree.get(8).await?;
+        let want = Some(Slot(8, Either::Value(8)));
+        assert!(have == want, "Have: {:?}\nWant: {:?}", have, want);
+
+        Ok(())
     }
 }

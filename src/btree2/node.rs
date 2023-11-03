@@ -107,7 +107,7 @@ where
 
         ret[NODE_TYPE] = u8::from(node.t);
         ret[NODE_IS_ROOT] = node.is_root as u8;
-        ret[NODE_LEN].copy_from_slice(&node.len.to_be_bytes());
+        ret[NODE_LEN].copy_from_slice(&(node.values.len() as u32).to_be_bytes());
         ret[NODE_MAX].copy_from_slice(&node.max.to_be_bytes());
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
         ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
