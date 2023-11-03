@@ -81,6 +81,7 @@ where
 
 pub trait Increment {
     fn increment(&mut self);
+    fn next(&self) -> Self;
 }
 
 macro_rules! impl_increment {
@@ -89,6 +90,10 @@ macro_rules! impl_increment {
         impl Increment for $t {
             fn increment(&mut self) {
                 *self += 1;
+            }
+
+            fn next(&self) -> Self {
+                self + 1
             }
         }
         )*

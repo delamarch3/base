@@ -1,7 +1,7 @@
 pub mod node;
 pub mod slot;
 
-use std::marker::PhantomData;
+use std::{fmt::Display, marker::PhantomData};
 
 use futures::{future::BoxFuture, FutureExt};
 
@@ -32,8 +32,8 @@ pub struct BTree<K, V, D: Disk = FileSystem> {
 
 impl<K, V, D> BTree<K, V, D>
 where
-    K: Storable + Copy + Send + Sync + Ord + Increment,
-    V: Storable + Copy + Send + Sync + Eq,
+    K: Storable + Copy + Send + Sync + Display + Ord + Increment,
+    V: Storable + Copy + Send + Sync + Display + Eq,
     D: Disk + Send + Sync,
 {
     pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
@@ -95,7 +95,7 @@ where
 
                 let mut new = node.split(new_page.id);
 
-                if key >= new.last_key().expect("there should be a last item") {
+                if key >= node.last_key().unwrap() {
                     // Write the node
                     let page = self
                         .pc
@@ -109,9 +109,11 @@ where
                     drop(w);
 
                     // Find the child node
-                    let ptr = match self.find_child(&new, key).await? {
+                    let ptr = match self.find_child(&mut new, key).await? {
                         Some(ptr) => ptr,
                         None => {
+                            eprintln!("inserting {} : {} into {}", key, value, new.id);
+
                             // Reached leaf node
                             new.values.replace(Slot(key, Either::Value(value)));
                             nw.data = <[u8; PAGE_SIZE]>::from(&new);
@@ -129,9 +131,13 @@ where
                     let cw = child_page.write().await;
                     let next = Node::from(&cw.data);
 
+                    // Dropping because lock will be reacquired in the recursive call. Doubt this is
+                    // correct.
+                    drop(cw);
+
                     if let Some((s, os)) = self._insert(next, key, value).await? {
-                        new.values.insert(s);
-                        new.values.insert(os);
+                        new.values.replace(s);
+                        new.values.replace(os);
                     }
 
                     // Write the new node
@@ -155,9 +161,11 @@ where
             let mut w = page.write().await;
 
             // Find the child node
-            let ptr = match self.find_child(&node, key).await? {
+            let ptr = match self.find_child(&mut node, key).await? {
                 Some(ptr) => ptr,
                 None => {
+                    eprintln!("inserting {} : {} into {}", key, value, node.id);
+
                     // Reached leaf node
                     node.values.replace(Slot(key, Either::Value(value)));
                     w.data = <[u8; PAGE_SIZE]>::from(&node);
@@ -175,9 +183,13 @@ where
             let cw = page.write().await;
             let next = Node::from(&cw.data);
 
+            // Dropping because lock will be reacquired in the recursive call. Doubt this is
+            // correct.
+            drop(cw);
+
             if let Some((s, os)) = self._insert(next, key, value).await? {
-                node.values.insert(s);
-                node.values.insert(os);
+                node.values.replace(s);
+                node.values.replace(os);
             }
 
             // Write the original node
@@ -188,7 +200,11 @@ where
         .boxed()
     }
 
-    async fn find_child(&self, node: &Node<K, V>, key: K) -> Result<Option<PageId>, BTreeError> {
+    async fn find_child(
+        &self,
+        node: &mut Node<K, V>,
+        key: K,
+    ) -> Result<Option<PageId>, BTreeError> {
         match node.find_child(key) {
             Some(ptr) => Ok(Some(ptr)),
             None if node.t == NodeType::Internal => {
@@ -217,7 +233,10 @@ where
                 };
 
                 let mut w = new_node_page.write().await;
-                w.data = <[u8; PAGE_SIZE]>::from(new_node);
+                w.data = <[u8; PAGE_SIZE]>::from(&new_node);
+
+                let slot = Slot(key.next(), Either::Pointer(new_node.id));
+                node.values.insert(slot);
 
                 Ok(Some(w.id))
             }
@@ -256,13 +275,62 @@ where
         }
         .boxed()
     }
+
+    #[cfg(test)]
+    fn print(&self) -> BoxFuture<()> {
+        async move {
+            if self.root == -1 {
+                return;
+            }
+
+            self._print(self.root).await;
+        }
+        .boxed()
+    }
+
+    #[cfg(test)]
+    fn _print(&self, ptr: PageId) -> BoxFuture<()> {
+        async move {
+            let page = self.pc.fetch_page(ptr).await.unwrap();
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+
+            dbg!(&node);
+
+            for slot in &node.values {
+                match slot.1 {
+                    Either::Value(_) => return,
+                    Either::Pointer(ptr) => self._print(ptr).await,
+                }
+            }
+        }
+        .boxed()
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use rand::{seq::SliceRandom, thread_rng};
+
     use crate::{disk::Memory, page_cache::PageCache, replacer::LRUKHandle};
 
     use super::*;
+
+    macro_rules! get_inserts {
+        ($range:expr, $t:ty) => {{
+            let mut ret = Vec::with_capacity($range.len());
+
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
+
+            for key in keys {
+                let value = key + 10;
+                ret.push((key, value));
+            }
+
+            ret
+        }};
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_btree() -> Result<(), BTreeError> {
@@ -277,12 +345,22 @@ mod test {
 
         let mut btree = BTree::new(pc, MAX as u32);
 
-        btree.insert(8, 8).await?;
+        let slots = 6;
+        let inserts = get_inserts!(-slots..slots, i32);
+
+        for (k, v) in &inserts {
+            btree.insert(*k, *v).await?;
+        }
+
         pc2.flush_all_pages().await;
 
-        let have = btree.get(8).await?;
-        let want = Some(Slot(8, Either::Value(8)));
-        assert!(have == want, "Have: {:?}\nWant: {:?}", have, want);
+        btree.print().await;
+
+        for (k, v) in inserts {
+            let have = btree.get(k).await?;
+            let want = Some(Slot(k, Either::Value(v)));
+            assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+        }
 
         Ok(())
     }
