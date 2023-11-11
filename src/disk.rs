@@ -60,7 +60,6 @@ pub struct Memory {
 unsafe impl Send for Memory {}
 unsafe impl Sync for Memory {}
 
-const EMPTY_PAGE: PageBuf = [0; PAGE_SIZE];
 impl Disk for Memory {
     fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE * page_id as usize;
@@ -70,22 +69,12 @@ impl Disk for Memory {
         let mut ret = [0; PAGE_SIZE];
         ret.copy_from_slice(&buf[offset..offset + PAGE_SIZE]);
 
-        if ret == EMPTY_PAGE {
-            eprintln!("READ: Page {} is completely empty", page_id);
-        }
-
         Ok(ret)
     }
 
     fn write_page(&self, page_id: PageId, data: &PageBuf) {
-        eprintln!("WRITE: Page {}", page_id);
-
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
-
-        if data == &EMPTY_PAGE {
-            eprintln!("WRITE: Page {} is completely empty", page_id);
-        }
 
         let buf = unsafe { &mut *self.buf.get() };
         buf[offset..offset + PAGE_SIZE].copy_from_slice(data);

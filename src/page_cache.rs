@@ -240,9 +240,9 @@ mod test {
         page::PAGE_SIZE,
         page_cache::{FreeList, PageCache},
         replacer::LRUKHandle,
+        writep,
     };
 
-    // TODO: write and set dirty at the same time
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pm_read() -> io::Result<()> {
         const MEMORY: usize = PAGE_SIZE * 16;
@@ -278,7 +278,7 @@ mod test {
             let data = b"page 8";
             let page = pc.new_page().await.unwrap();
             let mut w = page.write().await;
-            w.data[0..data.len()].copy_from_slice(data);
+            writep!(w, 0..data.len(), data);
         }
 
         // Read back page 7

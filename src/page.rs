@@ -57,6 +57,18 @@ macro_rules! byte_array {
     }};
 }
 
+#[macro_export]
+macro_rules! writep {
+    ($page:ident, $data:expr) => {
+        $page.data[..].copy_from_slice($data);
+        $page.dirty = true;
+    };
+    ($page:ident, $range:expr, $data:expr) => {
+        $page.data[$range].copy_from_slice($data);
+        $page.dirty = true;
+    };
+}
+
 pub const PAGE_SIZE: usize = 4 * 1024;
 
 pub type PageId = i32;

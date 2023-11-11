@@ -14,6 +14,7 @@ use crate::{
     page::{PageBuf, PageId},
     page_cache::SharedPageCache,
     storable::Storable,
+    writep,
 };
 
 use self::slot::Increment;
@@ -30,7 +31,6 @@ pub struct BTree<K, V, D: Disk = FileSystem> {
     _data: PhantomData<(K, V)>,
 }
 
-const EMPTY_PAGE: PageBuf = [0; 4096];
 impl<K, V, D> BTree<K, V, D>
 where
     K: Storable + Copy + Send + Sync + Display + Ord + Increment,
@@ -55,7 +55,7 @@ where
                 pin = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
                 let node = Node::new(pin.id, self.max, NodeType::Leaf, true);
                 let mut w = pin.write().await;
-                w.data = PageBuf::from(&node);
+                writep!(w, &PageBuf::from(&node));
                 node
             }
             id => {
@@ -79,7 +79,7 @@ where
             new_root.values.insert(os);
 
             let mut w = new_root_page.write().await;
-            w.data = PageBuf::from(new_root);
+            writep!(w, &PageBuf::from(&new_root));
         }
 
         Ok(())
@@ -106,7 +106,7 @@ where
                         .await
                         .ok_or(BTreeError::OutOfMemory)?;
                     let mut w = page.write().await;
-                    w.data = PageBuf::from(&node);
+                    writep!(w, &PageBuf::from(&node));
 
                     // We don't need to keep a lock on this side of the branch
                     drop(w);
@@ -121,7 +121,7 @@ where
 
                             // Reached leaf node
                             new.values.replace(Slot(key, Either::Value(value)));
-                            nw.data = PageBuf::from(&new);
+                            writep!(nw, &PageBuf::from(&new));
 
                             return Ok(node.get_separators(Some(new)));
                         }
@@ -146,14 +146,14 @@ where
                     }
 
                     // Write the new node
-                    nw.data = PageBuf::from(&new);
+                    writep!(nw, &PageBuf::from(&new));
 
                     return Ok(node.get_separators(Some(new)));
                 }
 
                 // Write the new node
                 // Original node is written below
-                nw.data = PageBuf::from(&new);
+                writep!(nw, &PageBuf::from(&new));
 
                 split = Some(new)
             }
@@ -173,7 +173,7 @@ where
 
                     // Reached leaf node
                     node.values.replace(Slot(key, Either::Value(value)));
-                    w.data = PageBuf::from(&node);
+                    writep!(w, &PageBuf::from(&node));
 
                     return Ok(Node::get_separators(&node, split));
                 }
@@ -198,7 +198,7 @@ where
             }
 
             // Write the original node
-            w.data = PageBuf::from(&node);
+            writep!(w, &PageBuf::from(&node));
 
             Ok(Node::get_separators(&node, split))
         }
@@ -349,7 +349,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_btree() -> Result<(), BTreeError> {
         const MAX: usize = 8;
-        const MEMORY: usize = PAGE_SIZE * 32;
+        const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
@@ -359,7 +359,7 @@ mod test {
 
         let mut btree = BTree::new(pc, MAX as u32);
 
-        let slots = 10;
+        let slots = 50;
         let inserts = get_inserts!(-slots..slots, i32);
 
         for (k, v) in &inserts {
@@ -368,13 +368,11 @@ mod test {
 
         pc2.flush_all_pages().await;
 
-        // btree.print().await;
-
-        // for (k, v) in inserts {
-        //     let have = btree.get(k).await?;
-        //     let want = Some(Slot(k, Either::Value(v)));
-        //     assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
-        // }
+        for (k, v) in inserts {
+            let have = btree.get(k).await?;
+            let want = Some(Slot(k, Either::Value(v)));
+            assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+        }
 
         Ok(())
     }
