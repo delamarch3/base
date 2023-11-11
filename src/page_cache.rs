@@ -236,52 +236,63 @@ mod test {
     use std::{io, sync::Arc, thread};
 
     use crate::{
-        disk::FileSystem,
+        disk::Memory,
+        page::PAGE_SIZE,
         page_cache::{FreeList, PageCache},
         replacer::LRUKHandle,
-        test::CleanUp,
     };
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_pm_replacer() -> io::Result<()> {
-        const DB_FILE: &str = "./test_pm_replacer.db";
-        let _cu = CleanUp::file(DB_FILE);
-        let disk = FileSystem::new(DB_FILE).await?;
+    async fn test_pm_replacer_evict() -> io::Result<()> {
+        const MEMORY: usize = PAGE_SIZE * 16;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
 
         let replacer = LRUKHandle::new(2);
         let pc = PageCache::new(disk, replacer, 0);
 
         {
-            let _p0 = pc.new_page().await.expect("should return page 0"); // id = 0 ts = 0
-            let _p1 = pc.new_page().await.expect("should return page 1"); // id = 1 ts = 1
-            let _p2 = pc.new_page().await.expect("should return page 2"); // id = 2 ts = 2
+            let _pages = tokio::join!(
+                pc.new_page(), // id = 0 ts = 0
+                pc.new_page(), // id = 1 ts = 1
+                pc.new_page(), // id = 2 ts = 2
+                pc.new_page(),
+                pc.new_page(),
+                pc.new_page(),
+                pc.new_page(),
+                pc.new_page()
+            );
+            assert!(
+                _pages.0.is_some()
+                    && _pages.1.is_some()
+                    && _pages.2.is_some()
+                    && _pages.3.is_some()
+                    && _pages.4.is_some()
+                    && _pages.5.is_some()
+                    && _pages.6.is_some()
+                    && _pages.7.is_some()
+            );
 
-            let _p3 = pc.new_page().await.expect("should return page 3");
-            let _p4 = pc.new_page().await.expect("should return page 4");
-            let _p5 = pc.new_page().await.expect("should return page 5");
-            let _p6 = pc.new_page().await.expect("should return page 6");
-            let _p7 = pc.new_page().await.expect("should return page 7");
+            let pt = pc.page_table.read().await;
+            assert!(pc.free.is_empty());
+            assert!(pt.contains_key(&2));
+            assert!(pt.contains_key(&1));
+            assert!(pt.contains_key(&0));
+            drop(pt);
 
-            let inner = pc.clone();
-            let page_table = inner.page_table.read().await;
-            assert!(inner.free.is_empty());
-            assert!(page_table.contains_key(&2));
-            assert!(page_table.contains_key(&1));
-            assert!(page_table.contains_key(&0));
-            drop(page_table);
-            drop(inner);
-
-            pc.fetch_page(0).await; // ts = 3
-            pc.fetch_page(0).await; // ts = 4
-
-            pc.fetch_page(1).await; // ts = 5
-
-            pc.fetch_page(0).await; // ts = 6
-            pc.fetch_page(0).await; // ts = 7
-
-            pc.fetch_page(1).await; // ts = 8
-
-            pc.fetch_page(2).await; // ts = 9
+            tokio::join!(
+                pc.fetch_page(0), // ts = 3
+                pc.fetch_page(0), // ts = 4
+                //
+                pc.fetch_page(1), // ts = 5
+                //
+                pc.fetch_page(0), // ts = 6
+                pc.fetch_page(0), // ts = 7
+                //
+                pc.fetch_page(1), // ts = 8
+                //
+                pc.fetch_page(2), // ts = 9
+            );
         }
 
         // Page 2 was accessed the least and should have the largest k distance of 7
@@ -290,10 +301,37 @@ mod test {
 
         let _p8 = pc.new_page().await.expect("should return page 8");
 
-        let inner = &pc;
-        let page_table = inner.page_table.read().await;
-        assert!(page_table.contains_key(&8));
-        assert!(!page_table.contains_key(&2));
+        let pt = pc.page_table.read().await;
+        assert!(pt.contains_key(&8));
+        assert!(!pt.contains_key(&2));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_pm_replacer_full() -> io::Result<()> {
+        const MEMORY: usize = PAGE_SIZE * 8;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRUKHandle::new(2);
+
+        let pc = PageCache::new(disk, replacer, 0);
+        let _pages = tokio::join!(
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page()
+        );
+
+        let have = pc.new_page().await;
+        assert!(
+            have.is_none(),
+            "Expected new_page to return None when replacer is full"
+        );
 
         Ok(())
     }
