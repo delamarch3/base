@@ -118,15 +118,16 @@ impl LRUKReplacer {
     pub fn remove(&mut self, i: FrameId) {
         match self.nodes.entry(i) {
             Entry::Occupied(node) => {
-                assert!(node.get().pin == 0);
+                // assert!(node.get().pin == 0);
+
+                if node.get().pin != 0 {
+                    eprintln!("WARN: node is still pinned");
+                    std::process::exit(1);
+                }
+
                 node.remove();
             }
-            Entry::Vacant(_) => {
-                eprintln!(
-                    "warn: attempt to remove frame that has not been registered in the replacer: \
-                    {i}"
-                );
-            }
+            Entry::Vacant(_) => {}
         }
     }
 }

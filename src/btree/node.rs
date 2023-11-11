@@ -3,9 +3,9 @@ use std::{collections::BTreeSet, ops::Range};
 use bytes::BytesMut;
 
 use crate::{
-    btree2::slot::Either,
+    btree::slot::Either,
     get_ptr,
-    page::{PageId, PAGE_SIZE},
+    page::{PageBuf, PageId, PAGE_SIZE},
     storable::Storable,
 };
 
@@ -22,7 +22,7 @@ impl From<u8> for NodeType {
         match value {
             1 => NodeType::Internal,
             2 => NodeType::Leaf,
-            _ => unreachable!(),
+            _ => unreachable!("unexpected NodeType: {value}"),
         }
     }
 }
@@ -56,12 +56,17 @@ pub struct Node<K, V> {
     pub values: BTreeSet<Slot<K, V>>,
 }
 
-impl<K, V> From<&[u8; PAGE_SIZE]> for Node<K, V>
+impl<K, V> From<&PageBuf> for Node<K, V>
 where
     K: Storable + Ord,
     V: Storable + Eq,
 {
-    fn from(value: &[u8; PAGE_SIZE]) -> Self {
+    fn from(value: &PageBuf) -> Self {
+        // if value[NODE_TYPE] == 0 {
+        //     dbg!(value[NODE_TYPE]);
+        //     eprintln!("{:?}", value);
+        // }
+
         let t = NodeType::from(value[NODE_TYPE]);
         let is_root = value[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(value[NODE_LEN].try_into().unwrap());
@@ -97,13 +102,13 @@ where
     }
 }
 
-impl<K, V> From<&Node<K, V>> for [u8; PAGE_SIZE]
+impl<K, V> From<&Node<K, V>> for PageBuf
 where
     K: Copy + Storable,
     V: Copy + Storable,
 {
     fn from(node: &Node<K, V>) -> Self {
-        let mut ret: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
+        let mut ret: PageBuf = [0; PAGE_SIZE];
 
         ret[NODE_TYPE] = u8::from(node.t);
         ret[NODE_IS_ROOT] = node.is_root as u8;
@@ -122,17 +127,21 @@ where
             to += size;
         }
 
+        if ret == [0; 4096] {
+            panic!("PageBuf::from(Node) produced an empty buffer");
+        }
+
         ret
     }
 }
 
-impl<K, V> From<Node<K, V>> for [u8; PAGE_SIZE]
+impl<K, V> From<Node<K, V>> for PageBuf
 where
     K: Copy + Storable,
     V: Copy + Storable,
 {
     fn from(node: Node<K, V>) -> Self {
-        <[u8; PAGE_SIZE]>::from(&node)
+        PageBuf::from(&node)
     }
 }
 
@@ -245,7 +254,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::btree2::slot::Either;
+    use crate::btree::slot::Either;
 
     use super::*;
 
@@ -272,7 +281,7 @@ mod test {
             ]),
         };
 
-        let bytes = <[u8; PAGE_SIZE]>::from(node.clone());
+        let bytes = PageBuf::from(node.clone());
 
         let node2: Node<i32, i32> = Node::from(&bytes);
 

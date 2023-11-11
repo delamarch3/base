@@ -242,12 +242,59 @@ mod test {
         replacer::LRUKHandle,
     };
 
+    // TODO: write and set dirty at the same time
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_pm_read() -> io::Result<()> {
+        const MEMORY: usize = PAGE_SIZE * 16;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRUKHandle::new(2);
+        let pc = PageCache::new(disk, replacer, 0);
+
+        // Hold 7 pins (pages 0 to 6):
+        let _pages = tokio::join!(
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+            pc.new_page(),
+        );
+
+        // Write to page 7
+        let want = b"test string";
+        let id;
+        {
+            let page = pc.new_page().await.unwrap();
+            id = page.id;
+            let mut w = page.write().await;
+            w.data[0..want.len()].copy_from_slice(want);
+            w.dirty = true;
+        }
+
+        // Swap the page out and write something else:
+        {
+            let data = b"page 8";
+            let page = pc.new_page().await.unwrap();
+            let mut w = page.write().await;
+            w.data[0..data.len()].copy_from_slice(data);
+        }
+
+        // Read back page 7
+        let page = pc.fetch_page(id).await.unwrap();
+        let r = page.read().await;
+        let have = &r.data[0..want.len()];
+        assert!(want == have, "Want: {want:?}, Have: {have:?}");
+
+        Ok(())
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pm_replacer_evict() -> io::Result<()> {
         const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
-
         let replacer = LRUKHandle::new(2);
         let pc = PageCache::new(disk, replacer, 0);
 
@@ -314,8 +361,8 @@ mod test {
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
         let replacer = LRUKHandle::new(2);
-
         let pc = PageCache::new(disk, replacer, 0);
+
         let _pages = tokio::join!(
             pc.new_page(),
             pc.new_page(),

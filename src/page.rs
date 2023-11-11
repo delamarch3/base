@@ -60,6 +60,7 @@ macro_rules! byte_array {
 pub const PAGE_SIZE: usize = 4 * 1024;
 
 pub type PageId = i32;
+pub type PageBuf = [u8; PAGE_SIZE];
 
 pub struct Page(RwLock<PageInner>);
 

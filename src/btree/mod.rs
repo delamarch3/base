@@ -1,86 +1,381 @@
-use std::mem::size_of;
+pub mod node;
+pub mod slot;
 
-use crate::{get_u32, put_bytes};
+use std::{fmt::Display, marker::PhantomData};
 
-pub mod btree;
-pub mod internal;
-pub mod leaf;
+use futures::{future::BoxFuture, FutureExt};
 
-#[derive(PartialEq, Clone, Copy)]
-pub enum BTreeNodeType {
-    Invalid,
-    Internal,
-    Leaf,
+use crate::{
+    btree::{
+        node::{Node, NodeType},
+        slot::{Either, Slot},
+    },
+    disk::{Disk, FileSystem},
+    page::{PageBuf, PageId},
+    page_cache::SharedPageCache,
+    storable::Storable,
+};
+
+use self::slot::Increment;
+
+#[derive(Debug)]
+pub enum BTreeError {
+    OutOfMemory,
 }
 
-impl From<BTreeNodeType> for u32 {
-    fn from(value: BTreeNodeType) -> Self {
-        match value {
-            BTreeNodeType::Invalid => 0,
-            BTreeNodeType::Internal => 1,
-            BTreeNodeType::Leaf => 2,
-        }
-    }
+pub struct BTree<K, V, D: Disk = FileSystem> {
+    root: PageId,
+    pc: SharedPageCache<D>,
+    max: u32,
+    _data: PhantomData<(K, V)>,
 }
 
-impl From<u32> for BTreeNodeType {
-    fn from(value: u32) -> Self {
-        match value {
-            1 => BTreeNodeType::Internal,
-            2 => BTreeNodeType::Leaf,
-            _ => BTreeNodeType::Invalid,
-        }
-    }
-}
-
-pub struct BTreeHeader {
-    t: BTreeNodeType,
-    len: u32,
-    max_len: u32,
-}
-
-impl BTreeHeader {
-    const SIZE: usize = size_of::<u32>() * 3;
-
-    pub fn new(data: &[u8]) -> Self {
-        let t = get_u32!(data, 0);
-        let size = get_u32!(data, 4);
-        let max_size = get_u32!(data, 8);
-
+const EMPTY_PAGE: PageBuf = [0; 4096];
+impl<K, V, D> BTree<K, V, D>
+where
+    K: Storable + Copy + Send + Sync + Display + Ord + Increment,
+    V: Storable + Copy + Send + Sync + Display + Eq,
+    D: Disk + Send + Sync,
+{
+    pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
         Self {
-            t: t.into(),
-            len: size,
-            max_len: max_size,
+            root: -1,
+            pc,
+            max,
+            _data: PhantomData,
         }
     }
 
-    pub fn write_data(&self, page: &mut [u8]) {
-        let t: u32 = self.t.into();
-        put_bytes!(page, t.to_be_bytes(), 0, 4);
-        put_bytes!(page, self.len.to_be_bytes(), 4, 8);
-        put_bytes!(page, self.max_len.to_be_bytes(), 8, 12);
+    // Note: One thread could split the root whilst another holds a pin to the root. Should double
+    // check is_root
+    pub async fn insert(&mut self, key: K, value: V) -> Result<(), BTreeError> {
+        let pin;
+        let root = match self.root {
+            -1 => {
+                pin = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+                let node = Node::new(pin.id, self.max, NodeType::Leaf, true);
+                let mut w = pin.write().await;
+                w.data = PageBuf::from(&node);
+                node
+            }
+            id => {
+                pin = self
+                    .pc
+                    .fetch_page(id)
+                    .await
+                    .ok_or(BTreeError::OutOfMemory)?;
+                let r = pin.read().await;
+                Node::from(&r.data)
+            }
+        };
+        self.root = root.id;
+
+        if let Some((s, os)) = Self::_insert(&self, root, key, value).await? {
+            let new_root_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+            let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
+            self.root = new_root.id;
+
+            new_root.values.insert(s);
+            new_root.values.insert(os);
+
+            let mut w = new_root_page.write().await;
+            w.data = PageBuf::from(new_root);
+        }
+
+        Ok(())
     }
 
-    pub fn init(&mut self, t: BTreeNodeType, len: u32, max_len: u32) {
-        self.t = t;
-        self.len = len;
-        self.max_len = max_len;
+    fn _insert(
+        &self,
+        mut node: Node<K, V>,
+        key: K,
+        value: V,
+    ) -> BoxFuture<Result<Option<(Slot<K, V>, Slot<K, V>)>, BTreeError>> {
+        async move {
+            let mut split = None;
+            if node.almost_full() {
+                let new_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+                let mut nw = new_page.write().await;
+                let mut new = node.split(new_page.id);
+
+                if key >= node.last_key().unwrap() {
+                    // Write the node
+                    let page = self
+                        .pc
+                        .fetch_page(node.id)
+                        .await
+                        .ok_or(BTreeError::OutOfMemory)?;
+                    let mut w = page.write().await;
+                    w.data = PageBuf::from(&node);
+
+                    // We don't need to keep a lock on this side of the branch
+                    drop(w);
+
+                    // Find the child node
+                    let ptr = match self.find_child(&mut new, key).await? {
+                        Some(ptr) => ptr,
+                        None => {
+                            // Leaf node:
+
+                            eprintln!("inserting {} : {} into {}", key, value, new.id);
+
+                            // Reached leaf node
+                            new.values.replace(Slot(key, Either::Value(value)));
+                            nw.data = PageBuf::from(&new);
+
+                            return Ok(node.get_separators(Some(new)));
+                        }
+                    };
+
+                    // Deserialise child node and recurse
+                    let child_page = self
+                        .pc
+                        .fetch_page(ptr)
+                        .await
+                        .ok_or(BTreeError::OutOfMemory)?;
+                    let cw = child_page.write().await;
+                    let next = Node::from(&cw.data);
+
+                    // Dropping because lock will be reacquired in the recursive call. Doubt this is
+                    // correct.
+                    drop(cw);
+
+                    if let Some((s, os)) = self._insert(next, key, value).await? {
+                        new.values.replace(s);
+                        new.values.replace(os);
+                    }
+
+                    // Write the new node
+                    nw.data = PageBuf::from(&new);
+
+                    return Ok(node.get_separators(Some(new)));
+                }
+
+                // Write the new node
+                // Original node is written below
+                nw.data = PageBuf::from(&new);
+
+                split = Some(new)
+            }
+
+            let page = self
+                .pc
+                .fetch_page(node.id)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let mut w = page.write().await;
+
+            // Find the child node
+            let ptr = match self.find_child(&mut node, key).await? {
+                Some(ptr) => ptr,
+                None => {
+                    eprintln!("inserting {} : {} into {}", key, value, node.id);
+
+                    // Reached leaf node
+                    node.values.replace(Slot(key, Either::Value(value)));
+                    w.data = PageBuf::from(&node);
+
+                    return Ok(Node::get_separators(&node, split));
+                }
+            };
+
+            // Deserialise child node and recurse
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let cw = page.write().await;
+            let next = Node::from(&cw.data);
+
+            // Dropping because lock will be reacquired in the recursive call. Doubt this is
+            // correct.
+            drop(cw);
+
+            if let Some((s, os)) = self._insert(next, key, value).await? {
+                node.values.replace(s);
+                node.values.replace(os);
+            }
+
+            // Write the original node
+            w.data = PageBuf::from(&node);
+
+            Ok(Node::get_separators(&node, split))
+        }
+        .boxed()
     }
 
-    pub fn r#type(&self) -> BTreeNodeType {
-        self.t
+    async fn find_child(
+        &self,
+        node: &mut Node<K, V>,
+        key: K,
+    ) -> Result<Option<PageId>, BTreeError> {
+        match node.find_child(key) {
+            Some(ptr) => Ok(Some(ptr)),
+            None if node.t == NodeType::Internal => {
+                // TODO:
+                // 1. Determine next node type
+                // 2. Create add max() to K's trait
+                //    Subsequent calls to this method should return that node
+                // 3. If leaf connect last node
+                // 4. On split the `os` should use the correct key and replace the correct slot
+                // Note: can only be created if the node is root, otherwise unreachable
+
+                let new_node_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+
+                let new_node: Node<K, V> = match node.first_ptr() {
+                    Some(ptr) => {
+                        let page = self
+                            .pc
+                            .fetch_page(ptr)
+                            .await
+                            .ok_or(BTreeError::OutOfMemory)?;
+                        let r = page.read().await;
+                        let node: Node<K, V> = Node::from(&r.data);
+
+                        match node.t {
+                            NodeType::Internal => {
+                                Node::new(new_node_page.id, self.max, NodeType::Internal, false)
+                            }
+                            NodeType::Leaf => {
+                                Node::new(new_node_page.id, self.max, NodeType::Leaf, false)
+                            }
+                        }
+                    }
+                    None => Node::new(new_node_page.id, self.max, NodeType::Leaf, false),
+                };
+
+                let mut w = new_node_page.write().await;
+                w.data = PageBuf::from(&new_node);
+
+                let slot = Slot(key.next(), Either::Pointer(new_node.id));
+                node.values.insert(slot);
+
+                Ok(Some(w.id))
+            }
+            None => {
+                return Ok(None);
+            }
+        }
     }
 
-    pub fn len(&self) -> u32 {
-        self.len
+    pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
+        if self.root == -1 {
+            return Ok(None);
+        }
+
+        self._get(key, self.root).await
     }
 
-    // TODO: this isn't the correct criteria for "full"
-    pub fn almost_full(&self) -> bool {
-        self.len + 1 == self.max_len
+    fn _get(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<Slot<K, V>>, BTreeError>> {
+        async move {
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node = Node::from(&r.data);
+
+            match node.find_child(key) {
+                Some(ptr) => self._get(key, ptr).await,
+                None if node.t == NodeType::Leaf => {
+                    let slot = Slot(key, Either::Pointer(0));
+                    Ok(node.values.get(&slot).map(|s| *s))
+                }
+                None => Ok(None),
+            }
+        }
+        .boxed()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
+    #[cfg(test)]
+    #[allow(dead_code)]
+    fn print(&self) -> BoxFuture<()> {
+        async move {
+            if self.root == -1 {
+                return;
+            }
+
+            self._print(self.root).await;
+        }
+        .boxed()
+    }
+
+    #[cfg(test)]
+    fn _print(&self, ptr: PageId) -> BoxFuture<()> {
+        async move {
+            let page = self.pc.fetch_page(ptr).await.unwrap();
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+
+            dbg!(&node);
+
+            for slot in &node.values {
+                match slot.1 {
+                    Either::Value(_) => return,
+                    Either::Pointer(ptr) => self._print(ptr).await,
+                }
+            }
+        }
+        .boxed()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::{seq::SliceRandom, thread_rng};
+
+    use crate::{disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRUKHandle};
+
+    use super::*;
+
+    macro_rules! get_inserts {
+        ($range:expr, $t:ty) => {{
+            let mut ret = Vec::with_capacity($range.len());
+
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
+
+            for key in keys {
+                let value = key + 10;
+                ret.push((key, value));
+            }
+
+            ret
+        }};
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_btree() -> Result<(), BTreeError> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 32;
+        const K: usize = 2;
+
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRUKHandle::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
+
+        let mut btree = BTree::new(pc, MAX as u32);
+
+        let slots = 10;
+        let inserts = get_inserts!(-slots..slots, i32);
+
+        for (k, v) in &inserts {
+            btree.insert(*k, *v).await?;
+        }
+
+        pc2.flush_all_pages().await;
+
+        // btree.print().await;
+
+        // for (k, v) in inserts {
+        //     let have = btree.get(k).await?;
+        //     let want = Some(Slot(k, Either::Value(v)));
+        //     assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+        // }
+
+        Ok(())
     }
 }

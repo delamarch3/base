@@ -1,6 +1,5 @@
 pub mod bitmap;
 pub mod btree;
-pub mod btree2;
 pub mod disk;
 pub mod hash_table;
 pub mod page;

@@ -1,19 +1,13 @@
-use std::{
-    cell::UnsafeCell,
-    io,
-    os::fd::AsRawFd,
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering::*},
-};
+use std::{cell::UnsafeCell, io, os::fd::AsRawFd, path::Path};
 
 use nix::sys::uio;
 use tokio::fs::{File, OpenOptions};
 
-use crate::page::{PageId, PAGE_SIZE};
+use crate::page::{PageBuf, PageId, PAGE_SIZE};
 
 pub trait Disk {
-    fn read_page(&self, page_id: PageId) -> io::Result<[u8; PAGE_SIZE]>;
-    fn write_page(&self, page_id: PageId, data: &[u8; PAGE_SIZE]);
+    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf>;
+    fn write_page(&self, page_id: PageId, data: &PageBuf);
 }
 
 pub struct FileSystem {
@@ -21,7 +15,7 @@ pub struct FileSystem {
 }
 
 impl Disk for FileSystem {
-    fn read_page(&self, page_id: PageId) -> io::Result<[u8; PAGE_SIZE]> {
+    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
@@ -34,7 +28,7 @@ impl Disk for FileSystem {
         Ok(buf)
     }
 
-    fn write_page(&self, page_id: PageId, data: &[u8; PAGE_SIZE]) {
+    fn write_page(&self, page_id: PageId, data: &PageBuf) {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
@@ -66,8 +60,9 @@ pub struct Memory {
 unsafe impl Send for Memory {}
 unsafe impl Sync for Memory {}
 
+const EMPTY_PAGE: PageBuf = [0; PAGE_SIZE];
 impl Disk for Memory {
-    fn read_page(&self, page_id: PageId) -> io::Result<[u8; PAGE_SIZE]> {
+    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
 
@@ -75,12 +70,22 @@ impl Disk for Memory {
         let mut ret = [0; PAGE_SIZE];
         ret.copy_from_slice(&buf[offset..offset + PAGE_SIZE]);
 
+        if ret == EMPTY_PAGE {
+            eprintln!("READ: Page {} is completely empty", page_id);
+        }
+
         Ok(ret)
     }
 
-    fn write_page(&self, page_id: PageId, data: &[u8; PAGE_SIZE]) {
+    fn write_page(&self, page_id: PageId, data: &PageBuf) {
+        eprintln!("WRITE: Page {}", page_id);
+
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
+
+        if data == &EMPTY_PAGE {
+            eprintln!("WRITE: Page {} is completely empty", page_id);
+        }
 
         let buf = unsafe { &mut *self.buf.get() };
         buf[offset..offset + PAGE_SIZE].copy_from_slice(data);
