@@ -65,10 +65,10 @@ where
         };
 
         let mut bucket_page_w = bucket_page.page.write().await;
-        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
+        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
 
         bucket.insert(k, v);
-        bucket.write_data(&mut bucket_page_w);
+        writep!(bucket_page_w, &PageBuf::from(&bucket));
 
         if bucket.is_full() {
             if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
@@ -82,11 +82,11 @@ where
             // 4. Update the page ids in the directory
             let page0 = self.pc.new_page().await.ok_or(Error)?;
             let mut page0_w = page0.page.write().await;
-            let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page0_w.data);
+            let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&page0_w.data);
 
             let page1 = self.pc.new_page().await.ok_or(Error)?;
             let mut page1_w = page1.page.write().await;
-            let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&page1_w.data);
+            let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&page1_w.data);
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
@@ -108,8 +108,8 @@ where
             }
 
             writep!(dir_page_w, &PageBuf::from(dir));
-            bucket0.write_data(&mut page0_w);
-            bucket0.write_data(&mut page1_w);
+            writep!(page0_w, &PageBuf::from(&bucket0));
+            writep!(page1_w, &PageBuf::from(&bucket0));
 
             // TODO: mark original page on disk as ready to be allocated
             self.pc.remove_page(bucket_page_w.id).await;
@@ -130,10 +130,10 @@ where
             _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
         let mut bucket_page_w = bucket_page.page.write().await;
-        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
+        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
 
         let ret = bucket.remove(k, v);
-        bucket.write_data(&mut bucket_page_w);
+        writep!(bucket_page_w, &PageBuf::from(bucket));
 
         // TODO: attempt to merge if empty
 
@@ -153,7 +153,7 @@ where
         };
 
         let bucket_page_w = bucket_page.page.read().await;
-        let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::new(&bucket_page_w.data);
+        let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
 
         Ok(bucket.find(k))
     }
