@@ -115,10 +115,6 @@ where
                     let ptr = match self.find_child(&mut new, key).await? {
                         Some(ptr) => ptr,
                         None => {
-                            // Leaf node:
-
-                            eprintln!("inserting {} : {} into {}", key, value, new.id);
-
                             // Reached leaf node
                             new.values.replace(Slot(key, Either::Value(value)));
                             writep!(nw, &PageBuf::from(&new));
@@ -169,8 +165,6 @@ where
             let ptr = match self.find_child(&mut node, key).await? {
                 Some(ptr) => ptr,
                 None => {
-                    eprintln!("inserting {} : {} into {}", key, value, node.id);
-
                     // Reached leaf node
                     node.values.replace(Slot(key, Either::Value(value)));
                     writep!(w, &PageBuf::from(&node));

@@ -109,7 +109,14 @@ impl<'a> Pin<'a> {
     }
 
     pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
-        self.page.write().await
+        let w = self.page.write().await;
+
+        assert!(
+            self.id == w.id,
+            "page was swapped out whilst a pin was held"
+        );
+
+        w
     }
 
     pub async fn read(&self) -> RwLockReadGuard<'_, PageInner> {

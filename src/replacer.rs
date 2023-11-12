@@ -118,11 +118,9 @@ impl LRUKReplacer {
     pub fn remove(&mut self, i: FrameId) {
         match self.nodes.entry(i) {
             Entry::Occupied(node) => {
-                // assert!(node.get().pin == 0);
-
-                if node.get().pin != 0 {
-                    eprintln!("WARN: node is still pinned");
-                    std::process::exit(1);
+                let pins = node.get().pin;
+                if pins != 0 {
+                    eprintln!("WARN: frame {} is still pinned, {} pins", i, pins);
                 }
 
                 node.remove();
