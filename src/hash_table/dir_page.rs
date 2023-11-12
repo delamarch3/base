@@ -1,94 +1,66 @@
-use std::mem::size_of;
+use std::ops::Range;
 
-use tokio::sync::RwLockWriteGuard;
+use crate::page::{PageBuf, PageId, PAGE_SIZE};
 
-use crate::{
-    copy_bytes, get_i32, get_u32,
-    page::{PageId, PageInner, PAGE_SIZE},
-    put_bytes,
-};
+pub const PAGE_IDS_SIZE_U32: usize = 512;
+pub const PAGE_IDS_SIZE_U8: usize = 512 * 4;
 
-pub const DEFAULT_BUCKET_PAGE_IDS_SIZE: usize = 512;
-pub const DEFAULT_BUCKET_PAGE_IDS_SIZE_U8: usize = 512 * 4;
+const GLOBAL_DEPTH: Range<usize> = 0..4;
+const LOCAL_DEPTHS: Range<usize> = 4..4 + PAGE_IDS_SIZE_U32;
+const PAGE_IDS: Range<usize> = PAGE_IDS_SIZE_U32..PAGE_IDS_SIZE_U32 + PAGE_IDS_SIZE_U8;
 
 #[derive(Debug)]
 pub struct Directory {
     global_depth: u32,
-    local_depths: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE],
-    bucket_page_ids: [u8; DEFAULT_BUCKET_PAGE_IDS_SIZE_U8],
+    /// Local depth for each page
+    local_depths: [u8; PAGE_IDS_SIZE_U32],
+    /// Bucket page IDs
+    page_ids: [u8; PAGE_IDS_SIZE_U8],
 }
 
-impl Directory {
-    pub fn new(data: &[u8; PAGE_SIZE]) -> Self {
-        let global_depth = get_u32!(data, 0);
-        let mut local_depths = [0; DEFAULT_BUCKET_PAGE_IDS_SIZE];
-        copy_bytes!(
-            local_depths,
-            data,
-            size_of::<u32>(),
-            DEFAULT_BUCKET_PAGE_IDS_SIZE
-        );
-        let mut bucket_page_ids = [0; DEFAULT_BUCKET_PAGE_IDS_SIZE_U8];
-        copy_bytes!(
-            bucket_page_ids,
-            data,
-            DEFAULT_BUCKET_PAGE_IDS_SIZE,
-            DEFAULT_BUCKET_PAGE_IDS_SIZE_U8
-        );
+impl From<&PageBuf> for Directory {
+    fn from(buf: &PageBuf) -> Self {
+        let global_depth = u32::from_be_bytes(buf[GLOBAL_DEPTH].try_into().unwrap());
+
+        let mut local_depths = [0; PAGE_IDS_SIZE_U32];
+        local_depths[..].copy_from_slice(&buf[LOCAL_DEPTHS]);
+
+        let mut bucket_page_ids = [0; PAGE_IDS_SIZE_U8];
+        bucket_page_ids[..].copy_from_slice(&buf[PAGE_IDS]);
 
         Self {
             global_depth,
             local_depths,
-            bucket_page_ids,
+            page_ids: bucket_page_ids,
         }
     }
+}
 
-    pub fn write_data(&self, page: &mut RwLockWriteGuard<'_, PageInner>) {
-        put_bytes!(
-            page.data,
-            self.global_depth.to_be_bytes(),
-            0,
-            size_of::<u32>()
-        );
-        put_bytes!(
-            page.data,
-            self.local_depths,
-            size_of::<u32>(),
-            DEFAULT_BUCKET_PAGE_IDS_SIZE
-        );
-        put_bytes!(
-            page.data,
-            self.bucket_page_ids,
-            DEFAULT_BUCKET_PAGE_IDS_SIZE,
-            DEFAULT_BUCKET_PAGE_IDS_SIZE_U8
-        );
+impl From<&Directory> for PageBuf {
+    fn from(dir: &Directory) -> Self {
+        let mut ret: PageBuf = [0; PAGE_SIZE];
 
-        page.dirty = true;
+        ret[GLOBAL_DEPTH].copy_from_slice(&dir.global_depth.to_be_bytes());
+        ret[LOCAL_DEPTHS].copy_from_slice(&dir.local_depths);
+        ret[PAGE_IDS].copy_from_slice(&dir.page_ids);
+
+        ret
+    }
+}
+
+impl From<Directory> for PageBuf {
+    fn from(dir: Directory) -> Self {
+        Self::from(&dir)
+    }
+}
+
+impl Directory {
+    pub fn get(&self, i: usize) -> PageId {
+        i32::from_be_bytes(self.page_ids[i * 4..(i * 4) + 4].try_into().unwrap())
     }
 
-    pub fn get_page_id(&self, i: usize) -> PageId {
-        get_i32!(self.bucket_page_ids, i * size_of::<u32>())
-    }
-
-    pub fn set_bucket_page_id(&mut self, i: usize, id: PageId) {
-        put_bytes!(
-            self.bucket_page_ids,
-            i32::to_be_bytes(id),
-            i * size_of::<u32>(),
-            size_of::<u32>()
-        );
-    }
-
-    pub fn set_local_depth(&mut self, i: usize, depth: u8) {
-        self.local_depths[i] = depth;
-    }
-
-    pub fn incr_local_depth(&mut self, i: usize) {
-        self.local_depths[i] += 1;
-    }
-
-    pub fn decr_local_depth(&mut self, i: usize) {
-        self.local_depths[i] -= 1;
+    pub fn insert(&mut self, i: usize, id: PageId) {
+        self.page_ids[i * 4..(i * 4) + 4].copy_from_slice(&i32::to_be_bytes(id));
     }
 
     pub fn set_global_depth(&mut self, depth: u32) {
@@ -99,16 +71,12 @@ impl Directory {
         self.global_depth += 1;
     }
 
-    pub fn decr_global_depth(&mut self) {
-        self.global_depth += 1;
+    pub fn local_depth_mask(&self, i: usize) -> usize {
+        Self::depth_mask(self.local_depths[i] as u32)
     }
 
-    pub fn get_local_depth_mask(&self, i: usize) -> usize {
-        Self::get_depth_mask(self.local_depths[i] as u32)
-    }
-
-    pub fn get_global_depth_mask(&self) -> usize {
-        Self::get_depth_mask(self.global_depth)
+    pub fn global_depth_mask(&self) -> usize {
+        Self::depth_mask(self.global_depth)
     }
 
     pub fn get_local_high_bit(&self, i: usize) -> usize {
@@ -116,7 +84,7 @@ impl Directory {
     }
 
     #[inline]
-    fn get_depth_mask(depth: u32) -> usize {
+    fn depth_mask(depth: u32) -> usize {
         // 0 => ...0001
         // 1 => ...0011
         // 2 => ...0111
@@ -125,12 +93,8 @@ impl Directory {
         (1 << depth) - 1
     }
 
-    pub fn get_global_depth(&self) -> u32 {
+    pub fn global_depth(&self) -> u32 {
         self.global_depth
-    }
-
-    pub fn get_local_depth(&self, i: usize) -> u32 {
-        self.local_depths[i] as u32
     }
 }
 
@@ -138,48 +102,47 @@ impl Directory {
 mod test {
     use crate::{
         hash_table::dir_page::Directory,
-        page::{Page, PAGE_SIZE},
+        page::{Page, PageBuf, PAGE_SIZE},
+        writep,
     };
 
     #[test]
     fn test_depth_mask() {
-        let mut dir = Directory::new(&[0; PAGE_SIZE]);
+        let mut dir = Directory::from(&[0; PAGE_SIZE]);
 
-        assert!(dir.get_global_depth_mask() == 0);
+        assert!(dir.global_depth_mask() == 0);
 
         dir.set_global_depth(2);
-        assert!(dir.get_global_depth_mask() == 3);
+        assert!(dir.global_depth_mask() == 3);
 
         dir.set_global_depth(4);
-        assert!(dir.get_global_depth_mask() == 15);
+        assert!(dir.global_depth_mask() == 15);
 
         dir.set_global_depth(8);
-        assert!(dir.get_global_depth_mask() == 255);
+        assert!(dir.global_depth_mask() == 255);
     }
 
     #[tokio::test]
     async fn test_directory() {
         let page = Page::default();
-        let mut page_w = page.write().await;
+        let mut w = page.write().await;
 
-        let mut dir = Directory::new(&page_w.data);
+        let mut dir = Directory::from(&w.data);
 
-        dir.set_bucket_page_id(1, 1);
-        dir.set_bucket_page_id(2, 2);
-        dir.set_bucket_page_id(10, 10);
+        dir.insert(1, 1);
+        dir.insert(2, 2);
+        dir.insert(10, 10);
 
-        assert!(dir.get_page_id(1) == 1);
-        assert!(dir.get_page_id(2) == 2);
-        assert!(dir.get_page_id(10) == 10);
+        assert!(dir.get(1) == 1);
+        assert!(dir.get(2) == 2);
+        assert!(dir.get(10) == 10);
 
-        dir.write_data(&mut page_w);
-
-        drop(dir);
+        writep!(w, &PageBuf::from(dir));
 
         // Make sure it reads back ok
-        let dir = Directory::new(&page_w.data);
-        assert!(dir.get_page_id(1) == 1);
-        assert!(dir.get_page_id(2) == 2);
-        assert!(dir.get_page_id(10) == 10);
+        let dir = Directory::from(&w.data);
+        assert!(dir.get(1) == 1);
+        assert!(dir.get(2) == 2);
+        assert!(dir.get(10) == 10);
     }
 }

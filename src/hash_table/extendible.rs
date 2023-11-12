@@ -8,9 +8,10 @@ use crate::{
     disk::{Disk, FileSystem},
     hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
     hash_table::dir_page::{self, Directory},
-    page::PageId,
+    page::{PageBuf, PageId},
     page_cache::SharedPageCache,
     storable::Storable,
+    writep,
 };
 
 // TODO: proper errors
@@ -49,15 +50,15 @@ where
     pub async fn insert(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let mut dir_page_w = dir_page.page.write().await;
-        let mut dir = Directory::new(&dir_page_w.data);
+        let mut dir = Directory::from(&dir_page_w.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(bucket_index);
+        let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
                 let p = self.pc.new_page().await.ok_or(Error)?;
-                dir.set_bucket_page_id(bucket_index, p.page.read().await.id);
-                dir.write_data(&mut dir_page_w);
+                dir.insert(bucket_index, p.page.read().await.id);
+                writep!(dir_page_w, &PageBuf::from(&dir));
                 p
             }
             _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
@@ -70,7 +71,7 @@ where
         bucket.write_data(&mut bucket_page_w);
 
         if bucket.is_full() {
-            if dir.get_local_depth_mask(bucket_index) == dir.get_global_depth_mask() {
+            if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
                 // The size of the directory implicitily doubles
                 dir.incr_global_depth();
             }
@@ -98,16 +99,15 @@ where
                 new_bucket.insert(&pair.a, &pair.b);
             }
 
-            for i in (Self::get_bucket_index(k, &dir) & (bit - 1)
-                ..dir_page::DEFAULT_BUCKET_PAGE_IDS_SIZE)
+            for i in (Self::get_bucket_index(k, &dir) & (bit - 1)..dir_page::PAGE_IDS_SIZE_U32)
                 .step_by(bit)
             {
                 let new_page_id = if i & bit > 0 { page0_w.id } else { page1_w.id };
 
-                dir.set_bucket_page_id(i, new_page_id);
+                dir.insert(i, new_page_id);
             }
 
-            dir.write_data(&mut dir_page_w);
+            writep!(dir_page_w, &PageBuf::from(dir));
             bucket0.write_data(&mut page0_w);
             bucket0.write_data(&mut page1_w);
 
@@ -121,10 +121,10 @@ where
     pub async fn remove(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
-        let dir = Directory::new(&dir_page_r.data);
+        let dir = Directory::from(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(bucket_index);
+        let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(false),
             _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
@@ -143,10 +143,10 @@ where
     pub async fn get(&self, k: &K) -> ExtendibleResult<Vec<V>> {
         let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
-        let dir = Directory::new(&dir_page_r.data);
+        let dir = Directory::from(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
-        let bucket_page_id = dir.get_page_id(bucket_index);
+        let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(vec![]),
             _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
@@ -161,9 +161,9 @@ where
     pub async fn get_num_buckets(&self) -> ExtendibleResult<u32> {
         let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
         let dir_page_r = dir_page.page.read().await;
-        let dir = Directory::new(&dir_page_r.data);
+        let dir = Directory::from(&dir_page_r.data);
 
-        Ok(1 << dir.get_global_depth())
+        Ok(1 << dir.global_depth())
     }
 
     fn hash(k: &K) -> usize {
@@ -174,9 +174,9 @@ where
 
     fn get_bucket_index(k: &K, dir_page: &Directory) -> usize {
         let hash = Self::hash(k);
-        let i = hash & dir_page.get_global_depth_mask();
+        let i = hash & dir_page.global_depth_mask();
 
-        i % dir_page::DEFAULT_BUCKET_PAGE_IDS_SIZE
+        i % dir_page::PAGE_IDS_SIZE_U32
     }
 }
 
@@ -270,8 +270,8 @@ mod test {
 
         let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
         let dir_page_w = dir_page.page.write().await;
-        let dir = Directory::new(&dir_page_w.data);
+        let dir = Directory::from(&dir_page_w.data);
 
-        assert!(dir.get_global_depth() == 1);
+        assert!(dir.global_depth() == 1);
     }
 }

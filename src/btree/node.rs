@@ -61,23 +61,18 @@ where
     K: Storable + Ord,
     V: Storable + Eq,
 {
-    fn from(value: &PageBuf) -> Self {
-        // if value[NODE_TYPE] == 0 {
-        //     dbg!(value[NODE_TYPE]);
-        //     eprintln!("{:?}", value);
-        // }
-
-        let t = NodeType::from(value[NODE_TYPE]);
-        let is_root = value[NODE_IS_ROOT] > 0;
-        let len = u32::from_be_bytes(value[NODE_LEN].try_into().unwrap());
-        let max = u32::from_be_bytes(value[NODE_MAX].try_into().unwrap());
-        let next = PageId::from_be_bytes(value[NODE_NEXT].try_into().unwrap());
-        let id = PageId::from_be_bytes(value[NODE_ID].try_into().unwrap());
+    fn from(buf: &PageBuf) -> Self {
+        let t = NodeType::from(buf[NODE_TYPE]);
+        let is_root = buf[NODE_IS_ROOT] > 0;
+        let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
+        let max = u32::from_be_bytes(buf[NODE_MAX].try_into().unwrap());
+        let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
+        let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
         let mut values = BTreeSet::new();
         let size = Slot::<K, V>::SIZE;
 
-        let left = &value[NODE_VALUES_START..];
+        let left = &buf[NODE_VALUES_START..];
         let mut from = 0;
         let mut to = size;
         let mut rem = len;
