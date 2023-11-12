@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use bytes::BufMut;
 
-use crate::{get_i32, get_u64, page::PageId, put_bytes};
+use crate::page::PageId;
 
 // TODO: move this to correct file once time comes
 type RelationID = (PageId, u64);
@@ -36,7 +36,7 @@ macro_rules! storable_impl {
             }
 
             fn write_to(&self, dst: &mut [u8], pos: usize) {
-                put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
+                dst[pos..pos + Self::SIZE].copy_from_slice(&self.into_bytes());
             }
         }
         )*
@@ -60,13 +60,13 @@ impl Storable for RelationID {
     fn from_bytes(bytes: &[u8]) -> Self {
         assert!(bytes.len() >= Self::SIZE);
 
-        let page_id = get_i32!(bytes, 0);
-        let rel_id = get_u64!(bytes, 4);
+        let page_id = i32::from_be_bytes(bytes[0..4].try_into().unwrap());
+        let rel_id = u64::from_be_bytes(bytes[4..12].try_into().unwrap());
 
         (page_id, rel_id)
     }
 
     fn write_to(&self, dst: &mut [u8], pos: usize) {
-        put_bytes!(dst, self.into_bytes(), pos, Self::SIZE);
+        dst[pos..pos + Self::SIZE].copy_from_slice(&self.into_bytes());
     }
 }
