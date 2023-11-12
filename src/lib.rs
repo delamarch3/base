@@ -7,7 +7,6 @@ pub mod page_cache;
 pub mod pair;
 pub mod replacer;
 pub mod storable;
-pub mod table_page;
 
 #[cfg(test)]
 mod test {

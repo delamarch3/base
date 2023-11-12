@@ -2,7 +2,10 @@ use std::mem::size_of;
 
 use bytes::BufMut;
 
-use crate::{get_i32, get_u64, put_bytes, table_page::RelationID};
+use crate::{get_i32, get_u64, page::PageId, put_bytes};
+
+// TODO: move this to correct file once time comes
+type RelationID = (PageId, u64);
 
 pub trait Storable: std::fmt::Debug {
     const SIZE: usize;
