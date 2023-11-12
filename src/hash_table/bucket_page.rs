@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::size_of, ops::Range};
 
 use crate::{
     bitmap::BitMap,
@@ -7,28 +7,29 @@ use crate::{
     storable::Storable,
 };
 
-pub const DEFAULT_BIT_SIZE: usize = 512 / 8;
-pub const VALUES_START: usize = DEFAULT_BIT_SIZE * 2;
+/// Number of bytes for the bitmaps
+pub const BIT_SIZE: usize = 512 / 8;
 
-pub struct Bucket<K, V, const BIT_SIZE: usize = DEFAULT_BIT_SIZE> {
+const OCCUPIED: Range<usize> = 0..BIT_SIZE;
+const READABLE: Range<usize> = BIT_SIZE..BIT_SIZE + BIT_SIZE;
+
+pub struct Bucket<K, V> {
     pub occupied: BitMap<BIT_SIZE>,
     pub readable: BitMap<BIT_SIZE>,
     pairs: [Option<Pair<K, V>>; 512],
 }
 
-impl<K, V, const BIT_SIZE: usize> From<&PageBuf> for Bucket<K, V, BIT_SIZE>
+impl<K, V> From<&PageBuf> for Bucket<K, V>
 where
     K: Storable,
     V: Storable,
 {
     fn from(buf: &PageBuf) -> Self {
         let mut occupied = BitMap::<BIT_SIZE>::new();
-        occupied.as_mut_slice().copy_from_slice(&buf[0..BIT_SIZE]);
+        occupied.as_mut_slice().copy_from_slice(&buf[OCCUPIED]);
 
         let mut readable = BitMap::<BIT_SIZE>::new();
-        readable
-            .as_mut_slice()
-            .copy_from_slice(&buf[BIT_SIZE..BIT_SIZE * 2]);
+        readable.as_mut_slice().copy_from_slice(&buf[READABLE]);
 
         // Use the occupied map to find pairs to insert
         let mut pairs: [Option<Pair<K, V>>; 512] = std::array::from_fn(|_| None);
@@ -36,10 +37,8 @@ where
         let k_size = size_of::<K>();
         let v_size = size_of::<V>();
 
-        // TODO: test_split fails if take() is removed, probably nicer to get rid of const generic
-        // completely
         let mut pos = BIT_SIZE * 2;
-        for (i, pair) in pairs.iter_mut().enumerate().take(BIT_SIZE * 8) {
+        for (i, pair) in pairs.iter_mut().enumerate() {
             if !occupied.check(i) {
                 continue;
             }
@@ -64,16 +63,16 @@ where
     }
 }
 
-impl<K, V, const BIT_SIZE: usize> From<&Bucket<K, V, BIT_SIZE>> for PageBuf
+impl<K, V> From<&Bucket<K, V>> for PageBuf
 where
     K: Storable,
     V: Storable,
 {
-    fn from(bucket: &Bucket<K, V, BIT_SIZE>) -> Self {
+    fn from(bucket: &Bucket<K, V>) -> Self {
         let mut ret: PageBuf = [0; PAGE_SIZE];
 
-        ret[0..BIT_SIZE].copy_from_slice(bucket.occupied.as_slice());
-        ret[BIT_SIZE..BIT_SIZE * 2].copy_from_slice(bucket.occupied.as_slice());
+        ret[OCCUPIED].copy_from_slice(bucket.occupied.as_slice());
+        ret[READABLE].copy_from_slice(bucket.occupied.as_slice());
 
         let mut pos = BIT_SIZE * 2;
         let p_size = size_of::<K>() + size_of::<V>();
@@ -94,17 +93,17 @@ where
     }
 }
 
-impl<K, V, const BIT_SIZE: usize> From<Bucket<K, V, BIT_SIZE>> for PageBuf
+impl<K, V> From<Bucket<K, V>> for PageBuf
 where
     K: Storable,
     V: Storable,
 {
-    fn from(bucket: Bucket<K, V, BIT_SIZE>) -> Self {
+    fn from(bucket: Bucket<K, V>) -> Self {
         Self::from(&bucket)
     }
 }
 
-impl<'a, const BIT_SIZE: usize, K, V> Bucket<K, V, BIT_SIZE>
+impl<K, V> Bucket<K, V>
 where
     K: Storable + Copy + Eq,
     V: Storable + Copy + Eq,
@@ -177,14 +176,21 @@ where
 
     #[inline]
     pub fn is_full(&self) -> bool {
-        self.occupied.is_full()
+        let len = self.occupied.len();
+        let s = size_of::<K>() + size_of::<V>();
+
+        if len >= (PAGE_SIZE - 128) / s {
+            true
+        } else {
+            false
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
+        hash_table::bucket_page::Bucket,
         page::{Page, PageBuf},
         writep,
     };
@@ -194,7 +200,7 @@ mod test {
         let page = Page::default();
         let mut page_w = page.write().await;
 
-        let mut bucket: Bucket<i32, i32, DEFAULT_BIT_SIZE> = Bucket::from(&page_w.data);
+        let mut bucket: Bucket<i32, i32> = Bucket::from(&page_w.data);
 
         bucket.insert(&1, &2);
         bucket.insert(&3, &4);
@@ -210,7 +216,7 @@ mod test {
         writep!(page_w, &PageBuf::from(bucket));
 
         // Make sure it reads back ok
-        let bucket: Bucket<i32, i32, DEFAULT_BIT_SIZE> = Bucket::from(&page_w.data);
+        let bucket: Bucket<i32, i32> = Bucket::from(&page_w.data);
         assert!(bucket.get(0).unwrap() == (1, 2));
         assert!(bucket.get(1).unwrap() == (3, 4));
         assert!(bucket.get(2).unwrap() == (5, 6));

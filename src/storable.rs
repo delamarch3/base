@@ -43,7 +43,7 @@ macro_rules! storable_impl {
     };
 }
 
-storable_impl!(u8, u16, u32, u64, i8, i16, i32, i64);
+storable_impl!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 
 impl Storable for RelationID {
     const SIZE: usize = 12;

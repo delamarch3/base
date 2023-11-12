@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     disk::{Disk, FileSystem},
-    hash_table::bucket_page::{Bucket, DEFAULT_BIT_SIZE},
+    hash_table::bucket_page::Bucket,
     hash_table::dir_page::{self, Directory},
     page::{PageBuf, PageId},
     page_cache::SharedPageCache,
@@ -22,18 +22,13 @@ pub enum ExtendibleError {
 pub type ExtendibleResult<T> = Result<T, ExtendibleError>;
 use ExtendibleError::*;
 
-pub struct ExtendibleHashTable<
-    K,
-    V,
-    D: Disk = FileSystem,
-    const BUCKET_BIT_SIZE: usize = DEFAULT_BIT_SIZE,
-> {
+pub struct ExtendibleHashTable<K, V, D: Disk = FileSystem> {
     dir_page_id: PageId,
     pc: SharedPageCache<D>,
     _data: PhantomData<(K, V)>,
 }
 
-impl<const BUCKET_BIT_SIZE: usize, K, V, D> ExtendibleHashTable<K, V, D, BUCKET_BIT_SIZE>
+impl<K, V, D> ExtendibleHashTable<K, V, D>
 where
     K: Storable + Copy + Eq + Hash,
     V: Storable + Copy + Eq,
@@ -65,7 +60,7 @@ where
         };
 
         let mut bucket_page_w = bucket_page.page.write().await;
-        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
+        let mut bucket = Bucket::from(&bucket_page_w.data);
 
         bucket.insert(k, v);
         writep!(bucket_page_w, &PageBuf::from(&bucket));
@@ -82,11 +77,11 @@ where
             // 4. Update the page ids in the directory
             let page0 = self.pc.new_page().await.ok_or(Error)?;
             let mut page0_w = page0.page.write().await;
-            let mut bucket0: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&page0_w.data);
+            let mut bucket0 = Bucket::from(&page0_w.data);
 
             let page1 = self.pc.new_page().await.ok_or(Error)?;
             let mut page1_w = page1.page.write().await;
-            let mut bucket1: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&page1_w.data);
+            let mut bucket1 = Bucket::from(&page1_w.data);
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
@@ -130,7 +125,7 @@ where
             _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
         };
         let mut bucket_page_w = bucket_page.page.write().await;
-        let mut bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
+        let mut bucket = Bucket::from(&bucket_page_w.data);
 
         let ret = bucket.remove(k, v);
         writep!(bucket_page_w, &PageBuf::from(bucket));
@@ -153,7 +148,7 @@ where
         };
 
         let bucket_page_w = bucket_page.page.read().await;
-        let bucket: Bucket<K, V, BUCKET_BIT_SIZE> = Bucket::from(&bucket_page_w.data);
+        let bucket = Bucket::from(&bucket_page_w.data);
 
         Ok(bucket.find(k))
     }
@@ -183,52 +178,44 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        disk::FileSystem,
+        disk::Memory,
         hash_table::extendible::ExtendibleHashTable,
-        hash_table::{bucket_page::DEFAULT_BIT_SIZE, dir_page::Directory},
+        hash_table::{bucket_page::BIT_SIZE, dir_page::Directory},
+        page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRUKHandle,
-        test::CleanUp,
     };
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_extendible_hash_table() {
-        let file = "test_extendible_hash_table.db";
-        let _cu = CleanUp::file(file);
-        let dir_page_id = 0;
+        const MEMORY: usize = PAGE_SIZE * 4;
+        const K: usize = 2;
 
-        {
-            let disk = FileSystem::new(file).await.expect("could not open db file");
-            let replacer = LRUKHandle::new(2);
-            const POOL_SIZE: usize = 8;
-            let pm = PageCache::new(disk, replacer, dir_page_id);
-            let _dir_page = pm.new_page().await;
-            let ht: ExtendibleHashTable<i32, i32, FileSystem, DEFAULT_BIT_SIZE> =
-                ExtendibleHashTable::new(dir_page_id, pm.clone());
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRUKHandle::new(K);
+        let pm = PageCache::new(disk, replacer, 0);
+        let _dir_page = pm.new_page().await;
 
-            ht.insert(&0, &1).await.unwrap();
-            ht.insert(&2, &3).await.unwrap();
-            ht.insert(&4, &5).await.unwrap();
+        let ht = ExtendibleHashTable::new(0, pm.clone());
 
-            let r1 = ht.get(&0).await.unwrap();
-            let r2 = ht.get(&2).await.unwrap();
-            let r3 = ht.get(&4).await.unwrap();
+        ht.insert(&0, &1).await.unwrap();
+        ht.insert(&2, &3).await.unwrap();
+        ht.insert(&4, &5).await.unwrap();
 
-            assert!(r1[0] == 1);
-            assert!(r2[0] == 3);
-            assert!(r3[0] == 5);
+        let r1 = ht.get(&0).await.unwrap();
+        let r2 = ht.get(&2).await.unwrap();
+        let r3 = ht.get(&4).await.unwrap();
 
-            ht.remove(&4, &5).await.unwrap();
+        assert!(r1[0] == 1);
+        assert!(r2[0] == 3);
+        assert!(r3[0] == 5);
 
-            pm.flush_all_pages().await;
-        }
+        ht.remove(&4, &5).await.unwrap();
+
+        pm.flush_all_pages().await;
 
         // Make sure it reads back ok
-        let disk = FileSystem::new(file).await.expect("could not open db file");
-        let replacer = LRUKHandle::new(2);
-        let pm = PageCache::new(disk, replacer, dir_page_id + 1);
-        let ht: ExtendibleHashTable<i32, i32, FileSystem, DEFAULT_BIT_SIZE> =
-            ExtendibleHashTable::new(dir_page_id, pm.clone());
+        let ht: ExtendibleHashTable<i32, i32, _> = ExtendibleHashTable::new(0, pm.clone());
 
         let r1 = ht.get(&0).await.unwrap();
         let r2 = ht.get(&2).await.unwrap();
@@ -241,30 +228,22 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_split() {
-        let file = "test_split.db";
-        let disk = FileSystem::new(file).await.expect("could not open db file");
-        let _cu = CleanUp::file(file);
-        // let replacer = LRUKReplacer::new(2);
-        let replacer = LRUKHandle::new(2);
-        let dir_page_id = 0;
-        const POOL_SIZE: usize = 8;
-        const BIT_SIZE: usize = 1; // 8 slots
-        let pm = PageCache::new(disk, replacer, dir_page_id);
-        let _dir_page = pm.new_page().await;
-        let ht: ExtendibleHashTable<i32, i32, FileSystem, BIT_SIZE> =
-            ExtendibleHashTable::new(dir_page_id, pm.clone());
+        const MEMORY: usize = PAGE_SIZE * 4;
+        const K: usize = 2;
 
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRUKHandle::new(K);
+        let pm = PageCache::new(disk, replacer, 0);
+        let ht = ExtendibleHashTable::new(0, pm.clone());
+
+        let _dir_page = pm.new_page().await;
         assert!(ht.get_num_buckets().await.unwrap() == 1);
 
-        // Global depth should be 1 after this
-        ht.insert(&0, &1).await.unwrap();
-        ht.insert(&2, &2).await.unwrap();
-        ht.insert(&0, &3).await.unwrap();
-        ht.insert(&2, &4).await.unwrap();
-        ht.insert(&0, &5).await.unwrap();
-        ht.insert(&2, &6).await.unwrap();
-        ht.insert(&0, &7).await.unwrap();
-        ht.insert(&2, &8).await.unwrap();
+        // (i32, usize) = 12 bytes
+        // (4096 - 128) / 12 = 330
+        for (k, v) in (0..BIT_SIZE * 8).zip(0..BIT_SIZE * 8).take(330) {
+            ht.insert(&k, &v).await.unwrap();
+        }
 
         assert!(ht.get_num_buckets().await.unwrap() == 2);
 
