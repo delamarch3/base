@@ -223,7 +223,7 @@ mod test {
             ht.insert(k, v).await?;
         }
 
-        let remove = rand::random::<usize>() % 99;
+        let remove = rand::random::<usize>() % inserts.len();
         assert!(ht.remove(&inserts[remove].0, &inserts[remove].1).await?);
 
         let rem = ht.get(&inserts[remove].0).await?;
