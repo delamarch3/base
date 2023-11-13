@@ -177,17 +177,35 @@ where
 
 #[cfg(test)]
 mod test {
+    use rand::{seq::SliceRandom, thread_rng};
+
     use crate::{
         disk::Memory,
-        hash_table::extendible::ExtendibleHashTable,
+        hash_table::extendible::{ExtendibleError, ExtendibleHashTable},
         hash_table::{bucket_page::BIT_SIZE, dir_page::Directory},
         page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRUKHandle,
     };
 
+    macro_rules! inserts {
+        ($range:expr, $t:ty) => {{
+            let mut ret = Vec::with_capacity($range.len());
+
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
+
+            for key in keys {
+                let value = key + 10;
+                ret.push((key, value));
+            }
+
+            ret
+        }};
+    }
+
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_extendible_hash_table() {
+    async fn test_extendible_hash_table() -> Result<(), ExtendibleError> {
         const MEMORY: usize = PAGE_SIZE * 4;
         const K: usize = 2;
 
@@ -198,32 +216,37 @@ mod test {
 
         let ht = ExtendibleHashTable::new(0, pm.clone());
 
-        ht.insert(&0, &1).await.unwrap();
-        ht.insert(&2, &3).await.unwrap();
-        ht.insert(&4, &5).await.unwrap();
+        let pairs = 50;
+        let inserts = inserts!(-pairs..pairs, i32);
 
-        let r1 = ht.get(&0).await.unwrap();
-        let r2 = ht.get(&2).await.unwrap();
-        let r3 = ht.get(&4).await.unwrap();
+        for (k, v) in &inserts {
+            ht.insert(k, v).await?;
+        }
 
-        assert!(r1[0] == 1);
-        assert!(r2[0] == 3);
-        assert!(r3[0] == 5);
+        let remove = rand::random::<usize>() % 99;
+        assert!(ht.remove(&inserts[remove].0, &inserts[remove].1).await?);
 
-        ht.remove(&4, &5).await.unwrap();
+        let rem = ht.get(&inserts[remove].0).await?;
+        assert!(rem.is_empty());
 
         pm.flush_all_pages().await;
 
         // Make sure it reads back ok
         let ht: ExtendibleHashTable<i32, i32, _> = ExtendibleHashTable::new(0, pm.clone());
 
-        let r1 = ht.get(&0).await.unwrap();
-        let r2 = ht.get(&2).await.unwrap();
-        let r3 = ht.get(&4).await.unwrap();
+        let rem = ht.get(&inserts[remove].0).await?;
+        assert!(rem.is_empty());
 
-        assert!(r1[0] == 1);
-        assert!(r2[0] == 3);
-        assert!(r3.is_empty());
+        for (i, (k, v)) in inserts.iter().enumerate() {
+            if i == remove {
+                continue;
+            }
+
+            let r = ht.get(k).await?;
+            assert!(r[0] == *v);
+        }
+
+        Ok(())
     }
 
     #[tokio::test(flavor = "multi_thread")]

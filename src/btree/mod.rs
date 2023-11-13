@@ -324,7 +324,7 @@ mod test {
 
     use super::*;
 
-    macro_rules! get_inserts {
+    macro_rules! inserts {
         ($range:expr, $t:ty) => {{
             let mut ret = Vec::with_capacity($range.len());
 
@@ -354,7 +354,7 @@ mod test {
         let mut btree = BTree::new(pc, MAX as u32);
 
         let slots = 50;
-        let inserts = get_inserts!(-slots..slots, i32);
+        let inserts = inserts!(-slots..slots, i32);
 
         for (k, v) in &inserts {
             btree.insert(*k, *v).await?;

@@ -40,6 +40,7 @@ where
         let mut pos = BIT_SIZE * 2;
         for (i, pair) in pairs.iter_mut().enumerate() {
             if !occupied.check(i) {
+                pos += k_size + v_size;
                 continue;
             }
 
