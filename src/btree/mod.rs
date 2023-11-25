@@ -112,8 +112,18 @@ where
                     drop(w);
 
                     // Find the child node
-                    let ptr = match self.find_child(&mut new, key).await? {
+                    let ptr = match new.find_child(key) {
                         Some(ptr) => ptr,
+                        None if new.t == NodeType::Internal => {
+                            let mut s = new.values.pop_last().unwrap();
+                            s.0 = key.next();
+                            new.values.insert(s);
+
+                            match new.find_child(key) {
+                                Some(ptr) => ptr,
+                                None => unreachable!(),
+                            }
+                        }
                         None => {
                             // Reached leaf node
                             new.values.replace(Slot(key, Either::Value(value)));
@@ -162,14 +172,23 @@ where
             let mut w = page.write().await;
 
             // Find the child node
-            let ptr = match self.find_child(&mut node, key).await? {
+            let ptr = match node.find_child(key) {
                 Some(ptr) => ptr,
+                None if node.t == NodeType::Internal => {
+                    let mut s = node.values.pop_last().unwrap();
+                    s.0 = key.next();
+                    node.values.insert(s);
+
+                    match node.find_child(key) {
+                        Some(ptr) => ptr,
+                        None => unreachable!(),
+                    }
+                }
                 None => {
                     // Reached leaf node
                     node.values.replace(Slot(key, Either::Value(value)));
                     writep!(w, &PageBuf::from(&node));
 
-                    // return Ok(Node::get_separators(&node, split));
                     return Ok(node.get_separators(split));
                 }
             };
@@ -198,60 +217,6 @@ where
             Ok(node.get_separators(split))
         }
         .boxed()
-    }
-
-    async fn find_child(
-        &self,
-        node: &mut Node<K, V>,
-        key: K,
-    ) -> Result<Option<PageId>, BTreeError> {
-        match node.find_child(key) {
-            Some(ptr) => Ok(Some(ptr)),
-            None if node.t == NodeType::Internal => {
-                // TODO:
-                // 1. Determine next node type
-                // 2. Create add max() to K's trait
-                //    Subsequent calls to this method should return that node
-                // 3. If leaf connect last node
-                // 4. On split the `os` should use the correct key and replace the correct slot
-                // Note: can only be created if the node is root, otherwise unreachable
-
-                let new_node_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
-
-                let new_node: Node<K, V> = match node.first_ptr() {
-                    Some(ptr) => {
-                        let page = self
-                            .pc
-                            .fetch_page(ptr)
-                            .await
-                            .ok_or(BTreeError::OutOfMemory)?;
-                        let r = page.read().await;
-                        let node: Node<K, V> = Node::from(&r.data);
-
-                        match node.t {
-                            NodeType::Internal => {
-                                Node::new(new_node_page.id, self.max, NodeType::Internal, false)
-                            }
-                            NodeType::Leaf => {
-                                Node::new(new_node_page.id, self.max, NodeType::Leaf, false)
-                            }
-                        }
-                    }
-                    None => Node::new(new_node_page.id, self.max, NodeType::Leaf, false),
-                };
-
-                let mut w = new_node_page.write().await;
-                w.data = PageBuf::from(&new_node);
-
-                let slot = Slot(key.next(), Either::Pointer(new_node.id));
-                node.values.insert(slot);
-
-                Ok(Some(w.id))
-            }
-            None => {
-                return Ok(None);
-            }
-        }
     }
 
     pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
