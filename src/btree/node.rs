@@ -168,6 +168,7 @@ where
         // All values in the greater half end up in `rest`
         let rest = self.values.split_off(&mid);
         self.len = self.values.len() as u32;
+        self.is_root = false;
 
         let mut new = Node {
             t: self.t,
@@ -179,15 +180,9 @@ where
             values: rest,
         };
 
-        self.is_root = false;
-        match self.t {
-            NodeType::Internal => {
-                new.next = self.next;
-                self.next = -1;
-            }
-            NodeType::Leaf => {
-                self.next = new.id;
-            }
+        if self.t == NodeType::Leaf {
+            new.next = self.next;
+            self.next = new.id;
         }
 
         new
