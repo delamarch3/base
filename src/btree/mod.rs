@@ -24,6 +24,11 @@ pub enum BTreeError {
     OutOfMemory,
 }
 
+pub enum BTreeScan<K> {
+    Full,
+    Range(K, K),
+}
+
 pub struct BTree<K, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
@@ -222,6 +227,10 @@ where
         .boxed()
     }
 
+    // pub async fn scan(&self) -> Result<Vec<Slot<K, V>>, BTreeError> {
+    //     todo!()
+    // }
+
     pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
         if self.root == -1 {
             return Ok(None);
@@ -317,6 +326,27 @@ where
         }
         .boxed()
     }
+
+    #[cfg(test)]
+    fn first_leaf(&self, ptr: PageId) -> BoxFuture<PageId> {
+        async move {
+            assert!(ptr != -1);
+
+            let page = self.pc.fetch_page(ptr).await.unwrap();
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+            if node.t == NodeType::Leaf {
+                return ptr;
+            }
+
+            let f = node.values.first().unwrap();
+            match f.1 {
+                Either::Pointer(ptr) => self.first_leaf(ptr).await,
+                Either::Value(_) => unreachable!(),
+            }
+        }
+        .boxed()
+    }
 }
 
 #[cfg(test)]
@@ -352,9 +382,8 @@ mod test {
         let disk = Memory::new::<MEMORY>();
         let lru = LRUKHandle::new(K);
         let pc = PageCache::new(disk, lru, 0);
-        let pc2 = pc.clone();
 
-        let mut btree = BTree::new(pc, MAX as u32);
+        let mut btree = BTree::new(pc.clone(), MAX as u32);
 
         // Insert and get
         let range = -50..50;
@@ -364,12 +393,12 @@ mod test {
             btree.insert(*k, *v).await?;
         }
 
-        pc2.flush_all_pages().await;
+        pc.flush_all_pages().await;
 
         for (k, v) in &inserts {
             let have = btree.get(*k).await?;
             let want = Some(Slot(*k, Either::Value(*v)));
-            assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
         }
 
         // Delete half and make sure they no longer exist in the tree
@@ -378,7 +407,7 @@ mod test {
             btree.delete(*k).await?;
         }
 
-        pc2.flush_all_pages().await;
+        pc.flush_all_pages().await;
 
         for (k, _) in first_half {
             match btree.get(*k).await? {
@@ -409,13 +438,63 @@ mod test {
             btree.insert(*k, *v).await?;
         }
 
-        pc2.flush_all_pages().await;
+        pc.flush_all_pages().await;
 
         for (k, v) in &inserts {
             let have = btree.get(*k).await?;
             let want = Some(Slot(*k, Either::Value(*v)));
-            assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
         }
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_btree_scan() -> Result<(), BTreeError> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 64;
+        const K: usize = 2;
+
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRUKHandle::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
+
+        let mut btree = BTree::new(pc, MAX as u32);
+
+        let range = -50..50;
+        let mut want = inserts!(range, i32);
+        for (k, v) in &want {
+            btree.insert(*k, *v).await?;
+        }
+
+        pc2.flush_all_pages().await;
+
+        for (k, v) in &want {
+            let have = btree.get(*k).await?;
+            let want = Some(Slot(*k, Either::Value(*v)));
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        }
+
+        want.sort();
+        let mut have = Vec::with_capacity(want.len());
+        let mut cur = btree.first_leaf(btree.root).await;
+        while cur != -1 {
+            let page = pc2.fetch_page(cur).await.unwrap();
+            let r = page.read().await;
+            let node = Node::from(&r.data);
+            for s in node.values {
+                let v = match s.1 {
+                    Either::Value(v) => v,
+                    _ => unreachable!(),
+                };
+                have.push((s.0, v))
+            }
+
+            cur = node.next;
+        }
+
+        assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
 
         Ok(())
     }

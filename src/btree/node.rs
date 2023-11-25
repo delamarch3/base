@@ -51,7 +51,7 @@ pub struct Node<K, V> {
     pub is_root: bool,
     len: u32,
     max: u32,
-    next: PageId,
+    pub next: PageId,
     pub id: PageId,
     pub values: BTreeSet<Slot<K, V>>,
 }
