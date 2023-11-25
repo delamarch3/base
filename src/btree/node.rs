@@ -188,24 +188,22 @@ where
         new
     }
 
-    pub fn get_separators(&self, other: Option<Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
+    /// Using last values for separators
+    pub fn get_separators(self, other: Option<Node<K, V>>) -> Option<(Slot<K, V>, Slot<K, V>)>
     where
         K: Increment,
     {
-        other.map(|other| {
-            let k = self.last_key().expect("there should be a last item");
-            let mut s = Slot(k, Either::Pointer(self.id));
+        other.map(|other| (self.get_separator(), other.get_separator()))
+    }
 
-            let ok = other.last_key().expect("there should be a last item");
-            let mut os = Slot(ok, Either::Pointer(other.id));
-
-            if self.t == NodeType::Leaf {
-                s.increment();
-                os.increment();
-            }
-
-            (s, os)
-        })
+    /// Using last values for separators
+    fn get_separator(self) -> Slot<K, V>
+    where
+        K: Increment,
+    {
+        let ls = self.values.last().expect("there should be a last slot");
+        let k = if self.t == NodeType::Leaf { ls.0.next() } else { ls.0 };
+        Slot(k, Either::Pointer(self.id))
     }
 
     /// Returns `None` if node is a leaf or if no keys were matched and the next key is invalid
@@ -320,12 +318,7 @@ mod test {
             ]),
         };
 
-        assert!(
-            node == expected,
-            "\nExpected: {:?}\n    Node: {:?}\n",
-            expected,
-            node
-        );
+        assert!(node == expected, "\nExpected: {:?}\n    Node: {:?}\n", expected, node);
 
         let expected_new = Node {
             t: NodeType::Leaf,
@@ -344,12 +337,7 @@ mod test {
             ]),
         };
 
-        assert!(
-            new == expected_new,
-            "\nExpected: {:?}\n    Node: {:?}\n",
-            expected_new,
-            new
-        );
+        assert!(new == expected_new, "\nExpected: {:?}\n    Node: {:?}\n", expected_new, new);
     }
 
     #[test]

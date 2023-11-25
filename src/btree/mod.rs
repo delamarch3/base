@@ -169,7 +169,8 @@ where
                     node.values.replace(Slot(key, Either::Value(value)));
                     writep!(w, &PageBuf::from(&node));
 
-                    return Ok(Node::get_separators(&node, split));
+                    // return Ok(Node::get_separators(&node, split));
+                    return Ok(node.get_separators(split));
                 }
             };
 
@@ -194,7 +195,7 @@ where
             // Write the original node
             writep!(w, &PageBuf::from(&node));
 
-            Ok(Node::get_separators(&node, split))
+            Ok(node.get_separators(split))
         }
         .boxed()
     }
