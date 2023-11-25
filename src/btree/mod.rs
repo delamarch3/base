@@ -243,10 +243,44 @@ where
             match node.find_child(key) {
                 Some(ptr) => self._get(key, ptr).await,
                 None if node.t == NodeType::Leaf => {
-                    let slot = Slot(key, Either::Pointer(0));
+                    let slot = Slot(key, Either::Pointer(-1));
                     Ok(node.values.get(&slot).map(|s| *s))
                 }
                 None => Ok(None),
+            }
+        }
+        .boxed()
+    }
+
+    pub async fn delete(&self, key: K) -> Result<bool, BTreeError> {
+        if self.root == -1 {
+            return Ok(false);
+        }
+
+        self._delete(key, self.root).await
+    }
+
+    fn _delete(&self, key: K, ptr: PageId) -> BoxFuture<Result<bool, BTreeError>> {
+        async move {
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let mut w = page.write().await;
+            let mut node: Node<K, V> = Node::from(&w.data);
+
+            match node.find_child(key) {
+                Some(ptr) => self._delete(key, ptr).await,
+                None if node.t == NodeType::Leaf => {
+                    let slot = Slot(key, Either::Pointer(-1));
+                    let rem = node.values.remove(&slot);
+                    if rem {
+                        writep!(w, &PageBuf::from(&node));
+                    }
+                    Ok(rem)
+                }
+                None => Ok(false),
             }
         }
         .boxed()
@@ -322,8 +356,9 @@ mod test {
 
         let mut btree = BTree::new(pc, MAX as u32);
 
-        let slots = 50;
-        let inserts = inserts!(-slots..slots, i32);
+        // Insert and get
+        let range = -50..50;
+        let inserts = inserts!(range, i32);
 
         for (k, v) in &inserts {
             btree.insert(*k, *v).await?;
@@ -331,9 +366,54 @@ mod test {
 
         pc2.flush_all_pages().await;
 
-        for (k, v) in inserts {
-            let have = btree.get(k).await?;
-            let want = Some(Slot(k, Either::Value(v)));
+        for (k, v) in &inserts {
+            let have = btree.get(*k).await?;
+            let want = Some(Slot(*k, Either::Value(*v)));
+            assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
+        }
+
+        // Delete half and make sure they no longer exist in the tree
+        let (first_half, second_half) = inserts.split_at(inserts.len() / 2);
+        for (k, _) in first_half {
+            btree.delete(*k).await?;
+        }
+
+        pc2.flush_all_pages().await;
+
+        for (k, _) in first_half {
+            match btree.get(*k).await? {
+                Some(_) => panic!("Unexpected deleted key: {k}"),
+                None => {}
+            };
+        }
+
+        // Make sure other half can still be accessed
+        for (k, v) in second_half {
+            let test = match btree.get(*k).await? {
+                Some(t) => t,
+                None => panic!("Could not find {k}:{v} in the second half"),
+            };
+
+            let have = match test.1 {
+                Either::Value(v) => v,
+                Either::Pointer(_) => unreachable!(),
+            };
+            assert!(have == *v, "Want: {v}\nHave: {have}");
+        }
+
+        // Insert and get a different range
+        let range = -25..100;
+        let inserts = inserts!(range, i32);
+
+        for (k, v) in &inserts {
+            btree.insert(*k, *v).await?;
+        }
+
+        pc2.flush_all_pages().await;
+
+        for (k, v) in &inserts {
+            let have = btree.get(*k).await?;
+            let want = Some(Slot(*k, Either::Value(*v)));
             assert!(have == want, "\nHave: {:?}\nWant: {:?}\n", have, want);
         }
 
