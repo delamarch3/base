@@ -46,7 +46,7 @@ where
         }
     }
 
-    // Note: One thread could split the root whilst another holds a pin to the root. Should double
+    // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
     pub async fn insert(&mut self, key: K, value: V) -> Result<(), BTreeError> {
         let pin;
@@ -85,6 +85,9 @@ where
         Ok(())
     }
 
+    // TODO:
+    // 1. Duplicate code for split nodes
+    // 2. Locks aren't held between each _insert call
     fn _insert(
         &self,
         mut node: Node<K, V>,
