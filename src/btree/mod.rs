@@ -24,11 +24,6 @@ pub enum BTreeError {
     OutOfMemory,
 }
 
-pub enum BTreeScan<K> {
-    Full,
-    Range(K, K),
-}
-
 pub struct BTree<K, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
@@ -227,9 +222,117 @@ where
         .boxed()
     }
 
-    // pub async fn scan(&self) -> Result<Vec<Slot<K, V>>, BTreeError> {
-    //     todo!()
-    // }
+    // TODO: scan and range don't hold read locks between each iteration, so could produce odd
+    // results when used concurrently
+    pub async fn scan(&self) -> Result<Vec<(K, V)>, BTreeError> {
+        let mut ret = Vec::new();
+        let mut cur = self.first(self.root).await?;
+
+        while cur != -1 {
+            let page = self
+                .pc
+                .fetch_page(cur)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node = Node::from(&r.data);
+            for s in node.values {
+                let v = match s.1 {
+                    Either::Value(v) => v,
+                    _ => unreachable!(),
+                };
+                ret.push((s.0, v))
+            }
+
+            cur = node.next;
+        }
+
+        Ok(ret)
+    }
+
+    fn first(&self, ptr: PageId) -> BoxFuture<Result<PageId, BTreeError>> {
+        async move {
+            assert!(ptr != -1);
+
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+            if node.t == NodeType::Leaf {
+                return Ok(ptr);
+            }
+
+            let f = node.values.first().unwrap();
+            match f.1 {
+                Either::Pointer(ptr) => self.first(ptr).await,
+                Either::Value(_) => unreachable!(),
+            }
+        }
+        .boxed()
+    }
+
+    pub async fn range(&self, from: K, to: K) -> Result<Vec<(K, V)>, BTreeError> {
+        let mut ret = Vec::new();
+        let mut cur = match self.get_ptr(from, self.root).await? {
+            Some(c) => c,
+            None => return Ok(ret),
+        };
+
+        let mut found = false;
+        'outer: while cur != -1 {
+            let page = self
+                .pc
+                .fetch_page(cur)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node = Node::from(&r.data);
+            for s in node.values {
+                if s.0 == to.next() {
+                    break 'outer;
+                }
+                if s.0 == from {
+                    found = true
+                }
+
+                if found {
+                    let v = match s.1 {
+                        Either::Value(v) => v,
+                        _ => unreachable!(),
+                    };
+                    ret.push((s.0, v))
+                }
+            }
+
+            cur = node.next;
+        }
+
+        Ok(ret)
+    }
+
+    fn get_ptr(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<PageId>, BTreeError>> {
+        async move {
+            assert!(ptr != -1);
+
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+
+            match node.find_child(key) {
+                Some(ptr) => self.get_ptr(key, ptr).await,
+                None if node.t == NodeType::Leaf => Ok(Some(ptr)),
+                None => Ok(None),
+            }
+        }
+        .boxed()
+    }
 
     pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
         if self.root == -1 {
@@ -326,32 +429,11 @@ where
         }
         .boxed()
     }
-
-    #[cfg(test)]
-    fn first_leaf(&self, ptr: PageId) -> BoxFuture<PageId> {
-        async move {
-            assert!(ptr != -1);
-
-            let page = self.pc.fetch_page(ptr).await.unwrap();
-            let r = page.read().await;
-            let node: Node<K, V> = Node::from(&r.data);
-            if node.t == NodeType::Leaf {
-                return ptr;
-            }
-
-            let f = node.values.first().unwrap();
-            match f.1 {
-                Either::Pointer(ptr) => self.first_leaf(ptr).await,
-                Either::Value(_) => unreachable!(),
-            }
-        }
-        .boxed()
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::{seq::SliceRandom, thread_rng, Rng};
 
     use crate::{disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRUKHandle};
 
@@ -477,24 +559,50 @@ mod test {
         }
 
         want.sort();
-        let mut have = Vec::with_capacity(want.len());
-        let mut cur = btree.first_leaf(btree.root).await;
-        while cur != -1 {
-            let page = pc2.fetch_page(cur).await.unwrap();
-            let r = page.read().await;
-            let node = Node::from(&r.data);
-            for s in node.values {
-                let v = match s.1 {
-                    Either::Value(v) => v,
-                    _ => unreachable!(),
-                };
-                have.push((s.0, v))
-            }
+        let have = btree.scan().await?;
+        assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
 
-            cur = node.next;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_btree_range() -> Result<(), BTreeError> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 64;
+        const K: usize = 2;
+
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRUKHandle::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
+
+        let mut btree = BTree::new(pc, MAX as u32);
+
+        let range = -50..50;
+        let mut inserts = inserts!(range, i32);
+        for (k, v) in &inserts {
+            btree.insert(*k, *v).await?;
         }
 
-        assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        pc2.flush_all_pages().await;
+
+        for (k, v) in &inserts {
+            let have = btree.get(*k).await?;
+            let want = Some(Slot(*k, Either::Value(*v)));
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        }
+
+        inserts.sort();
+
+        let from = rand::thread_rng().gen_range(-50..0);
+        let to = rand::thread_rng().gen_range(0..50);
+        let want = inserts
+            .into_iter()
+            .filter(|s| s.0 >= from && s.0 <= to)
+            .collect::<Vec<(i32, i32)>>();
+
+        let have = btree.range(from, to).await?;
+        assert!(want == have, "\nWant: {:?}\nHave: {:?}\nRange: {:?}", want, have, (from, to));
 
         Ok(())
     }
