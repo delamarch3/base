@@ -281,7 +281,6 @@ where
             None => return Ok(ret),
         };
 
-        let mut found = false;
         'outer: while cur != -1 {
             let page = self
                 .pc
@@ -290,21 +289,16 @@ where
                 .ok_or(BTreeError::OutOfMemory)?;
             let r = page.read().await;
             let node = Node::from(&r.data);
-            for s in node.values {
-                if s.0 == to.next() {
+            for Slot(k, v) in node.values.into_iter().skip_while(|&Slot(k, _)| k < from) {
+                if k == to.next() {
                     break 'outer;
                 }
-                if s.0 == from {
-                    found = true
-                }
 
-                if found {
-                    let v = match s.1 {
-                        Either::Value(v) => v,
-                        _ => unreachable!(),
-                    };
-                    ret.push((s.0, v))
-                }
+                let v = match v {
+                    Either::Value(v) => v,
+                    _ => unreachable!(),
+                };
+                ret.push((k, v))
             }
 
             cur = node.next;
@@ -567,8 +561,15 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_btree_range() -> Result<(), BTreeError> {
+        struct TestCase {
+            name: &'static str,
+            range: std::ops::Range<i32>,
+            from: i32,
+            to: i32,
+        }
+
         const MAX: usize = 8;
-        const MEMORY: usize = PAGE_SIZE * 64;
+        const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
@@ -576,33 +577,60 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
         let pc2 = pc.clone();
 
-        let mut btree = BTree::new(pc, MAX as u32);
+        let tcs = [
+            TestCase {
+                name: "Random range",
+                range: -50..50,
+                from: rand::thread_rng().gen_range(-50..0),
+                to: rand::thread_rng().gen_range(0..50),
+            },
+            TestCase {
+                name: "Out of bounds range",
+                range: -50..50,
+                from: -100,
+                to: -50,
+            },
+        ];
 
-        let range = -50..50;
-        let mut inserts = inserts!(range, i32);
-        for (k, v) in &inserts {
-            btree.insert(*k, *v).await?;
+        for TestCase {
+            name,
+            range,
+            from,
+            to,
+        } in tcs
+        {
+            let mut btree = BTree::new(pc.clone(), MAX as u32);
+
+            let mut inserts = inserts!(range, i32);
+            for (k, v) in &inserts {
+                btree.insert(*k, *v).await?;
+            }
+
+            pc2.flush_all_pages().await;
+
+            for (k, v) in &inserts {
+                let have = btree.get(*k).await?;
+                let want = Some(Slot(*k, Either::Value(*v)));
+                assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+            }
+
+            inserts.sort();
+
+            let want = inserts
+                .into_iter()
+                .filter(|s| s.0 >= from && s.0 <= to)
+                .collect::<Vec<(i32, i32)>>();
+
+            let have = btree.range(from, to).await?;
+            assert!(
+                want == have,
+                "TestCase {} failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
+                name,
+                want,
+                have,
+                (from, to)
+            );
         }
-
-        pc2.flush_all_pages().await;
-
-        for (k, v) in &inserts {
-            let have = btree.get(*k).await?;
-            let want = Some(Slot(*k, Either::Value(*v)));
-            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-        }
-
-        inserts.sort();
-
-        let from = rand::thread_rng().gen_range(-50..0);
-        let to = rand::thread_rng().gen_range(0..50);
-        let want = inserts
-            .into_iter()
-            .filter(|s| s.0 >= from && s.0 <= to)
-            .collect::<Vec<(i32, i32)>>();
-
-        let have = btree.range(from, to).await?;
-        assert!(want == have, "\nWant: {:?}\nHave: {:?}\nRange: {:?}", want, have, (from, to));
 
         Ok(())
     }
