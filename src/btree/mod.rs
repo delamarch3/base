@@ -305,18 +305,6 @@ where
                     }),
             );
 
-            // for Slot(k, v) in node.values.into_iter().skip_while(|&Slot(k, _)| k < from) {
-            //     if k == to.next() {
-            //         break 'outer;
-            //     }
-
-            //     let v = match v {
-            //         Either::Value(v) => v,
-            //         _ => unreachable!(),
-            //     };
-            //     ret.push((k, v))
-            // }
-
             cur = node.next;
         }
 
@@ -353,35 +341,23 @@ where
         async move {
             let node = Node::from(&page.data);
 
-            dbg!(&node.values);
-            dbg!(from);
-
-            let mut s = node
-                .values
-                .into_iter()
-                .skip_while(|&Slot(k, _)| k < from)
-                // .take_while(|Slot(k, _)| k < &to.next())
-                // .take_while(|Slot(k, _)| k <= &to)
-                .map(|Slot(k, v)| {
-                    let v = match v {
-                        Either::Value(v) => v,
-                        _ => unreachable!(),
-                    };
-                    (k, v)
-                });
-
-            let (lower, upper) = s.size_hint();
-            dbg!((lower, upper));
-            match upper {
-                Some(u) => {
-                    if u == 0 {
-                        return Ok(());
-                    }
-                }
-                None => unreachable!(),
+            let len = acc.len();
+            acc.extend(
+                node.values
+                    .into_iter()
+                    .skip_while(|&Slot(k, _)| k < from)
+                    .take_while(|Slot(k, _)| k <= &to)
+                    .map(|Slot(k, v)| {
+                        let v = match v {
+                            Either::Value(v) => v,
+                            _ => unreachable!(),
+                        };
+                        (k, v)
+                    }),
+            );
+            if len == acc.len() {
+                return Ok(());
             }
-
-            acc.extend(s);
 
             if node.next == -1 {
                 return Ok(());
@@ -672,7 +648,7 @@ mod test {
         let tcs = [
             TestCase {
                 name: "random range",
-                range: -20..20,
+                range: -50..50,
                 from: rand::thread_rng().gen_range(-20..0),
                 to: rand::thread_rng().gen_range(0..20),
             },
@@ -713,8 +689,8 @@ mod test {
                 .filter(|s| s.0 >= from && s.0 <= to)
                 .collect::<Vec<(i32, i32)>>();
 
-            let have = btree.range(from, to).await?;
-            // let have = btree.range_rec(from, to).await?;
+            // let have = btree.range(from, to).await?;
+            let have = btree.range_rec(from, to).await?;
             assert!(
                 want == have,
                 "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
