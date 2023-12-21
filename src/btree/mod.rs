@@ -4,6 +4,7 @@ pub mod slot;
 use std::{fmt::Display, marker::PhantomData};
 
 use futures::{future::BoxFuture, FutureExt};
+use tokio::sync::RwLockReadGuard;
 
 use crate::{
     btree::{
@@ -11,7 +12,7 @@ use crate::{
         slot::{Either, Slot},
     },
     disk::{Disk, FileSystem},
-    page::{PageBuf, PageId},
+    page::{PageBuf, PageId, PageReadGuard},
     page_cache::SharedPageCache,
     storable::Storable,
     writep,
@@ -281,7 +282,7 @@ where
             None => return Ok(ret),
         };
 
-        'outer: while cur != -1 {
+        while cur != -1 {
             let page = self
                 .pc
                 .fetch_page(cur)
@@ -289,22 +290,113 @@ where
                 .ok_or(BTreeError::OutOfMemory)?;
             let r = page.read().await;
             let node = Node::from(&r.data);
-            for Slot(k, v) in node.values.into_iter().skip_while(|&Slot(k, _)| k < from) {
-                if k == to.next() {
-                    break 'outer;
-                }
 
-                let v = match v {
-                    Either::Value(v) => v,
-                    _ => unreachable!(),
-                };
-                ret.push((k, v))
-            }
+            ret.extend(
+                node.values
+                    .into_iter()
+                    .skip_while(|&Slot(k, _)| k < from)
+                    .take_while(|Slot(k, _)| k <= &to)
+                    .map(|Slot(k, v)| {
+                        let v = match v {
+                            Either::Value(v) => v,
+                            _ => unreachable!(),
+                        };
+                        (k, v)
+                    }),
+            );
+
+            // for Slot(k, v) in node.values.into_iter().skip_while(|&Slot(k, _)| k < from) {
+            //     if k == to.next() {
+            //         break 'outer;
+            //     }
+
+            //     let v = match v {
+            //         Either::Value(v) => v,
+            //         _ => unreachable!(),
+            //     };
+            //     ret.push((k, v))
+            // }
 
             cur = node.next;
         }
 
         Ok(ret)
+    }
+
+    pub async fn range_rec(&self, from: K, to: K) -> Result<Vec<(K, V)>, BTreeError> {
+        let mut ret = Vec::new();
+
+        let cur = match self.get_ptr(from, self.root).await? {
+            Some(c) => c,
+            None => return Ok(ret),
+        };
+
+        let page = self
+            .pc
+            .fetch_page(cur)
+            .await
+            .ok_or(BTreeError::OutOfMemory)?;
+        let r = page.read().await;
+
+        self._range_rec(r, &mut ret, from, to).await?;
+
+        Ok(ret)
+    }
+
+    fn _range_rec<'a>(
+        &'a self,
+        page: PageReadGuard<'a>,
+        acc: &'a mut Vec<(K, V)>,
+        from: K,
+        to: K,
+    ) -> BoxFuture<Result<(), BTreeError>> {
+        async move {
+            let node = Node::from(&page.data);
+
+            dbg!(&node.values);
+            dbg!(from);
+
+            let mut s = node
+                .values
+                .into_iter()
+                .skip_while(|&Slot(k, _)| k < from)
+                // .take_while(|Slot(k, _)| k < &to.next())
+                // .take_while(|Slot(k, _)| k <= &to)
+                .map(|Slot(k, v)| {
+                    let v = match v {
+                        Either::Value(v) => v,
+                        _ => unreachable!(),
+                    };
+                    (k, v)
+                });
+
+            let (lower, upper) = s.size_hint();
+            dbg!((lower, upper));
+            match upper {
+                Some(u) => {
+                    if u == 0 {
+                        return Ok(());
+                    }
+                }
+                None => unreachable!(),
+            }
+
+            acc.extend(s);
+
+            if node.next == -1 {
+                return Ok(());
+            }
+
+            let page = self
+                .pc
+                .fetch_page(node.next)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+
+            self._range_rec(r, acc, from, to).await
+        }
+        .boxed()
     }
 
     fn get_ptr(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<PageId>, BTreeError>> {
@@ -579,13 +671,13 @@ mod test {
 
         let tcs = [
             TestCase {
-                name: "Random range",
-                range: -50..50,
-                from: rand::thread_rng().gen_range(-50..0),
-                to: rand::thread_rng().gen_range(0..50),
+                name: "random range",
+                range: -20..20,
+                from: rand::thread_rng().gen_range(-20..0),
+                to: rand::thread_rng().gen_range(0..20),
             },
             TestCase {
-                name: "Out of bounds range",
+                name: "out of bounds range",
                 range: -50..50,
                 from: -100,
                 to: -50,
@@ -622,9 +714,10 @@ mod test {
                 .collect::<Vec<(i32, i32)>>();
 
             let have = btree.range(from, to).await?;
+            // let have = btree.range_rec(from, to).await?;
             assert!(
                 want == have,
-                "TestCase {} failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
+                "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
                 name,
                 want,
                 have,

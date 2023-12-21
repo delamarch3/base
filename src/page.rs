@@ -16,6 +16,7 @@ pub const PAGE_SIZE: usize = 4 * 1024;
 
 pub type PageId = i32;
 pub type PageBuf = [u8; PAGE_SIZE];
+pub type PageReadGuard<'a> = RwLockReadGuard<'a, PageInner>;
 
 pub struct Page(RwLock<PageInner>);
 
@@ -40,7 +41,7 @@ impl Page {
 pub struct PageInner {
     pub id: PageId,
     pub dirty: bool,
-    pub data: [u8; PAGE_SIZE],
+    pub data: PageBuf,
 }
 
 impl Default for PageInner {
