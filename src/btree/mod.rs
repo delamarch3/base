@@ -326,13 +326,14 @@ where
             .ok_or(BTreeError::OutOfMemory)?;
         let r = page.read().await;
 
-        self._range_rec(r, &mut ret, from, to).await?;
+        self._range_rec(None, r, &mut ret, from, to).await?;
 
         Ok(ret)
     }
 
     fn _range_rec<'a>(
         &'a self,
+        mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
         acc: &'a mut Vec<(K, V)>,
         from: K,
@@ -363,14 +364,16 @@ where
                 return Ok(());
             }
 
-            let page = self
+            let next_page = self
                 .pc
                 .fetch_page(node.next)
                 .await
                 .ok_or(BTreeError::OutOfMemory)?;
-            let r = page.read().await;
+            let r = next_page.read().await;
 
-            self._range_rec(r, acc, from, to).await
+            prev_page.take();
+
+            self._range_rec(Some(page), r, acc, from, to).await
         }
         .boxed()
     }
@@ -649,8 +652,8 @@ mod test {
             TestCase {
                 name: "random range",
                 range: -50..50,
-                from: rand::thread_rng().gen_range(-20..0),
-                to: rand::thread_rng().gen_range(0..20),
+                from: rand::thread_rng().gen_range(-50..0),
+                to: rand::thread_rng().gen_range(0..50),
             },
             TestCase {
                 name: "out of bounds range",
