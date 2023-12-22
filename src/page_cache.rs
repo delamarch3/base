@@ -15,7 +15,8 @@ use crate::{
     replacer::{AccessType, LRUKHandle},
 };
 
-pub const CACHE_SIZE: usize = 8;
+// FIXME: increasing this any further results in stack overflows in various tests
+pub const CACHE_SIZE: usize = 16;
 
 pub type FrameId = usize;
 
@@ -111,10 +112,7 @@ impl<'a> Pin<'a> {
     pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
         let w = self.page.write().await;
 
-        assert!(
-            self.id == w.id,
-            "page was swapped out whilst a pin was held"
-        );
+        assert!(self.id == w.id, "page was swapped out whilst a pin was held");
 
         w
     }
@@ -167,12 +165,7 @@ impl<D: Disk> PageCache<D> {
             self.replacer.record_access(*i, AccessType::Get).await;
             self.replacer.pin(*i).await;
 
-            return Some(Pin::new(
-                &self.pages[*i],
-                *i,
-                page_id,
-                self.replacer.clone(),
-            ));
+            return Some(Pin::new(&self.pages[*i], *i, page_id, self.replacer.clone()));
         };
 
         self.try_get_page(page_id).await
@@ -382,10 +375,7 @@ mod test {
         );
 
         let have = pc.new_page().await;
-        assert!(
-            have.is_none(),
-            "Expected new_page to return None when replacer is full"
-        );
+        assert!(have.is_none(), "Expected new_page to return None when replacer is full");
 
         Ok(())
     }
