@@ -16,7 +16,7 @@ use crate::{
 };
 
 // FIXME: increasing this any further results in stack overflows in various tests
-pub const CACHE_SIZE: usize = 16;
+pub const CACHE_SIZE: usize = 32;
 
 pub type FrameId = usize;
 
@@ -125,7 +125,7 @@ impl<'a> Pin<'a> {
 pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
 pub struct PageCache<D: Disk = FileSystem> {
-    pages: [Page; CACHE_SIZE],
+    pages: Box<[Page; CACHE_SIZE]>,
     page_table: RwLock<HashMap<PageId, FrameId>>,
     free: FreeList<CACHE_SIZE>,
     disk: D,
@@ -135,7 +135,23 @@ pub struct PageCache<D: Disk = FileSystem> {
 
 impl<D: Disk> PageCache<D> {
     pub fn new(disk: D, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
-        let pages = std::array::from_fn(|_| Page::default());
+        // Workaround to allocate pages since std::array::from_fn(|_| Page::default()) overflows
+        // the stack:
+        let mut pages;
+        unsafe {
+            let layout = std::alloc::Layout::new::<[Page; CACHE_SIZE]>();
+            let ptr = std::alloc::alloc(layout);
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+
+            pages = Box::from_raw(ptr as *mut [Page; CACHE_SIZE]);
+
+            for page in pages.iter_mut() {
+                *page = Page::default();
+            }
+        };
+
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);

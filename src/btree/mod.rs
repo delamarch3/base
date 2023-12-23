@@ -4,7 +4,6 @@ pub mod slot;
 use std::{fmt::Display, marker::PhantomData};
 
 use futures::{future::BoxFuture, FutureExt};
-use tokio::sync::RwLockReadGuard;
 
 use crate::{
     btree::{
@@ -649,8 +648,8 @@ mod test {
             TestCase {
                 name: "random range",
                 range: -50..50,
-                from: rand::thread_rng().gen_range(-20..0),
-                to: rand::thread_rng().gen_range(0..20),
+                from: rand::thread_rng().gen_range(-50..0),
+                to: rand::thread_rng().gen_range(0..50),
             },
             TestCase {
                 name: "out of bounds range",
