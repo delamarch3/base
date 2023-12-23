@@ -226,3 +226,30 @@ impl LRUKHandle {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::{AccessType, LRUKHandle};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_evict() {
+        const K: usize = 2;
+        let replacer = LRUKHandle::new(2);
+
+        {
+            for i in 0..8 {
+                replacer.remove(i).await;
+                replacer.record_access(i, AccessType::Get).await;
+                replacer.pin(i).await;
+            }
+
+            for i in (0..8).rev() {
+                replacer.unpin(i).await;
+
+                let have = replacer.evict().await;
+                let want = Some(i);
+                assert!(want == have, "Want: {want:?}, Have: {have:?}");
+            }
+        }
+    }
+}
