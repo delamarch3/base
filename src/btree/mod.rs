@@ -70,7 +70,7 @@ where
         };
         self.root = root.id;
 
-        if let Some((s, os)) = Self::_insert(&self, root, key, value).await? {
+        if let Some((s, os)) = self._insert(root, key, value).await? {
             let new_root_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
             let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
             self.root = new_root.id;
@@ -417,7 +417,7 @@ where
                 Some(ptr) => self._get(key, ptr).await,
                 None if node.t == NodeType::Leaf => {
                     let slot = Slot(key, Either::Pointer(-1));
-                    Ok(node.values.get(&slot).map(|s| *s))
+                    Ok(node.values.get(&slot).copied())
                 }
                 None => Ok(None),
             }

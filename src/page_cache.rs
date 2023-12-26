@@ -61,9 +61,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
         let mut tail = self.tail.load(SeqCst);
         let mut new_tail;
         loop {
-            if tail == SIZE {
-                panic!("trying to push frame to full free list");
-            }
+            assert!(tail != SIZE);
 
             new_tail = tail + 1;
             match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {

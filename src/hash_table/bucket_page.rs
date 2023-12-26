@@ -180,11 +180,7 @@ where
         let len = self.occupied.len();
         let s = size_of::<K>() + size_of::<V>();
 
-        if len >= (PAGE_SIZE - 128) / s {
-            true
-        } else {
-            false
-        }
+        len >= (PAGE_SIZE - 128) / s
     }
 }
 
