@@ -49,6 +49,10 @@ impl<const SIZE: usize> BitMap<SIZE> {
 
         ret as usize
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[cfg(test)]

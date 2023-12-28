@@ -86,11 +86,7 @@ where
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
                 let i = Self::get_bucket_index(&pair.a, &dir);
-                let new_bucket = if i & bit > 0 {
-                    &mut bucket1
-                } else {
-                    &mut bucket0
-                };
+                let new_bucket = if i & bit > 0 { &mut bucket1 } else { &mut bucket0 };
                 new_bucket.insert(&pair.a, &pair.b);
             }
 

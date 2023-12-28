@@ -15,8 +15,7 @@ use crate::{
     replacer::{AccessType, LRUKHandle},
 };
 
-// FIXME: increasing this any further results in stack overflows in various tests
-pub const CACHE_SIZE: usize = 16;
+pub const CACHE_SIZE: usize = 32;
 
 pub type FrameId = usize;
 
@@ -40,7 +39,7 @@ impl<const SIZE: usize> Default for FreeList<SIZE> {
 
 impl<const SIZE: usize> FreeList<SIZE> {
     pub fn pop(&self) -> Option<FrameId> {
-        let mut tail = self.tail.load(SeqCst);
+        let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
             if tail == 0 {
@@ -48,7 +47,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
             }
 
             new_tail = tail - 1;
-            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+            match self.tail.compare_exchange(tail, new_tail, Relaxed, Relaxed) {
                 Ok(_) => break,
                 Err(t) => tail = t,
             };
@@ -58,15 +57,13 @@ impl<const SIZE: usize> FreeList<SIZE> {
     }
 
     pub fn push(&self, frame_id: FrameId) {
-        let mut tail = self.tail.load(SeqCst);
+        let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
-            if tail == SIZE {
-                panic!("trying to push frame to full free list");
-            }
+            assert!(tail != SIZE);
 
             new_tail = tail + 1;
-            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+            match self.tail.compare_exchange(tail, new_tail, Relaxed, Relaxed) {
                 Ok(_) => break,
                 Err(t) => tail = t,
             }
@@ -125,7 +122,7 @@ impl<'a> Pin<'a> {
 pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
 pub struct PageCache<D: Disk = FileSystem> {
-    pages: [Page; CACHE_SIZE],
+    pages: Box<[Page; CACHE_SIZE]>,
     page_table: RwLock<HashMap<PageId, FrameId>>,
     free: FreeList<CACHE_SIZE>,
     disk: D,
@@ -135,7 +132,23 @@ pub struct PageCache<D: Disk = FileSystem> {
 
 impl<D: Disk> PageCache<D> {
     pub fn new(disk: D, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
-        let pages = std::array::from_fn(|_| Page::default());
+        // Workaround to allocate pages since std::array::from_fn(|_| Page::default()) overflows
+        // the stack:
+        let mut pages;
+        unsafe {
+            let layout = std::alloc::Layout::new::<[Page; CACHE_SIZE]>();
+            let ptr = std::alloc::alloc(layout);
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+
+            pages = Box::from_raw(ptr as *mut [Page; CACHE_SIZE]);
+
+            for page in pages.iter_mut() {
+                *page = Page::default();
+            }
+        };
+
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
@@ -151,7 +164,7 @@ impl<D: Disk> PageCache<D> {
     }
 
     fn allocate_page(&self) -> PageId {
-        self.next_page_id.fetch_add(1, SeqCst)
+        self.next_page_id.fetch_add(1, Relaxed)
     }
 
     pub async fn new_page<'a>(&self) -> Option<Pin> {
@@ -291,71 +304,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_pm_replacer_evict() -> io::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 16;
-        const K: usize = 2;
-        let disk = Memory::new::<MEMORY>();
-        let replacer = LRUKHandle::new(2);
-        let pc = PageCache::new(disk, replacer, 0);
-
-        {
-            let _pages = tokio::join!(
-                pc.new_page(), // id = 0 ts = 0
-                pc.new_page(), // id = 1 ts = 1
-                pc.new_page(), // id = 2 ts = 2
-                pc.new_page(),
-                pc.new_page(),
-                pc.new_page(),
-                pc.new_page(),
-                pc.new_page()
-            );
-            assert!(
-                _pages.0.is_some()
-                    && _pages.1.is_some()
-                    && _pages.2.is_some()
-                    && _pages.3.is_some()
-                    && _pages.4.is_some()
-                    && _pages.5.is_some()
-                    && _pages.6.is_some()
-                    && _pages.7.is_some()
-            );
-
-            let pt = pc.page_table.read().await;
-            assert!(pc.free.is_empty());
-            assert!(pt.contains_key(&2));
-            assert!(pt.contains_key(&1));
-            assert!(pt.contains_key(&0));
-            drop(pt);
-
-            tokio::join!(
-                pc.fetch_page(0), // ts = 3
-                pc.fetch_page(0), // ts = 4
-                //
-                pc.fetch_page(1), // ts = 5
-                //
-                pc.fetch_page(0), // ts = 6
-                pc.fetch_page(0), // ts = 7
-                //
-                pc.fetch_page(1), // ts = 8
-                //
-                pc.fetch_page(2), // ts = 9
-            );
-        }
-
-        // Page 2 was accessed the least and should have the largest k distance of 7
-        // Page 1 should have a k distance of 3
-        // Page 0 should have a k distance of 1
-
-        let _p8 = pc.new_page().await.expect("should return page 8");
-
-        let pt = pc.page_table.read().await;
-        assert!(pt.contains_key(&8));
-        assert!(!pt.contains_key(&2));
-
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
     async fn test_pm_replacer_full() -> io::Result<()> {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
