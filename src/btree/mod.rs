@@ -260,42 +260,6 @@ where
 
     pub async fn range(&self, from: K, to: K) -> Result<Vec<(K, V)>, BTreeError> {
         let mut ret = Vec::new();
-        let mut cur = match self.get_ptr(from, self.root).await? {
-            Some(c) => c,
-            None => return Ok(ret),
-        };
-
-        while cur != -1 {
-            let page = self
-                .pc
-                .fetch_page(cur)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
-            let r = page.read().await;
-            let node = Node::from(&r.data);
-
-            ret.extend(
-                node.values
-                    .into_iter()
-                    .skip_while(|&Slot(k, _)| k < from)
-                    .take_while(|Slot(k, _)| k <= &to)
-                    .map(|Slot(k, v)| {
-                        let v = match v {
-                            Either::Value(v) => v,
-                            _ => unreachable!(),
-                        };
-                        (k, v)
-                    }),
-            );
-
-            cur = node.next;
-        }
-
-        Ok(ret)
-    }
-
-    pub async fn range_rec(&self, from: K, to: K) -> Result<Vec<(K, V)>, BTreeError> {
-        let mut ret = Vec::new();
 
         let cur = match self.get_ptr(from, self.root).await? {
             Some(c) => c,
@@ -309,12 +273,12 @@ where
             .ok_or(BTreeError::OutOfMemory)?;
         let r = page.read().await;
 
-        self._range_rec(None, r, &mut ret, from, to).await?;
+        self._range(None, r, &mut ret, from, to).await?;
 
         Ok(ret)
     }
 
-    fn _range_rec<'a>(
+    fn _range<'a>(
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
@@ -356,7 +320,7 @@ where
 
             prev_page.take();
 
-            self._range_rec(Some(page), r, acc, from, to).await
+            self._range(Some(page), r, acc, from, to).await
         }
         .boxed()
     }
@@ -676,7 +640,7 @@ mod test {
                 .collect::<Vec<(i32, i32)>>();
 
             // let have = btree.range(from, to).await?;
-            let have = btree.range_rec(from, to).await?;
+            let have = btree.range(from, to).await?;
             assert!(
                 want == have,
                 "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
