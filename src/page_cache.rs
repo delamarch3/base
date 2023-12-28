@@ -15,7 +15,6 @@ use crate::{
     replacer::{AccessType, LRUKHandle},
 };
 
-// FIXME: increasing this any further results in stack overflows in various tests
 pub const CACHE_SIZE: usize = 32;
 
 pub type FrameId = usize;
@@ -40,7 +39,7 @@ impl<const SIZE: usize> Default for FreeList<SIZE> {
 
 impl<const SIZE: usize> FreeList<SIZE> {
     pub fn pop(&self) -> Option<FrameId> {
-        let mut tail = self.tail.load(SeqCst);
+        let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
             if tail == 0 {
@@ -48,7 +47,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
             }
 
             new_tail = tail - 1;
-            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+            match self.tail.compare_exchange(tail, new_tail, Relaxed, Relaxed) {
                 Ok(_) => break,
                 Err(t) => tail = t,
             };
@@ -58,13 +57,13 @@ impl<const SIZE: usize> FreeList<SIZE> {
     }
 
     pub fn push(&self, frame_id: FrameId) {
-        let mut tail = self.tail.load(SeqCst);
+        let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
             assert!(tail != SIZE);
 
             new_tail = tail + 1;
-            match self.tail.compare_exchange(tail, new_tail, SeqCst, Relaxed) {
+            match self.tail.compare_exchange(tail, new_tail, Relaxed, Relaxed) {
                 Ok(_) => break,
                 Err(t) => tail = t,
             }
@@ -165,7 +164,7 @@ impl<D: Disk> PageCache<D> {
     }
 
     fn allocate_page(&self) -> PageId {
-        self.next_page_id.fetch_add(1, SeqCst)
+        self.next_page_id.fetch_add(1, Relaxed)
     }
 
     pub async fn new_page<'a>(&self) -> Option<Pin> {
