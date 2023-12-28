@@ -206,54 +206,70 @@ where
         .boxed()
     }
 
-    // TODO: scan doesn't hold read locks between each iteration, so could produce odd
-    // results when used concurrently
     pub async fn scan(&self) -> Result<Vec<(K, V)>, BTreeError> {
         let mut ret = Vec::new();
-        let mut cur = self.first(self.root).await?;
-
-        while cur != -1 {
-            let page = self
-                .pc
-                .fetch_page(cur)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
-            let r = page.read().await;
-            let node = Node::from(&r.data);
-            for s in node.values {
-                let v = match s.1 {
-                    Either::Value(v) => v,
-                    _ => unreachable!(),
-                };
-                ret.push((s.0, v))
-            }
-
-            cur = node.next;
+        if self.root == -1 {
+            return Ok(ret);
         }
+
+        let pin = self
+            .pc
+            .fetch_page(self.root)
+            .await
+            .ok_or(BTreeError::OutOfMemory)?;
+        let r = pin.read().await;
+
+        self._scan(None, r, &mut ret).await?;
 
         Ok(ret)
     }
 
-    fn first(&self, ptr: PageId) -> BoxFuture<Result<PageId, BTreeError>> {
+    fn _scan<'a>(
+        &'a self,
+        mut prev_page: Option<PageReadGuard<'a>>,
+        page: PageReadGuard<'a>,
+        acc: &'a mut Vec<(K, V)>,
+    ) -> BoxFuture<Result<(), BTreeError>> {
         async move {
-            assert!(ptr != -1);
+            let node: Node<K, V> = Node::from(&page.data);
 
-            let page = self
+            // Find first leaf
+            if node.t != NodeType::Leaf {
+                let Slot(_, v) = node.values.first().unwrap();
+                match v {
+                    Either::Pointer(ptr) => {
+                        let pin = self
+                            .pc
+                            .fetch_page(*ptr)
+                            .await
+                            .ok_or(BTreeError::OutOfMemory)?;
+                        let r = pin.read().await;
+
+                        prev_page.take();
+                        return self._scan(Some(page), r, acc).await;
+                    }
+                    Either::Value(_) => unreachable!(),
+                };
+            }
+
+            acc.extend(node.values.iter().map(|Slot(k, v)| match v {
+                Either::Value(v) => (*k, *v),
+                Either::Pointer(_) => unreachable!(),
+            }));
+
+            if node.next == -1 {
+                return Ok(());
+            }
+
+            let pin = self
                 .pc
-                .fetch_page(ptr)
+                .fetch_page(node.next)
                 .await
                 .ok_or(BTreeError::OutOfMemory)?;
-            let r = page.read().await;
-            let node: Node<K, V> = Node::from(&r.data);
-            if node.t == NodeType::Leaf {
-                return Ok(ptr);
-            }
+            let r = pin.read().await;
 
-            let f = node.values.first().unwrap();
-            match f.1 {
-                Either::Pointer(ptr) => self.first(ptr).await,
-                Either::Value(_) => unreachable!(),
-            }
+            prev_page.take();
+            self._scan(Some(page), r, acc).await
         }
         .boxed()
     }
@@ -440,6 +456,57 @@ where
             }
         }
         .boxed()
+    }
+
+    #[cfg(test)]
+    fn first(&self, ptr: PageId) -> BoxFuture<Result<PageId, BTreeError>> {
+        async move {
+            assert!(ptr != -1);
+
+            let page = self
+                .pc
+                .fetch_page(ptr)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let r = page.read().await;
+            let node: Node<K, V> = Node::from(&r.data);
+            if node.t == NodeType::Leaf {
+                return Ok(ptr);
+            }
+
+            let Slot(_, v) = node.values.first().unwrap();
+            match v {
+                Either::Pointer(ptr) => self.first(*ptr).await,
+                Either::Value(_) => unreachable!(),
+            }
+        }
+        .boxed()
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    async fn leaf_count(&self) -> Result<usize, BTreeError> {
+        if self.root == -1 {
+            return Ok(0);
+        }
+
+        let mut ret = 1;
+        let mut cur = self.first(self.root).await?;
+
+        while cur != -1 {
+            let pin = self
+                .pc
+                .fetch_page(cur)
+                .await
+                .ok_or(BTreeError::OutOfMemory)?;
+            let page = pin.read().await;
+            let node: Node<K, V> = Node::from(&page.data);
+
+            ret += 1;
+            cur = node.next;
+        }
+
+        Ok(ret)
     }
 }
 

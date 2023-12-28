@@ -15,7 +15,7 @@ use crate::{
     replacer::{AccessType, LRUKHandle},
 };
 
-pub const CACHE_SIZE: usize = 32;
+pub const CACHE_SIZE: usize = 64;
 
 pub type FrameId = usize;
 
