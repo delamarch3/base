@@ -17,6 +17,7 @@ pub const PAGE_SIZE: usize = 4 * 1024;
 pub type PageId = i32;
 pub type PageBuf = [u8; PAGE_SIZE];
 pub type PageReadGuard<'a> = RwLockReadGuard<'a, PageInner>;
+pub type PageWriteGuard<'a> = RwLockWriteGuard<'a, PageInner>;
 
 pub struct Page(RwLock<PageInner>);
 
@@ -29,11 +30,11 @@ impl Default for Page {
 }
 
 impl Page {
-    pub async fn read(&self) -> RwLockReadGuard<'_, PageInner> {
+    pub async fn read(&self) -> PageReadGuard {
         self.0.read().await
     }
 
-    pub async fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
+    pub async fn write(&self) -> PageWriteGuard {
         self.0.write().await
     }
 }
