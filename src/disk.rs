@@ -7,7 +7,7 @@ use crate::page::{PageBuf, PageId, PAGE_SIZE};
 
 pub trait Disk {
     fn read_page(&self, page_id: PageId) -> io::Result<PageBuf>;
-    fn write_page(&self, page_id: PageId, data: &PageBuf);
+    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()>;
 }
 
 pub struct FileSystem {
@@ -18,24 +18,19 @@ impl Disk for FileSystem {
     fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
-
         let mut buf = [0; PAGE_SIZE];
-        match uio::pread(fd, &mut buf, offset) {
-            Ok(_) => {}
-            Err(e) => panic!("{e}"),
-        }
+        uio::pread(fd, &mut buf, offset)?;
 
         Ok(buf)
     }
 
-    fn write_page(&self, page_id: PageId, data: &PageBuf) {
+    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
-        match uio::pwrite(fd, data, offset) {
-            Ok(_) => {}
-            Err(e) => panic!("{e}"),
-        };
+        uio::pwrite(fd, data, offset)?;
+
+        Ok(())
     }
 }
 
@@ -72,12 +67,14 @@ impl Disk for Memory {
         Ok(ret)
     }
 
-    fn write_page(&self, page_id: PageId, data: &PageBuf) {
+    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()> {
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
 
         let buf = unsafe { &mut *self.buf.get() };
         buf[offset..offset + PAGE_SIZE].copy_from_slice(data);
+
+        Ok(())
     }
 }
 

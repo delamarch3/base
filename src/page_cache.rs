@@ -119,7 +119,12 @@ impl<'a> Pin<'a> {
     }
 }
 
-pub type SharedPageCache<D> = Arc<PageCache<D>>;
+#[derive(Debug, PartialEq)]
+pub enum PageCacheError {
+    Disk(std::io::ErrorKind),
+    OutOfMemory,
+}
+pub type Result<T> = std::result::Result<T, PageCacheError>;
 
 pub struct PageCache<D: Disk = FileSystem> {
     pages: Box<[Page; CACHE_SIZE]>,
@@ -129,6 +134,7 @@ pub struct PageCache<D: Disk = FileSystem> {
     next_page_id: AtomicI32,
     replacer: LRUKHandle,
 }
+pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
 impl<D: Disk> PageCache<D> {
     pub fn new(disk: D, replacer: LRUKHandle, next_page_id: PageId) -> Arc<Self> {
@@ -167,28 +173,31 @@ impl<D: Disk> PageCache<D> {
         self.next_page_id.fetch_add(1, Relaxed)
     }
 
-    pub async fn new_page<'a>(&self) -> Option<Pin> {
+    pub async fn new_page<'a>(&self) -> Result<Pin> {
         let page_id = self.allocate_page();
 
         self.try_get_page(page_id).await
     }
 
-    pub async fn fetch_page<'a>(&self, page_id: PageId) -> Option<Pin> {
+    pub async fn fetch_page<'a>(&self, page_id: PageId) -> Result<Pin> {
         if let Some(i) = self.page_table.read().await.get(&page_id) {
             self.replacer.record_access(*i, AccessType::Get).await;
             self.replacer.pin(*i).await;
 
-            return Some(Pin::new(&self.pages[*i], *i, page_id, self.replacer.clone()));
+            return Ok(Pin::new(&self.pages[*i], *i, page_id, self.replacer.clone()));
         };
 
         self.try_get_page(page_id).await
     }
 
-    // TODO: should return Result
-    async fn try_get_page(&self, page_id: PageId) -> Option<Pin> {
+    async fn try_get_page(&self, page_id: PageId) -> Result<Pin> {
         let i = match self.free.pop() {
             Some(i) => i,
-            None => self.replacer.evict().await?,
+            None => self
+                .replacer
+                .evict()
+                .await
+                .ok_or(PageCacheError::OutOfMemory)?, // All pages are pinned
         };
 
         let mut page_w = self.pages[i].write().await;
@@ -197,19 +206,24 @@ impl<D: Disk> PageCache<D> {
         self.replacer.pin(i).await;
 
         if page_w.dirty {
-            self.disk.write_page(page_w.id, &page_w.data);
+            self.disk
+                .write_page(page_w.id, &page_w.data)
+                .map_err(|e| PageCacheError::Disk(e.kind()))?;
         }
 
         let mut page_table = self.page_table.write().await;
         page_table.remove(&page_w.id);
         page_table.insert(page_id, i);
 
-        let data = self.disk.read_page(page_id).expect("Couldn't read page");
+        let data = self
+            .disk
+            .read_page(page_id)
+            .map_err(|e| PageCacheError::Disk(e.kind()))?;
         page_w.reset();
         page_w.id = page_id;
         page_w.data = data;
 
-        Some(Pin::new(&self.pages[i], i, page_id, self.replacer.clone()))
+        Ok(Pin::new(&self.pages[i], i, page_id, self.replacer.clone()))
     }
 
     pub async fn remove_page(&self, page_id: PageId) {
@@ -233,7 +247,9 @@ impl<D: Disk> PageCache<D> {
 
         let mut page_w = self.pages[*i].write().await;
 
-        self.disk.write_page(page_w.id, &page_w.data);
+        self.disk
+            .write_page(page_w.id, &page_w.data)
+            .map_err(|e| PageCacheError::Disk(e.kind()));
         page_w.dirty = false;
     }
 
@@ -246,18 +262,18 @@ impl<D: Disk> PageCache<D> {
 
 #[cfg(test)]
 mod test {
-    use std::{io, sync::Arc, thread};
+    use std::{sync::Arc, thread};
 
     use crate::{
         disk::Memory,
         page::PAGE_SIZE,
-        page_cache::{FreeList, PageCache},
+        page_cache::{FreeList, PageCache, PageCacheError},
         replacer::LRUKHandle,
         writep,
     };
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_pm_read() -> io::Result<()> {
+    async fn test_pm_read() -> Result<(), PageCacheError> {
         const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
@@ -279,7 +295,7 @@ mod test {
         let want = b"test string";
         let id;
         {
-            let page = pc.new_page().await.unwrap();
+            let page = pc.new_page().await?;
             id = page.id;
             let mut w = page.write().await;
             w.data[0..want.len()].copy_from_slice(want);
@@ -289,13 +305,13 @@ mod test {
         // Swap the page out and write something else:
         {
             let data = b"page 8";
-            let page = pc.new_page().await.unwrap();
+            let page = pc.new_page().await?;
             let mut w = page.write().await;
             writep!(w, 0..data.len(), data);
         }
 
         // Read back page 7
-        let page = pc.fetch_page(id).await.unwrap();
+        let page = pc.fetch_page(id).await?;
         let r = page.read().await;
         let have = &r.data[0..want.len()];
         assert!(want == have, "Want: {want:?}, Have: {have:?}");
@@ -305,7 +321,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
-    async fn test_pm_replacer_full() -> io::Result<()> {
+    async fn test_pm_replacer_full() -> Result<(), PageCacheError> {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
@@ -324,7 +340,7 @@ mod test {
         );
 
         let have = pc.new_page().await;
-        assert!(have.is_none(), "Expected new_page to return None when replacer is full");
+        assert!(have.is_err(), "Expected new_page to return OutOfMemory when all pages are pinned");
 
         Ok(())
     }

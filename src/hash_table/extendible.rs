@@ -14,14 +14,6 @@ use crate::{
     writep,
 };
 
-// TODO: proper errors
-#[derive(Debug)]
-pub enum ExtendibleError {
-    Error,
-}
-pub type ExtendibleResult<T> = Result<T, ExtendibleError>;
-use ExtendibleError::*;
-
 pub struct ExtendibleHashTable<K, V, D: Disk = FileSystem> {
     dir_page_id: PageId,
     pc: SharedPageCache<D>,
@@ -42,8 +34,8 @@ where
         }
     }
 
-    pub async fn insert(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+    pub async fn insert(&self, k: &K, v: &V) -> crate::Result<bool> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
         let mut dir_page_w = dir_page.page.write().await;
         let mut dir = Directory::from(&dir_page_w.data);
 
@@ -51,12 +43,12 @@ where
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
-                let p = self.pc.new_page().await.ok_or(Error)?;
+                let p = self.pc.new_page().await?;
                 dir.insert(bucket_index, p.page.read().await.id);
                 writep!(dir_page_w, &PageBuf::from(&dir));
                 p
             }
-            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await?,
         };
 
         let mut bucket_page_w = bucket_page.page.write().await;
@@ -75,11 +67,11 @@ where
             // 2. Get the high bit of the old bucket (1 << local_depth)
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
-            let page0 = self.pc.new_page().await.ok_or(Error)?;
+            let page0 = self.pc.new_page().await?;
             let mut page0_w = page0.page.write().await;
             let mut bucket0 = Bucket::from(&page0_w.data);
 
-            let page1 = self.pc.new_page().await.ok_or(Error)?;
+            let page1 = self.pc.new_page().await?;
             let mut page1_w = page1.page.write().await;
             let mut bucket1 = Bucket::from(&page1_w.data);
 
@@ -109,8 +101,8 @@ where
         Ok(true)
     }
 
-    pub async fn remove(&self, k: &K, v: &V) -> ExtendibleResult<bool> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+    pub async fn remove(&self, k: &K, v: &V) -> crate::Result<bool> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::from(&dir_page_r.data);
 
@@ -118,7 +110,7 @@ where
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(false),
-            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await?,
         };
         let mut bucket_page_w = bucket_page.page.write().await;
         let mut bucket = Bucket::from(&bucket_page_w.data);
@@ -131,8 +123,8 @@ where
         Ok(ret)
     }
 
-    pub async fn get(&self, k: &K) -> ExtendibleResult<Vec<V>> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+    pub async fn get(&self, k: &K) -> crate::Result<Vec<V>> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::from(&dir_page_r.data);
 
@@ -140,7 +132,7 @@ where
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(vec![]),
-            _ => self.pc.fetch_page(bucket_page_id).await.ok_or(Error)?,
+            _ => self.pc.fetch_page(bucket_page_id).await?,
         };
 
         let bucket_page_w = bucket_page.page.read().await;
@@ -149,8 +141,8 @@ where
         Ok(bucket.find(k))
     }
 
-    pub async fn get_num_buckets(&self) -> ExtendibleResult<u32> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await.ok_or(Error)?;
+    pub async fn get_num_buckets(&self) -> crate::Result<u32> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
         let dir_page_r = dir_page.page.read().await;
         let dir = Directory::from(&dir_page_r.data);
 
@@ -177,8 +169,7 @@ mod test {
 
     use crate::{
         disk::Memory,
-        hash_table::extendible::{ExtendibleError, ExtendibleHashTable},
-        hash_table::{bucket_page::BIT_SIZE, dir_page::Directory},
+        hash_table::{bucket_page::BIT_SIZE, dir_page::Directory, extendible::ExtendibleHashTable},
         page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRUKHandle,
@@ -201,7 +192,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_extendible_hash_table() -> Result<(), ExtendibleError> {
+    async fn test_extendible_hash_table() -> crate::Result<()> {
         const MEMORY: usize = PAGE_SIZE * 4;
         const K: usize = 2;
 

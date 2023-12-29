@@ -19,11 +19,6 @@ use crate::{
 
 use self::slot::Increment;
 
-#[derive(Debug)]
-pub enum BTreeError {
-    OutOfMemory,
-}
-
 pub struct BTree<K, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
@@ -48,29 +43,26 @@ where
 
     // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
-    pub async fn insert(&mut self, key: K, value: V) -> Result<(), BTreeError> {
+    // pub async fn insert(&mut self, key: K, value: V) -> Result<(), BTreeError> {
+    pub async fn insert(&mut self, key: K, value: V) -> crate::Result<()> {
         let pin;
         let rpage = match self.root {
             -1 => {
-                pin = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+                pin = self.pc.new_page().await?;
                 let node: Node<K, V> = Node::new(pin.id, self.max, NodeType::Leaf, true);
                 let mut page = pin.write().await;
                 writep!(page, &PageBuf::from(&node));
                 page
             }
             id => {
-                pin = self
-                    .pc
-                    .fetch_page(id)
-                    .await
-                    .ok_or(BTreeError::OutOfMemory)?;
+                pin = self.pc.fetch_page(id).await?;
                 pin.write().await
             }
         };
         self.root = rpage.id;
 
         if let Some((s, os)) = self._insert(None, rpage, key, value).await? {
-            let new_root_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+            let new_root_page = self.pc.new_page().await?;
             let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
             self.root = new_root.id;
 
@@ -91,13 +83,13 @@ where
         mut page: PageWriteGuard<'a>,
         key: K,
         value: V,
-    ) -> BoxFuture<Result<Option<(Slot<K, V>, Slot<K, V>)>, BTreeError>> {
+    ) -> BoxFuture<crate::Result<Option<(Slot<K, V>, Slot<K, V>)>>> {
         async move {
             let mut node = Node::from(&page.data);
 
             let mut split = None;
             if node.almost_full() {
-                let new_page = self.pc.new_page().await.ok_or(BTreeError::OutOfMemory)?;
+                let new_page = self.pc.new_page().await?;
                 let mut npage = new_page.write().await;
                 let mut nnode = node.split(new_page.id);
 
@@ -132,11 +124,7 @@ where
                             }
                         };
 
-                        let child_page = self
-                            .pc
-                            .fetch_page(ptr)
-                            .await
-                            .ok_or(BTreeError::OutOfMemory)?;
+                        let child_page = self.pc.fetch_page(ptr).await?;
                         let cpage = child_page.write().await;
 
                         prev_page.take();
@@ -184,11 +172,7 @@ where
                     }
                 };
 
-                let child_page = self
-                    .pc
-                    .fetch_page(ptr)
-                    .await
-                    .ok_or(BTreeError::OutOfMemory)?;
+                let child_page = self.pc.fetch_page(ptr).await?;
                 let cpage = child_page.write().await;
 
                 prev_page.take();
@@ -206,17 +190,13 @@ where
         .boxed()
     }
 
-    pub async fn scan(&self) -> Result<Vec<(K, V)>, BTreeError> {
+    pub async fn scan(&self) -> crate::Result<Vec<(K, V)>> {
         let mut ret = Vec::new();
         if self.root == -1 {
             return Ok(ret);
         }
 
-        let pin = self
-            .pc
-            .fetch_page(self.root)
-            .await
-            .ok_or(BTreeError::OutOfMemory)?;
+        let pin = self.pc.fetch_page(self.root).await?;
         let r = pin.read().await;
 
         self._scan(None, r, &mut ret).await?;
@@ -229,7 +209,7 @@ where
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
         acc: &'a mut Vec<(K, V)>,
-    ) -> BoxFuture<Result<(), BTreeError>> {
+    ) -> BoxFuture<crate::Result<()>> {
         async move {
             let node: Node<K, V> = Node::from(&page.data);
 
@@ -238,11 +218,7 @@ where
                 let Slot(_, v) = node.values.first().unwrap();
                 match v {
                     Either::Pointer(ptr) => {
-                        let pin = self
-                            .pc
-                            .fetch_page(*ptr)
-                            .await
-                            .ok_or(BTreeError::OutOfMemory)?;
+                        let pin = self.pc.fetch_page(*ptr).await?;
                         let r = pin.read().await;
 
                         prev_page.take();
@@ -261,11 +237,7 @@ where
                 return Ok(());
             }
 
-            let pin = self
-                .pc
-                .fetch_page(node.next)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let pin = self.pc.fetch_page(node.next).await?;
             let r = pin.read().await;
 
             prev_page.take();
@@ -274,7 +246,7 @@ where
         .boxed()
     }
 
-    pub async fn range(&self, from: K, to: K) -> Result<Vec<(K, V)>, BTreeError> {
+    pub async fn range(&self, from: K, to: K) -> crate::Result<Vec<(K, V)>> {
         let mut ret = Vec::new();
 
         let cur = match self.get_ptr(from, self.root).await? {
@@ -282,11 +254,7 @@ where
             None => return Ok(ret),
         };
 
-        let page = self
-            .pc
-            .fetch_page(cur)
-            .await
-            .ok_or(BTreeError::OutOfMemory)?;
+        let page = self.pc.fetch_page(cur).await?;
         let r = page.read().await;
 
         self._range(None, r, &mut ret, from, to).await?;
@@ -301,7 +269,7 @@ where
         acc: &'a mut Vec<(K, V)>,
         from: K,
         to: K,
-    ) -> BoxFuture<Result<(), BTreeError>> {
+    ) -> BoxFuture<crate::Result<()>> {
         async move {
             let node = Node::from(&page.data);
 
@@ -327,11 +295,7 @@ where
                 return Ok(());
             }
 
-            let next_page = self
-                .pc
-                .fetch_page(node.next)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let next_page = self.pc.fetch_page(node.next).await?;
             let r = next_page.read().await;
 
             prev_page.take();
@@ -341,15 +305,11 @@ where
         .boxed()
     }
 
-    fn get_ptr(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<PageId>, BTreeError>> {
+    fn get_ptr(&self, key: K, ptr: PageId) -> BoxFuture<crate::Result<Option<PageId>>> {
         async move {
             assert!(ptr != -1);
 
-            let page = self
-                .pc
-                .fetch_page(ptr)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let page = self.pc.fetch_page(ptr).await?;
             let r = page.read().await;
             let node: Node<K, V> = Node::from(&r.data);
 
@@ -362,7 +322,7 @@ where
         .boxed()
     }
 
-    pub async fn get(&self, key: K) -> Result<Option<Slot<K, V>>, BTreeError> {
+    pub async fn get(&self, key: K) -> crate::Result<Option<Slot<K, V>>> {
         if self.root == -1 {
             return Ok(None);
         }
@@ -370,13 +330,9 @@ where
         self._get(key, self.root).await
     }
 
-    fn _get(&self, key: K, ptr: PageId) -> BoxFuture<Result<Option<Slot<K, V>>, BTreeError>> {
+    fn _get(&self, key: K, ptr: PageId) -> BoxFuture<crate::Result<Option<Slot<K, V>>>> {
         async move {
-            let page = self
-                .pc
-                .fetch_page(ptr)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let page = self.pc.fetch_page(ptr).await?;
             let r = page.read().await;
             let node = Node::from(&r.data);
 
@@ -392,7 +348,7 @@ where
         .boxed()
     }
 
-    pub async fn delete(&self, key: K) -> Result<bool, BTreeError> {
+    pub async fn delete(&self, key: K) -> crate::Result<bool> {
         if self.root == -1 {
             return Ok(false);
         }
@@ -400,13 +356,9 @@ where
         self._delete(key, self.root).await
     }
 
-    fn _delete(&self, key: K, ptr: PageId) -> BoxFuture<Result<bool, BTreeError>> {
+    fn _delete(&self, key: K, ptr: PageId) -> BoxFuture<crate::Result<bool>> {
         async move {
-            let page = self
-                .pc
-                .fetch_page(ptr)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let page = self.pc.fetch_page(ptr).await?;
             let mut w = page.write().await;
             let mut node: Node<K, V> = Node::from(&w.data);
 
@@ -459,15 +411,11 @@ where
     }
 
     #[cfg(test)]
-    fn first(&self, ptr: PageId) -> BoxFuture<Result<PageId, BTreeError>> {
+    fn first(&self, ptr: PageId) -> BoxFuture<crate::Result<PageId>> {
         async move {
             assert!(ptr != -1);
 
-            let page = self
-                .pc
-                .fetch_page(ptr)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let page = self.pc.fetch_page(ptr).await?;
             let r = page.read().await;
             let node: Node<K, V> = Node::from(&r.data);
             if node.t == NodeType::Leaf {
@@ -485,7 +433,7 @@ where
 
     #[cfg(test)]
     #[allow(dead_code)]
-    async fn leaf_count(&self) -> Result<usize, BTreeError> {
+    async fn leaf_count(&self) -> crate::Result<usize> {
         if self.root == -1 {
             return Ok(0);
         }
@@ -494,11 +442,7 @@ where
         let mut cur = self.first(self.root).await?;
 
         while cur != -1 {
-            let pin = self
-                .pc
-                .fetch_page(cur)
-                .await
-                .ok_or(BTreeError::OutOfMemory)?;
+            let pin = self.pc.fetch_page(cur).await?;
             let page = pin.read().await;
             let node: Node<K, V> = Node::from(&page.data);
 
@@ -535,7 +479,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_btree() -> Result<(), BTreeError> {
+    async fn test_btree() -> crate::Result<()> {
         const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;
@@ -611,7 +555,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_btree_scan() -> Result<(), BTreeError> {
+    async fn test_btree_scan() -> crate::Result<()> {
         const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 64;
         const K: usize = 2;
@@ -645,7 +589,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_btree_range() -> Result<(), BTreeError> {
+    async fn test_btree_range() -> crate::Result<()> {
         struct TestCase {
             name: &'static str,
             range: std::ops::Range<i32>,

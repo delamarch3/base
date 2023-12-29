@@ -8,6 +8,8 @@ pub mod pair;
 pub mod replacer;
 pub mod storable;
 
+pub use page_cache::Result;
+
 #[cfg(test)]
 mod test {
     pub enum Type {
