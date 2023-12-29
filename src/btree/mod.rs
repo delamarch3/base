@@ -145,12 +145,12 @@ where
                             nnode.values.replace(s);
                             nnode.values.replace(os);
                         }
+
+                        // Write the new node
+                        writep!(npage, &PageBuf::from(&nnode));
+
+                        return Ok(node.get_separators(Some(nnode)));
                     }
-
-                    // Write the new node
-                    writep!(npage, &PageBuf::from(&nnode));
-
-                    return Ok(node.get_separators(Some(nnode)));
                 }
 
                 // Write the new node
@@ -196,12 +196,12 @@ where
                     node.values.replace(s);
                     node.values.replace(os);
                 }
+
+                // Write the original node
+                writep!(page, &PageBuf::from(&node));
+
+                Ok(node.get_separators(split))
             }
-
-            // Write the original node
-            writep!(page, &PageBuf::from(&node));
-
-            Ok(node.get_separators(split))
         }
         .boxed()
     }
