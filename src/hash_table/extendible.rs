@@ -216,7 +216,7 @@ mod test {
         let rem = ht.get(&inserts[remove].0).await?;
         assert!(rem.is_empty());
 
-        pm.flush_all_pages().await;
+        pm.flush_all_pages().await?;
 
         // Make sure it reads back ok
         let ht: ExtendibleHashTable<i32, i32, _> = ExtendibleHashTable::new(0, pm.clone());

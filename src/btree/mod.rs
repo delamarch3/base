@@ -43,7 +43,6 @@ where
 
     // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
-    // pub async fn insert(&mut self, key: K, value: V) -> Result<(), BTreeError> {
     pub async fn insert(&mut self, key: K, value: V) -> crate::Result<()> {
         let pin;
         let rpage = match self.root {
@@ -498,7 +497,7 @@ mod test {
             btree.insert(*k, *v).await?;
         }
 
-        pc.flush_all_pages().await;
+        pc.flush_all_pages().await?;
 
         for (k, v) in &inserts {
             let have = btree.get(*k).await?;
@@ -512,7 +511,7 @@ mod test {
             btree.delete(*k).await?;
         }
 
-        pc.flush_all_pages().await;
+        pc.flush_all_pages().await?;
 
         for (k, _) in first_half {
             match btree.get(*k).await? {
@@ -543,7 +542,7 @@ mod test {
             btree.insert(*k, *v).await?;
         }
 
-        pc.flush_all_pages().await;
+        pc.flush_all_pages().await?;
 
         for (k, v) in &inserts {
             let have = btree.get(*k).await?;
@@ -573,7 +572,7 @@ mod test {
             btree.insert(*k, *v).await?;
         }
 
-        pc2.flush_all_pages().await;
+        pc2.flush_all_pages().await?;
 
         for (k, v) in &want {
             let have = btree.get(*k).await?;
@@ -635,7 +634,7 @@ mod test {
                 btree.insert(*k, *v).await?;
             }
 
-            pc2.flush_all_pages().await;
+            pc2.flush_all_pages().await?;
 
             for (k, v) in &inserts {
                 let have = btree.get(*k).await?;
@@ -650,7 +649,6 @@ mod test {
                 .filter(|s| s.0 >= from && s.0 <= to)
                 .collect::<Vec<(i32, i32)>>();
 
-            // let have = btree.range(from, to).await?;
             let have = btree.range(from, to).await?;
             assert!(
                 want == have,

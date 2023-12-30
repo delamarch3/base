@@ -241,22 +241,26 @@ impl<D: Disk> PageCache<D> {
         self.free.push(i);
     }
 
-    pub async fn flush_page(&self, page_id: PageId) {
+    pub async fn flush_page(&self, page_id: PageId) -> Result<()> {
         let page_table = self.page_table.read().await;
-        let Some(i) = page_table.get(&page_id) else { return };
+        let Some(i) = page_table.get(&page_id) else { return Ok(()) };
 
         let mut page_w = self.pages[*i].write().await;
 
         self.disk
             .write_page(page_w.id, &page_w.data)
-            .map_err(|e| PageCacheError::Disk(e.kind()));
+            .map_err(|e| PageCacheError::Disk(e.kind()))?;
         page_w.dirty = false;
+
+        Ok(())
     }
 
-    pub async fn flush_all_pages(&self) {
+    pub async fn flush_all_pages(&self) -> Result<()> {
         for page_id in self.page_table.read().await.keys() {
-            self.flush_page(*page_id).await;
+            self.flush_page(*page_id).await?;
         }
+
+        Ok(())
     }
 }
 
@@ -272,6 +276,7 @@ mod test {
         writep,
     };
 
+    // TODO: Update tests to use CACHE_SIZE
     #[tokio::test(flavor = "multi_thread")]
     async fn test_pm_read() -> Result<(), PageCacheError> {
         const MEMORY: usize = PAGE_SIZE * 16;
