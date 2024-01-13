@@ -234,7 +234,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_evict() {
         const K: usize = 2;
-        let replacer = LRUKHandle::new(2);
+        let replacer = LRUKHandle::new(K);
 
         {
             for i in 0..8 {

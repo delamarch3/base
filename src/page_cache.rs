@@ -243,7 +243,9 @@ impl<D: Disk> PageCache<D> {
 
     pub async fn flush_page(&self, page_id: PageId) -> Result<()> {
         let page_table = self.page_table.read().await;
-        let Some(i) = page_table.get(&page_id) else { return Ok(()) };
+        let Some(i) = page_table.get(&page_id) else {
+            return Ok(());
+        };
 
         let mut page_w = self.pages[*i].write().await;
 
@@ -282,7 +284,7 @@ mod test {
         const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
-        let replacer = LRUKHandle::new(2);
+        let replacer = LRUKHandle::new(K);
         let pc = PageCache::new(disk, replacer, 0);
 
         // Hold 7 pins (pages 0 to 6):
@@ -330,7 +332,7 @@ mod test {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
-        let replacer = LRUKHandle::new(2);
+        let replacer = LRUKHandle::new(K);
         let pc = PageCache::new(disk, replacer, 0);
 
         let _pages = tokio::join!(
