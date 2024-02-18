@@ -74,14 +74,12 @@ where
 
         let left = &buf[NODE_VALUES_START..];
         let mut from = 0;
-        let mut to = size;
         let mut rem = len;
         while rem > 0 {
-            let bytes = &left[from..to];
+            let bytes = &left[from..from + size];
             let slot = Slot::from(bytes);
             values.insert(slot);
             from += size;
-            to += size;
             rem -= 1;
         }
 
@@ -375,7 +373,9 @@ mod test {
             ]),
         };
 
-        let Some(slots) = node.get_separators(Some(other)) else { panic!() };
+        let Some(slots) = node.get_separators(Some(other)) else {
+            panic!()
+        };
         let expected = (Slot(51, Either::Pointer(0)), Slot(111, Either::Pointer(1)));
         assert!(slots == expected);
     }
@@ -415,7 +415,9 @@ mod test {
             ]),
         };
 
-        let Some(slots) = node.get_separators(Some(other)) else { panic!() };
+        let Some(slots) = node.get_separators(Some(other)) else {
+            panic!()
+        };
         let expected = (Slot(50, Either::Pointer(0)), Slot(110, Either::Pointer(1)));
         assert!(slots == expected);
     }
