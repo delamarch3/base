@@ -112,12 +112,10 @@ where
 
         let size = Slot::<K, V>::SIZE;
         let mut from = NODE_VALUES_START;
-        let mut to = from + size;
         for value in &node.values {
             let slot = BytesMut::from(*value);
-            ret[from..to].copy_from_slice(&slot);
+            ret[from..from + size].copy_from_slice(&slot);
             from += size;
-            to += size;
         }
 
         if ret == [0; 4096] {

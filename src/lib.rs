@@ -1,3 +1,4 @@
+pub mod binder;
 pub mod bitmap;
 pub mod btree;
 pub mod disk;
@@ -7,6 +8,7 @@ pub mod page_cache;
 pub mod pair;
 pub mod replacer;
 pub mod storable;
+pub mod table_page;
 
 pub use page_cache::Result;
 

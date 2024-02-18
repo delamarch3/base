@@ -127,8 +127,7 @@ where
                         let cpage = child_page.write().await;
 
                         prev_page.take();
-                        if let Some((s, os)) = self._insert(Some(&npage), cpage, key, value).await?
-                        {
+                        if let Some((s, os)) = self._insert(Some(&npage), cpage, key, value).await? {
                             nnode.values.replace(s);
                             nnode.values.replace(os);
                         }
