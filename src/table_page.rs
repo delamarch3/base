@@ -300,7 +300,7 @@ mod test {
         };
         let tuple_b = Tuple {
             r_id: r_id_b,
-            data: BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]),
+            data: BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]),
         };
 
         table.insert(&tuple_a, &meta);
