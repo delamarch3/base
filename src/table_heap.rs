@@ -78,12 +78,8 @@ mod test {
     use bytes::BytesMut;
 
     use crate::{
-        disk::Memory,
-        page::PAGE_SIZE,
-        page_cache::PageCache,
-        replacer::LRUKHandle,
-        table_heap::TableHeap,
-        table_page::{RId, Tuple, TupleMeta},
+        disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRUKHandle,
+        table_heap::TableHeap, table_page::TupleMeta,
     };
 
     #[tokio::test(flavor = "multi_thread")]
