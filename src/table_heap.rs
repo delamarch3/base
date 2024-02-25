@@ -13,11 +13,11 @@ pub struct TableHeap<D: Disk = FileSystem> {
 }
 
 impl<D: Disk> TableHeap<D> {
-    pub fn new(pc: SharedPageCache<D>, first_page_id: PageId) -> Self {
+    pub fn new(pc: SharedPageCache<D>, first_page_id: PageId, last_page_id: PageId) -> Self {
         Self {
             pc,
             first_page_id,
-            last_page_id: first_page_id,
+            last_page_id,
         }
     }
 
@@ -94,7 +94,7 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
 
         let first_page_id = pc.new_page().await?.id;
-        let mut heap = TableHeap::new(pc.clone(), first_page_id);
+        let mut heap = TableHeap::new(pc.clone(), first_page_id, first_page_id);
 
         let meta = TupleMeta { deleted: false };
 
@@ -119,7 +119,7 @@ mod test {
         let r_id_a = heap.insert(&tuple_a, &meta).await?.unwrap();
         let r_id_b = heap.insert(&tuple_b, &meta).await?.unwrap();
 
-        let heap = TableHeap::new(pc, first_page_id);
+        let heap = TableHeap::new(pc, first_page_id, first_page_id);
 
         let (_, have_a) = heap.get(r_id_a).await?.unwrap();
         let (_, have_b) = heap.get(r_id_b).await?.unwrap();
