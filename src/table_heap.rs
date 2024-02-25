@@ -1,3 +1,5 @@
+use bytes::BytesMut;
+
 use crate::{
     disk::{Disk, FileSystem},
     page::{PageBuf, PageId},
@@ -21,12 +23,12 @@ impl<D: Disk> TableHeap<D> {
         }
     }
 
-    pub async fn insert(&mut self, tuple: &Tuple, meta: &TupleMeta) -> Result<Option<RId>> {
+    pub async fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
         let page = self.pc.fetch_page(self.last_page_id).await?;
         let mut page_w = page.write().await;
         let mut table = Table::from(&page_w.data);
 
-        if let Some(slot_idx) = table.insert(tuple, meta) {
+        if let Some(slot_idx) = table.insert(tuple_data, meta) {
             writep!(page_w, &PageBuf::from(&table));
             return Ok(Some(RId {
                 page_id: self.last_page_id,
@@ -45,7 +47,7 @@ impl<D: Disk> TableHeap<D> {
         self.last_page_id = page.id;
 
         let mut table = Table::from(&page_w.data);
-        match table.insert(tuple, meta) {
+        match table.insert(tuple_data, meta) {
             Some(slot_idx) => {
                 writep!(page_w, &PageBuf::from(&table));
                 Ok(Some(RId {
@@ -97,24 +99,8 @@ mod test {
         let mut heap = TableHeap::new(pc.clone(), first_page_id, first_page_id);
 
         let meta = TupleMeta { deleted: false };
-
-        let r_id_a = RId {
-            page_id: 0,
-            slot_idx: 0,
-        };
-        let tuple_a = Tuple {
-            r_id: r_id_a,
-            data: BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]),
-        };
-
-        let r_id_b = RId {
-            page_id: 0,
-            slot_idx: 1,
-        };
-        let tuple_b = Tuple {
-            r_id: r_id_b,
-            data: BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]),
-        };
+        let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
+        let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
 
         let r_id_a = heap.insert(&tuple_a, &meta).await?.unwrap();
         let r_id_b = heap.insert(&tuple_b, &meta).await?.unwrap();
@@ -124,8 +110,8 @@ mod test {
         let (_, have_a) = heap.get(r_id_a).await?.unwrap();
         let (_, have_b) = heap.get(r_id_b).await?.unwrap();
 
-        assert_eq!(tuple_a.data, have_a.data);
-        assert_eq!(tuple_b.data, have_b.data);
+        assert_eq!(tuple_a, have_a.data);
+        assert_eq!(tuple_b, have_b.data);
 
         Ok(())
     }

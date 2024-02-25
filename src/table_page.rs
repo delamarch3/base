@@ -161,13 +161,13 @@ impl Table {
         self.tuples_len
     }
 
-    pub fn next_tuple_offset(&self, tuple: &Tuple) -> Option<usize> {
+    pub fn next_tuple_offset(&self, tuple_data: &BytesMut) -> Option<usize> {
         let offset = match self.slots.last() {
             Some(slot) => slot.offset as usize,
             None => PAGE_SIZE,
         };
 
-        let tuple_offset = offset - tuple.data.len();
+        let tuple_offset = offset - tuple_data.len();
 
         // Ensure tuple isn't written over header/slots
         let size = Self::HEADER_SIZE + Slot::SIZE * (self.tuples_len as usize + 1);
@@ -178,13 +178,12 @@ impl Table {
         Some(tuple_offset)
     }
 
-    // TODO: we just need the tuple data here
-    pub fn insert(&mut self, tuple: &Tuple, meta: &TupleMeta) -> Option<u32> {
-        let offset = self.next_tuple_offset(tuple)?;
+    pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
+        let offset = self.next_tuple_offset(tuple_data)?;
         let slot_idx = self.tuples_len;
         self.slots.push(Slot {
             offset: offset as u32,
-            len: tuple.data.len() as u32,
+            len: tuple_data.len() as u32,
             meta: *meta,
         });
         self.tuples_len += 1;
@@ -192,7 +191,7 @@ impl Table {
         unsafe {
             let tuples_ptr = self.page_start.add(offset);
             let tuples = std::slice::from_raw_parts_mut(tuples_ptr, PAGE_SIZE - offset);
-            tuples[..tuple.data.len()].copy_from_slice(&tuple.data);
+            tuples[..tuple_data.len()].copy_from_slice(&tuple_data);
         }
 
         Some(slot_idx)
@@ -294,26 +293,32 @@ mod test {
             page_id: 0,
             slot_idx: 0,
         };
-        let tuple_a = Tuple {
-            r_id: r_id_a,
-            data: BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]),
-        };
+        let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
 
         let r_id_b = RId {
             page_id: 0,
             slot_idx: 1,
         };
-        let tuple_b = Tuple {
-            r_id: r_id_b,
-            data: BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]),
-        };
+        let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
 
         table.insert(&tuple_a, &meta);
         table.insert(&tuple_b, &meta);
 
         let (_, have_a) = table.get(&r_id_a).unwrap();
         let (_, have_b) = table.get(&r_id_b).unwrap();
-        assert_eq!(tuple_a, have_a);
-        assert_eq!(tuple_b, have_b)
+        assert_eq!(
+            Tuple {
+                data: tuple_a,
+                r_id: r_id_a
+            },
+            have_a
+        );
+        assert_eq!(
+            Tuple {
+                data: tuple_b,
+                r_id: r_id_b
+            },
+            have_b
+        )
     }
 }
