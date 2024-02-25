@@ -3,6 +3,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 #[macro_export]
 macro_rules! writep {
     ($page:ident, $data:expr) => {
+        // TODO: do PageBuf::from in here
         $page.data[..].copy_from_slice($data);
         $page.dirty = true;
     };

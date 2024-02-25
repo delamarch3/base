@@ -17,19 +17,19 @@ use crate::page::{PageBuf, PageId, PAGE_SIZE};
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RId {
-    page_id: PageId,
-    slot_idx: u32,
+    pub page_id: PageId,
+    pub slot_idx: u32,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Tuple {
-    r_id: RId,
-    data: BytesMut,
+    pub r_id: RId,
+    pub data: BytesMut,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct TupleMeta {
-    deleted: bool,
+    pub deleted: bool,
 }
 
 impl From<&[u8]> for TupleMeta {
@@ -86,7 +86,7 @@ const SLOTS_START: usize = 12;
 #[derive(Debug, PartialEq)]
 pub struct Table {
     page_start: *mut u8,
-    next_page_id: PageId,
+    pub next_page_id: PageId,
     tuples_len: u32,
     deleted_tuples_len: u32,
     slots: Vec<Slot>,
@@ -157,6 +157,10 @@ impl From<&Table> for PageBuf {
 impl Table {
     const HEADER_SIZE: usize = 12;
 
+    pub fn len(&self) -> u32 {
+        self.tuples_len
+    }
+
     pub fn next_tuple_offset(&self, tuple: &Tuple) -> Option<usize> {
         let offset = match self.slots.last() {
             Some(slot) => slot.offset as usize,
@@ -174,9 +178,10 @@ impl Table {
         Some(tuple_offset)
     }
 
+    // TODO: we just need the tuple data here
     pub fn insert(&mut self, tuple: &Tuple, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple)?;
-        let tuple_id = self.tuples_len;
+        let slot_idx = self.tuples_len;
         self.slots.push(Slot {
             offset: offset as u32,
             len: tuple.data.len() as u32,
@@ -190,10 +195,10 @@ impl Table {
             tuples[..tuple.data.len()].copy_from_slice(&tuple.data);
         }
 
-        Some(tuple_id)
+        Some(slot_idx)
     }
 
-    pub fn get(&self, r_id: &RId) -> (TupleMeta, Tuple) {
+    pub fn get(&self, r_id: &RId) -> Option<(TupleMeta, Tuple)> {
         let slot_idx = r_id.slot_idx;
         if slot_idx > self.tuples_len {
             todo!()
@@ -211,7 +216,7 @@ impl Table {
             tuple.data[..].copy_from_slice(tuple_data);
         }
 
-        (meta, tuple)
+        Some((meta, tuple))
     }
 }
 
@@ -306,8 +311,8 @@ mod test {
         table.insert(&tuple_a, &meta);
         table.insert(&tuple_b, &meta);
 
-        let (_, have_a) = table.get(&r_id_a);
-        let (_, have_b) = table.get(&r_id_b);
+        let (_, have_a) = table.get(&r_id_a).unwrap();
+        let (_, have_b) = table.get(&r_id_b).unwrap();
         assert_eq!(tuple_a, have_a);
         assert_eq!(tuple_b, have_b)
     }
