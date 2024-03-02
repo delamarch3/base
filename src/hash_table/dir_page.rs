@@ -122,10 +122,10 @@ mod test {
         assert!(dir.global_depth_mask() == 255);
     }
 
-    #[tokio::test]
-    async fn test_directory() {
+    #[test]
+    fn test_directory() {
         let page = Page::default();
-        let mut w = page.write().await;
+        let mut w = page.write();
 
         let mut dir = Directory::from(&w.data);
 

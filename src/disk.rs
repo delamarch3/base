@@ -1,7 +1,7 @@
 use std::{cell::UnsafeCell, io, os::fd::AsRawFd, path::Path};
 
 use nix::sys::uio;
-use tokio::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions};
 
 use crate::page::{PageBuf, PageId, PAGE_SIZE};
 
@@ -35,13 +35,12 @@ impl Disk for FileSystem {
 }
 
 impl FileSystem {
-    pub async fn new(file: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn new(file: impl AsRef<Path>) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(file)
-            .await?;
+            .open(file)?;
 
         Ok(Self { file })
     }

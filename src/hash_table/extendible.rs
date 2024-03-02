@@ -34,24 +34,24 @@ where
         }
     }
 
-    pub async fn insert(&self, k: &K, v: &V) -> crate::Result<bool> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
-        let mut dir_page_w = dir_page.page.write().await;
+    pub fn insert(&self, k: &K, v: &V) -> crate::Result<bool> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id)?;
+        let mut dir_page_w = dir_page.page.write();
         let mut dir = Directory::from(&dir_page_w.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
-                let p = self.pc.new_page().await?;
-                dir.insert(bucket_index, p.page.read().await.id);
+                let p = self.pc.new_page()?;
+                dir.insert(bucket_index, p.page.read().id);
                 writep!(dir_page_w, &PageBuf::from(&dir));
                 p
             }
-            _ => self.pc.fetch_page(bucket_page_id).await?,
+            _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let mut bucket_page_w = bucket_page.page.write().await;
+        let mut bucket_page_w = bucket_page.page.write();
         let mut bucket = Bucket::from(&bucket_page_w.data);
 
         bucket.insert(k, v);
@@ -67,12 +67,12 @@ where
             // 2. Get the high bit of the old bucket (1 << local_depth)
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
-            let page0 = self.pc.new_page().await?;
-            let mut page0_w = page0.page.write().await;
+            let page0 = self.pc.new_page()?;
+            let mut page0_w = page0.page.write();
             let mut bucket0 = Bucket::from(&page0_w.data);
 
-            let page1 = self.pc.new_page().await?;
-            let mut page1_w = page1.page.write().await;
+            let page1 = self.pc.new_page()?;
+            let mut page1_w = page1.page.write();
             let mut bucket1 = Bucket::from(&page1_w.data);
 
             let bit = dir.get_local_high_bit(bucket_index);
@@ -95,24 +95,24 @@ where
             writep!(page1_w, &PageBuf::from(&bucket0));
 
             // TODO: mark original page on disk as ready to be allocated
-            self.pc.remove_page(bucket_page_w.id).await;
+            self.pc.remove_page(bucket_page_w.id);
         }
 
         Ok(true)
     }
 
-    pub async fn remove(&self, k: &K, v: &V) -> crate::Result<bool> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
-        let dir_page_r = dir_page.page.read().await;
+    pub fn remove(&self, k: &K, v: &V) -> crate::Result<bool> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id)?;
+        let dir_page_r = dir_page.page.read();
         let dir = Directory::from(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(false),
-            _ => self.pc.fetch_page(bucket_page_id).await?,
+            _ => self.pc.fetch_page(bucket_page_id)?,
         };
-        let mut bucket_page_w = bucket_page.page.write().await;
+        let mut bucket_page_w = bucket_page.page.write();
         let mut bucket = Bucket::from(&bucket_page_w.data);
 
         let ret = bucket.remove(k, v);
@@ -123,27 +123,27 @@ where
         Ok(ret)
     }
 
-    pub async fn get(&self, k: &K) -> crate::Result<Vec<V>> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
-        let dir_page_r = dir_page.page.read().await;
+    pub fn get(&self, k: &K) -> crate::Result<Vec<V>> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id)?;
+        let dir_page_r = dir_page.page.read();
         let dir = Directory::from(&dir_page_r.data);
 
         let bucket_index = Self::get_bucket_index(k, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(vec![]),
-            _ => self.pc.fetch_page(bucket_page_id).await?,
+            _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let bucket_page_w = bucket_page.page.read().await;
+        let bucket_page_w = bucket_page.page.read();
         let bucket = Bucket::from(&bucket_page_w.data);
 
         Ok(bucket.find(k))
     }
 
-    pub async fn get_num_buckets(&self) -> crate::Result<u32> {
-        let dir_page = self.pc.fetch_page(self.dir_page_id).await?;
-        let dir_page_r = dir_page.page.read().await;
+    pub fn get_num_buckets(&self) -> crate::Result<u32> {
+        let dir_page = self.pc.fetch_page(self.dir_page_id)?;
+        let dir_page_r = dir_page.page.read();
         let dir = Directory::from(&dir_page_r.data);
 
         Ok(1 << dir.global_depth())
@@ -172,7 +172,7 @@ mod test {
         hash_table::{bucket_page::BIT_SIZE, dir_page::Directory, extendible::ExtendibleHashTable},
         page::PAGE_SIZE,
         page_cache::PageCache,
-        replacer::LRUKHandle,
+        replacer::LRU,
     };
 
     macro_rules! inserts {
@@ -191,15 +191,15 @@ mod test {
         }};
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_extendible_hash_table() -> crate::Result<()> {
+    #[test]
+    fn test_extendible_hash_table() -> crate::Result<()> {
         const MEMORY: usize = PAGE_SIZE * 4;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
-        let replacer = LRUKHandle::new(K);
+        let replacer = LRU::new(K);
         let pm = PageCache::new(disk, replacer, 0);
-        let _dir_page = pm.new_page().await;
+        let _dir_page = pm.new_page();
 
         let ht = ExtendibleHashTable::new(0, pm.clone());
 
@@ -207,21 +207,21 @@ mod test {
         let inserts = inserts!(-pairs..pairs, i32);
 
         for (k, v) in &inserts {
-            ht.insert(k, v).await?;
+            ht.insert(k, v)?;
         }
 
         let remove = rand::random::<usize>() % inserts.len();
-        assert!(ht.remove(&inserts[remove].0, &inserts[remove].1).await?);
+        assert!(ht.remove(&inserts[remove].0, &inserts[remove].1)?);
 
-        let rem = ht.get(&inserts[remove].0).await?;
+        let rem = ht.get(&inserts[remove].0)?;
         assert!(rem.is_empty());
 
-        pm.flush_all_pages().await?;
+        pm.flush_all_pages()?;
 
         // Make sure it reads back ok
         let ht: ExtendibleHashTable<i32, i32, _> = ExtendibleHashTable::new(0, pm.clone());
 
-        let rem = ht.get(&inserts[remove].0).await?;
+        let rem = ht.get(&inserts[remove].0)?;
         assert!(rem.is_empty());
 
         for (i, (k, v)) in inserts.iter().enumerate() {
@@ -229,36 +229,36 @@ mod test {
                 continue;
             }
 
-            let r = ht.get(k).await?;
+            let r = ht.get(k)?;
             assert!(r[0] == *v);
         }
 
         Ok(())
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_split() {
+    #[test]
+    fn test_split() {
         const MEMORY: usize = PAGE_SIZE * 4;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
-        let replacer = LRUKHandle::new(K);
+        let replacer = LRU::new(K);
         let pm = PageCache::new(disk, replacer, 0);
         let ht = ExtendibleHashTable::new(0, pm.clone());
 
-        let _dir_page = pm.new_page().await;
-        assert!(ht.get_num_buckets().await.unwrap() == 1);
+        let _dir_page = pm.new_page();
+        assert!(ht.get_num_buckets().unwrap() == 1);
 
         // (i32, usize) = 12 bytes
         // (4096 - 128) / 12 = 330
         for (k, v) in (0..BIT_SIZE * 8).zip(0..BIT_SIZE * 8).take(330) {
-            ht.insert(&k, &v).await.unwrap();
+            ht.insert(&k, &v).unwrap();
         }
 
-        assert!(ht.get_num_buckets().await.unwrap() == 2);
+        assert!(ht.get_num_buckets().unwrap() == 2);
 
-        let dir_page = pm.fetch_page(0).await.expect("there should be a page 0");
-        let dir_page_w = dir_page.page.write().await;
+        let dir_page = pm.fetch_page(0).expect("there should be a page 0");
+        let dir_page_w = dir_page.page.write();
         let dir = Directory::from(&dir_page_w.data);
 
         assert!(dir.global_depth() == 1);

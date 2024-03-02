@@ -1,6 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
-
-use tokio::sync::{mpsc, oneshot};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use crate::page_cache::FrameId;
 
@@ -34,7 +35,7 @@ impl LRUKNode {
 }
 
 #[derive(Default, Debug)]
-struct LRUKReplacer {
+pub struct LRUKReplacer {
     nodes: HashMap<FrameId, LRUKNode>,
     current_ts: u64,
     k: usize,
@@ -130,123 +131,67 @@ impl LRUKReplacer {
     }
 }
 
-pub enum LRUKMessage {
-    Evict {
-        reply: oneshot::Sender<Option<FrameId>>,
-    },
-    RecordAccess(FrameId, AccessType),
-    Pin(FrameId),
-    Unpin(FrameId),
-    Remove(FrameId),
+pub struct LRU {
+    inner: Mutex<LRUKReplacer>,
 }
 
-pub struct LRUKActor {
-    inner: LRUKReplacer,
-    rx: mpsc::Receiver<LRUKMessage>,
-}
-
-impl LRUKActor {
-    pub fn new(k: usize, rx: mpsc::Receiver<LRUKMessage>) -> Self {
-        let inner = LRUKReplacer::new(k);
-
-        Self { inner, rx }
+impl LRU {
+    pub fn new(k: usize) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(LRUKReplacer::new(k)),
+        })
     }
 
-    pub async fn run(&mut self) {
-        while let Some(m) = self.rx.recv().await {
-            match m {
-                LRUKMessage::Evict { reply } => {
-                    let ret = self.inner.evict();
-
-                    if reply.send(ret).is_err() {
-                        eprintln!("replacer channel error: could not reply to evict message");
-                    }
-                }
-                LRUKMessage::RecordAccess(i, a) => self.inner.record_access(i, a),
-                LRUKMessage::Pin(i) => self.inner.pin(i),
-                LRUKMessage::Unpin(i) => self.inner.unpin(i),
-                LRUKMessage::Remove(i) => self.inner.remove(i),
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct LRUKHandle {
-    tx: mpsc::Sender<LRUKMessage>,
-}
-
-impl LRUKHandle {
-    pub fn new(k: usize) -> Self {
-        let (tx, rx) = mpsc::channel(256);
-
-        let mut replacer = LRUKActor::new(k, rx);
-        let _jh = tokio::spawn(async move { replacer.run().await });
-
-        Self { tx }
+    pub fn lock(&self) -> MutexGuard<'_, LRUKReplacer> {
+        self.inner.lock().expect("todo")
     }
 
-    pub async fn evict(&self) -> Option<FrameId> {
-        let (tx, rx) = oneshot::channel();
-
-        if let Err(e) = self.tx.send(LRUKMessage::Evict { reply: tx }).await {
-            eprintln!("replacer channel error: {e}");
-        }
-
-        rx.await.expect("replacer has been killed")
+    pub fn evict(&self) -> Option<FrameId> {
+        let mut replacer = self.inner.lock().expect("todo");
+        replacer.evict()
     }
 
-    pub async fn record_access(&self, i: FrameId, a: AccessType) {
-        if let Err(e) = self.tx.send(LRUKMessage::RecordAccess(i, a)).await {
-            eprintln!("replacer channel error: {e}");
-        }
+    pub fn record_access(&self, i: FrameId, a: AccessType) {
+        let mut replacer = self.inner.lock().expect("todo");
+        replacer.record_access(i, a)
     }
 
-    pub async fn pin(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Pin(i)).await {
-            eprintln!("replacer channel error: {e}");
-        }
+    pub fn pin(&self, i: FrameId) {
+        let mut replacer = self.inner.lock().expect("todo");
+        replacer.pin(i)
     }
 
-    pub async fn unpin(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Unpin(i)).await {
-            eprintln!("replacer channel error: {e}");
-        }
+    pub fn unpin(&self, i: FrameId) {
+        let mut replacer = self.inner.lock().expect("todo");
+        replacer.unpin(i)
     }
 
-    pub fn blocking_unpin(&self, i: FrameId) {
-        if let Err(e) = self.tx.blocking_send(LRUKMessage::Unpin(i)) {
-            eprintln!("replacer channel error: {e}");
-        }
-    }
-
-    pub async fn remove(&self, i: FrameId) {
-        if let Err(e) = self.tx.send(LRUKMessage::Remove(i)).await {
-            eprintln!("replacer channel error: {e}");
-        }
+    pub fn remove(&self, i: FrameId) {
+        let mut replacer = self.inner.lock().expect("todo");
+        replacer.remove(i)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{AccessType, LRUKHandle};
+    use super::{AccessType, LRU};
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_evict() {
+    #[test]
+    fn test_evict() {
         const K: usize = 2;
-        let replacer = LRUKHandle::new(K);
+        let replacer = LRU::new(K);
 
         {
             for i in 0..8 {
-                replacer.remove(i).await;
-                replacer.record_access(i, AccessType::Get).await;
-                replacer.pin(i).await;
+                replacer.remove(i);
+                replacer.record_access(i, AccessType::Get);
+                replacer.pin(i);
             }
 
             for i in (0..8).rev() {
-                replacer.unpin(i).await;
+                replacer.unpin(i);
 
-                let have = replacer.evict().await;
+                let have = replacer.evict();
                 let want = Some(i);
                 assert!(want == have, "Want: {want:?}, Have: {have:?}");
             }

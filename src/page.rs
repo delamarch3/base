@@ -1,4 +1,4 @@
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[macro_export]
 macro_rules! writep {
@@ -31,12 +31,12 @@ impl Default for Page {
 }
 
 impl Page {
-    pub async fn read(&self) -> PageReadGuard {
-        self.0.read().await
+    pub fn read(&self) -> PageReadGuard {
+        self.0.read().expect("todo")
     }
 
-    pub async fn write(&self) -> PageWriteGuard {
-        self.0.write().await
+    pub fn write(&self) -> PageWriteGuard {
+        self.0.write().expect("todo")
     }
 }
 

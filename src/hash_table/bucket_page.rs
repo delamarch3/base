@@ -192,10 +192,10 @@ mod test {
         writep,
     };
 
-    #[tokio::test]
-    async fn test_bucket() {
+    #[test]
+    fn test_bucket() {
         let page = Page::default();
-        let mut page_w = page.write().await;
+        let mut page_w = page.write();
 
         let mut bucket: Bucket<i32, i32> = Bucket::from(&page_w.data);
 
