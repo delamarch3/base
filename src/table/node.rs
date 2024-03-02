@@ -84,7 +84,7 @@ const DELETED_TUPLES_LEN: Range<usize> = 8..12;
 const SLOTS_START: usize = 12;
 
 #[derive(Debug, PartialEq)]
-pub struct Table {
+pub struct Node {
     page_start: *mut u8,
     pub next_page_id: PageId,
     tuples_len: u32,
@@ -92,7 +92,7 @@ pub struct Table {
     slots: Vec<Slot>,
 }
 
-impl From<&PageBuf> for Table {
+impl From<&PageBuf> for Node {
     fn from(buf: &PageBuf) -> Self {
         let page_start = buf.as_ptr() as *mut u8;
         let next_page_id = i32::from_be_bytes(buf[NEXT_PAGE_ID].try_into().unwrap());
@@ -114,6 +114,7 @@ impl From<&PageBuf> for Table {
 
         Self {
             page_start,
+            // next_page_id: if next_page_id == 0 { -1 } else { next_page_id },
             next_page_id,
             tuples_len,
             deleted_tuples_len,
@@ -122,8 +123,8 @@ impl From<&PageBuf> for Table {
     }
 }
 
-impl From<&Table> for PageBuf {
-    fn from(table: &Table) -> Self {
+impl From<&Node> for PageBuf {
+    fn from(table: &Node) -> Self {
         let mut ret: PageBuf = [0; PAGE_SIZE];
 
         ret[NEXT_PAGE_ID].copy_from_slice(&table.next_page_id.to_be_bytes());
@@ -154,7 +155,7 @@ impl From<&Table> for PageBuf {
     }
 }
 
-impl Table {
+impl Node {
     const HEADER_SIZE: usize = 12;
 
     pub fn len(&self) -> u32 {
@@ -225,7 +226,7 @@ mod test {
 
     use crate::{
         page::{PageBuf, PAGE_SIZE},
-        table_page::{RId, Slot, Table, Tuple, TupleMeta},
+        table::node::{Node, RId, Slot, Tuple, TupleMeta},
     };
 
     #[test]
@@ -238,7 +239,7 @@ mod test {
         buf[PAGE_SIZE - 10..].copy_from_slice(&tuple_a);
         buf[PAGE_SIZE - 25..PAGE_SIZE - 10].copy_from_slice(&tuple_b);
 
-        let mut table = Table {
+        let mut table = Node {
             page_start: buf.as_mut_ptr(),
             next_page_id: 10,
             tuples_len: 2,
@@ -259,7 +260,7 @@ mod test {
 
         let bytes = PageBuf::from(&table);
 
-        let mut table2 = Table::from(&bytes);
+        let mut table2 = Node::from(&bytes);
 
         let offset = table.slots.last().unwrap().offset as usize;
         let tuples = unsafe {
@@ -279,7 +280,7 @@ mod test {
     fn test_insert() {
         let mut buf = [0; PAGE_SIZE];
 
-        let mut table = Table {
+        let mut table = Node {
             page_start: buf.as_mut_ptr(),
             next_page_id: 0,
             tuples_len: 0,
