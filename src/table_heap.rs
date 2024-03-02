@@ -23,6 +23,24 @@ impl<D: Disk> TableHeap<D> {
         }
     }
 
+    pub async fn iter(&self) -> Result<Iter<'_, D>> {
+        let page = self.pc.fetch_page(self.last_page_id).await?;
+        let page_r = page.read().await;
+        let table = Table::from(&page_r.data);
+
+        Ok(Iter {
+            heap: self,
+            r_id: RId {
+                page_id: self.first_page_id,
+                slot_idx: 0,
+            },
+            end: RId {
+                page_id: self.last_page_id,
+                slot_idx: table.len(),
+            },
+        })
+    }
+
     pub async fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
         let page = self.pc.fetch_page(self.last_page_id).await?;
         let mut page_w = page.write().await;
@@ -71,6 +89,12 @@ impl<D: Disk> TableHeap<D> {
 
         Ok(tuple)
     }
+}
+
+pub struct Iter<'a, D: Disk = FileSystem> {
+    heap: &'a TableHeap<D>,
+    r_id: RId,
+    end: RId,
 }
 
 #[cfg(test)]
