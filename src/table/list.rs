@@ -93,6 +93,10 @@ impl<D: Disk> List<D> {
 
         Ok(tuple)
     }
+
+    pub fn update(&mut self, _meta: &TupleMeta) -> Result<()> {
+        todo!()
+    }
 }
 
 // Iter should hold a read lock and deserialised page?
