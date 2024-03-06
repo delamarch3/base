@@ -59,15 +59,19 @@ impl<D: Disk> List<D> {
         }
 
         // Insert into a new page and set the next pointer
-        let page = self.pc.new_page()?;
-        let mut page_w = page.write();
-        node.next_page_id = page.id;
-        self.last_page_id = page.id;
+        let npage = self.pc.new_page()?;
+        let mut npage_w = npage.write();
+        node.next_page_id = npage.id;
+        self.last_page_id = npage.id;
 
-        let mut node = Node::from(&page_w.data);
+        // Write the next page id on first node
+        // TODO: just write the page id instead of the entire page?
+        writep!(page_w, &PageBuf::from(&node));
+
+        let mut node = Node::from(&npage_w.data);
         match node.insert(tuple_data, meta) {
             Some(slot_idx) => {
-                writep!(page_w, &PageBuf::from(&node));
+                writep!(npage_w, &PageBuf::from(&node));
                 Ok(Some(RId {
                     page_id: self.last_page_id,
                     slot_idx,
@@ -91,6 +95,7 @@ impl<D: Disk> List<D> {
     }
 }
 
+// Iter should hold a read lock and deserialised page?
 pub struct Iter<'a, D: Disk = FileSystem> {
     list: &'a List<D>,
     r_id: RId,
@@ -106,8 +111,11 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
         }
 
         let result = match self.list.get(self.r_id) {
-            Ok(opt) => opt.map(|t| Ok(t)),
-            Err(e) => return Some(Err(e)),
+            Ok(opt) => match opt {
+                Some(t) => Ok(t),
+                None => return None,
+            },
+            Err(e) => Err(e),
         };
 
         let page = match self.list.pc.fetch_page(self.r_id.page_id) {
@@ -117,7 +125,11 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
-        if self.r_id.slot_idx + 1 < node.len() {
+        if self.r_id.page_id == self.end.page_id && self.r_id.slot_idx == self.end.slot_idx - 1 {
+            // Last tuple, increment (so the next iteration returns None) and return result
+            self.r_id.slot_idx += 1;
+            return Some(result);
+        } else if self.r_id.slot_idx + 1 < node.len() {
             self.r_id.slot_idx += 1;
         } else if node.next_page_id == 0 {
             return None;
@@ -128,7 +140,7 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
             }
         }
 
-        result
+        Some(result)
     }
 }
 
@@ -137,8 +149,12 @@ mod test {
     use bytes::BytesMut;
 
     use crate::{
-        disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRU, table::list::List,
-        table::node::TupleMeta,
+        disk::Memory,
+        page::PAGE_SIZE,
+        page_cache::PageCache,
+        replacer::LRU,
+        table::list::List,
+        table::node::{Tuple, TupleMeta},
     };
 
     #[test]
@@ -173,7 +189,7 @@ mod test {
 
     #[test]
     fn test_iter() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 1;
+        const MEMORY: usize = PAGE_SIZE * 4;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
@@ -183,18 +199,25 @@ mod test {
         let first_page_id = pc.new_page()?.id;
         let mut list = List::new(pc.clone(), first_page_id, first_page_id);
 
+        const WANT_LEN: usize = 100;
         let meta = TupleMeta { deleted: false };
         let mut tuples = Vec::new();
-        for i in 0..10 {
-            let tuple = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|j| (j * i) as u8)[..]);
+        for i in 0..WANT_LEN {
+            let tuple = BytesMut::from(&std::array::from_fn::<u8, 150, _>(|j| (j * i) as u8)[..]);
             list.insert(&tuple, &meta)?;
             tuples.push(tuple);
         }
 
-        for (i, result) in list.iter()?.enumerate() {
+        let have = list
+            .iter()?
+            .enumerate()
+            .collect::<Vec<(usize, crate::Result<(TupleMeta, Tuple)>)>>();
+
+        assert_eq!(have.len(), WANT_LEN);
+
+        for (i, result) in have {
             let (_, tuple) = result?;
 
-            eprintln!("{:?}", tuple);
             assert_eq!(tuples[i], tuple.data)
         }
 
