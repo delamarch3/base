@@ -32,11 +32,11 @@ impl<D: Disk> List<D> {
             list: self,
             r_id: RId {
                 page_id: self.first_page_id,
-                slot_idx: 0,
+                slot_id: 0,
             },
             end: RId {
                 page_id: self.last_page_id,
-                slot_idx: node.len(),
+                slot_id: node.len(),
             },
         })
     }
@@ -46,11 +46,11 @@ impl<D: Disk> List<D> {
         let mut page_w = page.write();
         let mut node = Node::from(&page_w.data);
 
-        if let Some(slot_idx) = node.insert(tuple_data, meta) {
+        if let Some(slot_id) = node.insert(tuple_data, meta) {
             writep!(page_w, &PageBuf::from(&node));
             return Ok(Some(RId {
                 page_id: self.last_page_id,
-                slot_idx,
+                slot_id,
             }));
         }
 
@@ -70,11 +70,11 @@ impl<D: Disk> List<D> {
 
         let mut node = Node::from(&npage_w.data);
         match node.insert(tuple_data, meta) {
-            Some(slot_idx) => {
+            Some(slot_id) => {
                 writep!(npage_w, &PageBuf::from(&node));
                 Ok(Some(RId {
                     page_id: self.last_page_id,
-                    slot_idx,
+                    slot_id,
                 }))
             }
             None => unreachable!(),
@@ -125,18 +125,18 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
-        if self.r_id.page_id == self.end.page_id && self.r_id.slot_idx == self.end.slot_idx - 1 {
+        if self.r_id.page_id == self.end.page_id && self.r_id.slot_id == self.end.slot_id - 1 {
             // Last tuple, increment (so the next iteration returns None) and return result
-            self.r_id.slot_idx += 1;
+            self.r_id.slot_id += 1;
             return Some(result);
-        } else if self.r_id.slot_idx + 1 < node.len() {
-            self.r_id.slot_idx += 1;
+        } else if self.r_id.slot_id + 1 < node.len() {
+            self.r_id.slot_id += 1;
         } else if node.next_page_id == 0 {
             return None;
         } else {
             self.r_id = RId {
                 page_id: node.next_page_id,
-                slot_idx: 0,
+                slot_id: 0,
             }
         }
 

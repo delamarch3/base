@@ -18,7 +18,7 @@ use crate::page::{PageBuf, PageId, PAGE_SIZE};
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RId {
     pub page_id: PageId,
-    pub slot_idx: u32,
+    pub slot_id: u32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -40,9 +40,9 @@ impl From<&[u8]> for TupleMeta {
     }
 }
 
-const OFFSET: Range<usize> = 0..4;
-const LEN: Range<usize> = 4..8;
-const META: Range<usize> = 8..Slot::SIZE;
+pub const OFFSET: Range<usize> = 0..4;
+pub const LEN: Range<usize> = 4..8;
+pub const META: Range<usize> = 8..Slot::SIZE;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Slot {
@@ -78,10 +78,10 @@ impl Slot {
     const SIZE: usize = 9;
 }
 
-const NEXT_PAGE_ID: Range<usize> = 0..4;
-const TUPLES_LEN: Range<usize> = 4..8;
-const DELETED_TUPLES_LEN: Range<usize> = 8..12;
-const SLOTS_START: usize = 12;
+pub const NEXT_PAGE_ID: Range<usize> = 0..4;
+pub const TUPLES_LEN: Range<usize> = 4..8;
+pub const DELETED_TUPLES_LEN: Range<usize> = 8..12;
+pub const SLOTS_START: usize = 12;
 
 #[derive(Debug, PartialEq)]
 pub struct Node {
@@ -181,7 +181,7 @@ impl Node {
 
     pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple_data)?;
-        let slot_idx = self.tuples_len;
+        let slot_id = self.tuples_len;
         self.slots.push(Slot {
             offset: offset as u32,
             len: tuple_data.len() as u32,
@@ -195,16 +195,16 @@ impl Node {
             tuples[..tuple_data.len()].copy_from_slice(&tuple_data);
         }
 
-        Some(slot_idx)
+        Some(slot_id)
     }
 
     pub fn get(&self, r_id: &RId) -> Option<(TupleMeta, Tuple)> {
-        let slot_idx = r_id.slot_idx;
-        if slot_idx > self.tuples_len {
+        let slot_id = r_id.slot_id;
+        if slot_id > self.tuples_len {
             todo!()
         }
 
-        let Slot { offset, len, meta } = self.slots[slot_idx as usize];
+        let Slot { offset, len, meta } = self.slots[slot_id as usize];
         let mut tuple = Tuple {
             r_id: *r_id,
             data: BytesMut::zeroed(len as usize),
@@ -292,13 +292,13 @@ mod test {
 
         let r_id_a = RId {
             page_id: 0,
-            slot_idx: 0,
+            slot_id: 0,
         };
         let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
 
         let r_id_b = RId {
             page_id: 0,
-            slot_idx: 1,
+            slot_id: 1,
         };
         let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
 
