@@ -23,6 +23,14 @@ impl<D: Disk> List<D> {
         }
     }
 
+    pub fn default(pc: SharedPageCache<D>) -> Self {
+        Self {
+            pc,
+            first_page_id: -1,
+            last_page_id: -1,
+        }
+    }
+
     pub fn iter(&self) -> Result<Iter<'_, D>> {
         let page = self.pc.fetch_page(self.last_page_id)?;
         let page_r = page.read();
@@ -42,7 +50,15 @@ impl<D: Disk> List<D> {
     }
 
     pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
-        let page = self.pc.fetch_page(self.last_page_id)?;
+        let page = match self.last_page_id {
+            -1 => {
+                let page = self.pc.new_page()?;
+                self.first_page_id = page.id;
+                self.last_page_id = page.id;
+                page
+            }
+            _ => self.pc.fetch_page(self.last_page_id)?,
+        };
         let mut page_w = page.write();
         let mut node = Node::from(&page_w.data);
 
@@ -82,6 +98,10 @@ impl<D: Disk> List<D> {
     }
 
     pub fn get(&self, r_id: RId) -> Result<Option<(TupleMeta, Tuple)>> {
+        if self.first_page_id == -1 || self.last_page_id == -1 {
+            return Ok(None);
+        }
+
         let page = self.pc.fetch_page(r_id.page_id)?;
         let page_r = page.read();
         let node = Node::from(&page_r.data);
@@ -158,7 +178,7 @@ mod test {
         page_cache::PageCache,
         replacer::LRU,
         table::list::List,
-        table::node::{Tuple, TupleMeta},
+        table::node::{RId, Tuple, TupleMeta},
     };
 
     #[test]
@@ -170,8 +190,13 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let first_page_id = pc.new_page()?.id;
-        let mut list = List::new(pc.clone(), first_page_id, first_page_id);
+        let mut list = List::default(pc.clone());
+        if let Some(_) = list.get(RId {
+            page_id: 0,
+            slot_id: 0,
+        })? {
+            panic!("uninitialised list should return None")
+        }
 
         let meta = TupleMeta { deleted: false };
         let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
@@ -180,7 +205,7 @@ mod test {
         let r_id_a = list.insert(&tuple_a, &meta)?.unwrap();
         let r_id_b = list.insert(&tuple_b, &meta)?.unwrap();
 
-        let list = List::new(pc, first_page_id, first_page_id);
+        let list = List::new(pc, list.first_page_id, list.last_page_id);
 
         let (_, have_a) = list.get(r_id_a)?.unwrap();
         let (_, have_b) = list.get(r_id_b)?.unwrap();
