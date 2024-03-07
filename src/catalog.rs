@@ -6,9 +6,13 @@ use std::{
 };
 
 use crate::{
+    btree::BTree,
     disk::{Disk, FileSystem},
     page_cache::SharedPageCache,
-    table::list::List as Table,
+    table::{
+        list::List as Table,
+        node::{RId, Tuple},
+    },
 };
 
 pub enum ColumnType {
@@ -117,12 +121,50 @@ impl<D: Disk> Catalog<D> {
     }
 
     pub fn create_index(
-        &self,
+        &mut self,
         index_name: &str,
         table_name: &str,
-        schema: &Schema,
+        index_ty: IndexType,
+        schema: Schema,
         column_ids: &Vec<u32>,
     ) -> Option<IndexInfo> {
+        if self.index_names.contains_key(index_name) {
+            return None;
+        }
+
+        let indexed_table = self.index_names.get_mut(table_name)?;
+        if indexed_table.contains_key(index_name) {
+            // Index with name already exists
+            return None;
+        }
+
+        match index_ty {
+            IndexType::HashTable => todo!(),
+            IndexType::BTree => {
+                // TODO: Use key schema
+                let mut btree = BTree::<Tuple, RId, _>::new(self.pc.clone(), 16);
+                let info = self.tables.get(&self.table_names[table_name])?;
+                for result in info.table.iter().expect("todo") {
+                    let (_, tuple) = result.expect("todo");
+                    btree.insert(&tuple, &tuple.r_id).expect("todo");
+                }
+
+                // TODO: Save this somewhere
+                let _root = btree.root();
+            }
+        };
+
+        let oid = self.next_index_oid.fetch_add(1, Relaxed);
+        indexed_table.insert(index_name.into(), oid);
+
+        let info = IndexInfo {
+            name: index_name.into(),
+            schema,
+            oid,
+            index_ty,
+        };
+        self.indexes.insert(oid, info);
+
         todo!()
     }
 

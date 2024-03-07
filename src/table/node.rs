@@ -2,7 +2,11 @@ use std::ops::Range;
 
 use bytes::BytesMut;
 
-use crate::page::{PageBuf, PageId, PAGE_SIZE};
+use crate::{
+    btree::slot::Increment,
+    page::{PageBuf, PageId, PAGE_SIZE},
+    storable::Storable,
+};
 
 /*
     TablePage:
@@ -15,16 +19,63 @@ use crate::page::{PageBuf, PageId, PAGE_SIZE};
     RId | Data
 */
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, PartialOrd, Eq, Ord)]
 pub struct RId {
     pub page_id: PageId,
     pub slot_id: u32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
 pub struct Tuple {
     pub r_id: RId,
     pub data: BytesMut,
+}
+
+impl Increment for Tuple {
+    fn increment(&mut self) {
+        todo!()
+    }
+
+    fn next(&self) -> Self {
+        todo!()
+    }
+}
+
+// TODO
+impl Storable for Tuple {
+    const SIZE: usize = 0;
+
+    type ByteArray = [u8; 0];
+
+    fn into_bytes(self) -> Self::ByteArray {
+        todo!()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    fn write_to(&self, dst: &mut [u8], pos: usize) {
+        todo!()
+    }
+}
+
+impl Storable for RId {
+    const SIZE: usize = 0;
+
+    type ByteArray = [u8; 0];
+
+    fn into_bytes(self) -> Self::ByteArray {
+        todo!()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    fn write_to(&self, dst: &mut [u8], pos: usize) {
+        todo!()
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
