@@ -1,7 +1,7 @@
 pub mod node;
 pub mod slot;
 
-use std::{fmt::Display, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::{
     btree::{
@@ -26,8 +26,8 @@ pub struct BTree<K, V, D: Disk = FileSystem> {
 
 impl<K, V, D> BTree<K, V, D>
 where
-    K: Storable + Copy + Ord + Increment,
-    V: Storable + Copy + Eq,
+    K: Storable + Clone + Ord + Increment,
+    V: Storable + Clone + Eq,
     D: Disk,
 {
     pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
@@ -99,14 +99,14 @@ where
                 // Find and insert
                 {
                     // Find the child node
-                    let ptr = match nnode.find_child(key) {
+                    let ptr = match nnode.find_child(&key) {
                         Some(ptr) => ptr,
                         None if nnode.t == NodeType::Internal => {
                             // Bump the last node if no pointer found
                             let Slot(_, v) = nnode.values.pop_last().unwrap();
                             nnode.values.insert(Slot(key.next(), v));
 
-                            match nnode.find_child(key) {
+                            match nnode.find_child(&key) {
                                 Some(ptr) => ptr,
                                 None => unreachable!(),
                             }
@@ -146,14 +146,14 @@ where
         // Find and insert
         {
             // Find the child node
-            let ptr = match node.find_child(key) {
+            let ptr = match node.find_child(&key) {
                 Some(ptr) => ptr,
                 None if node.t == NodeType::Internal => {
                     // Bump the last node if no pointer found
                     let Slot(_, v) = node.values.pop_last().unwrap();
                     node.values.insert(Slot(key.next(), v));
 
-                    match node.find_child(key) {
+                    match node.find_child(&key) {
                         Some(ptr) => ptr,
                         None => unreachable!(),
                     }
@@ -221,7 +221,7 @@ where
         }
 
         acc.extend(node.values.iter().map(|Slot(k, v)| match v {
-            Either::Value(v) => (*k, *v),
+            Either::Value(v) => (k.clone(), v.clone()),
             Either::Pointer(_) => unreachable!(),
         }));
 
@@ -236,10 +236,10 @@ where
         self._scan(Some(page), r, acc)
     }
 
-    pub fn range(&self, from: K, to: K) -> crate::Result<Vec<(K, V)>> {
+    pub fn range(&self, from: &K, to: &K) -> crate::Result<Vec<(K, V)>> {
         let mut ret = Vec::new();
 
-        let cur = match self.get_ptr(from, self.root)? {
+        let cur = match self.get_ptr(&from, self.root)? {
             Some(c) => c,
             None => return Ok(ret),
         };
@@ -257,8 +257,8 @@ where
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
         acc: &'a mut Vec<(K, V)>,
-        from: K,
-        to: K,
+        from: &K,
+        to: &K,
     ) -> crate::Result<()> {
         let node = Node::from(&page.data);
 
@@ -266,8 +266,8 @@ where
         acc.extend(
             node.values
                 .into_iter()
-                .skip_while(|&Slot(k, _)| k < from)
-                .take_while(|Slot(k, _)| k <= &to)
+                .skip_while(|Slot(k, _)| k < from)
+                .take_while(|Slot(k, _)| k <= to)
                 .map(|Slot(k, v)| {
                     let v = match v {
                         Either::Value(v) => v,
@@ -292,14 +292,14 @@ where
         self._range(Some(page), r, acc, from, to)
     }
 
-    fn get_ptr(&self, key: K, ptr: PageId) -> crate::Result<Option<PageId>> {
+    fn get_ptr(&self, key: &K, ptr: PageId) -> crate::Result<Option<PageId>> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
         let node: Node<K, V> = Node::from(&r.data);
 
-        match node.find_child(key) {
+        match node.find_child(&key) {
             Some(ptr) => self.get_ptr(key, ptr),
             None if node.t == NodeType::Leaf => Ok(Some(ptr)),
             None => Ok(None),
@@ -319,11 +319,11 @@ where
         let r = page.read();
         let node = Node::from(&r.data);
 
-        match node.find_child(key) {
+        match node.find_child(&key) {
             Some(ptr) => self._get(key, ptr),
             None if node.t == NodeType::Leaf => {
                 let slot = Slot(key, Either::Pointer(-1));
-                Ok(node.values.get(&slot).copied())
+                Ok(node.values.get(&slot).map(|s| s.clone()))
             }
             None => Ok(None),
         }
@@ -342,7 +342,7 @@ where
         let mut w = page.write();
         let mut node: Node<K, V> = Node::from(&w.data);
 
-        match node.find_child(key) {
+        match node.find_child(&key) {
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
                 let slot = Slot(key, Either::Pointer(-1));
@@ -619,7 +619,7 @@ mod test {
                 .filter(|s| s.0 >= from && s.0 <= to)
                 .collect::<Vec<(i32, i32)>>();
 
-            let have = btree.range(from, to)?;
+            let have = btree.range(&from, &to)?;
             assert!(
                 want == have,
                 "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",

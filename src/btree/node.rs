@@ -97,8 +97,8 @@ where
 
 impl<K, V> From<&Node<K, V>> for PageBuf
 where
-    K: Copy + Storable,
-    V: Copy + Storable,
+    K: Storable,
+    V: Storable,
 {
     fn from(node: &Node<K, V>) -> Self {
         let mut ret: PageBuf = [0; PAGE_SIZE];
@@ -113,7 +113,7 @@ where
         let size = Slot::<K, V>::SIZE;
         let mut from = NODE_VALUES_START;
         for value in &node.values {
-            let slot = BytesMut::from(*value);
+            let slot = BytesMut::from(value);
             ret[from..from + size].copy_from_slice(&slot);
             from += size;
         }
@@ -138,8 +138,8 @@ where
 
 impl<K, V> Node<K, V>
 where
-    K: Storable + Copy + Ord,
-    V: Storable + Copy + Eq,
+    K: Storable + Clone + Ord,
+    V: Storable + Clone + Eq,
 {
     pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool) -> Self {
         Self {
@@ -155,11 +155,12 @@ where
 
     /// Split out half of self's values into a new node.
     pub fn split(&mut self, id: PageId) -> Node<K, V> {
-        let mid = *self
+        let mid = self
             .values
             .iter()
             .nth(self.values.len() / 2)
-            .expect("there should be a mid node");
+            .expect("there should be a mid node")
+            .clone();
 
         // All values in the greater half end up in `rest`
         let rest = self.values.split_off(&mid);
@@ -198,17 +199,22 @@ where
         K: Increment,
     {
         let ls = self.values.last().expect("there should be a last slot");
-        let k = if self.t == NodeType::Leaf { ls.0.next() } else { ls.0 };
+        let k = if self.t == NodeType::Leaf { ls.0.next() } else { ls.0.clone() };
         Slot(k, Either::Pointer(self.id))
     }
 
     /// Returns `None` if node is a leaf or if no keys were matched and the next key is invalid
-    pub fn find_child(&self, key: K) -> Option<PageId> {
+    pub fn find_child(&self, key: &K) -> Option<PageId> {
         if self.t == NodeType::Leaf {
             return None;
         }
 
-        match self.values.iter().find(|s| key < s.0).map(|s| get_ptr!(s)) {
+        match self
+            .values
+            .iter()
+            .find(|&s| key < &s.0)
+            .map(|s| get_ptr!(s))
+        {
             None => match self.next {
                 -1 => None,
                 ptr => Some(ptr),
@@ -227,7 +233,7 @@ where
 
     #[inline]
     pub fn last_key(&self) -> Option<K> {
-        self.values.last().map(|s| s.0)
+        self.values.last().map(|s| s.0.clone())
     }
 
     #[inline]
@@ -438,9 +444,9 @@ mod test {
             ]),
         };
 
-        let a = node.find_child(25);
-        let b = node.find_child(30);
-        let c = node.find_child(60);
+        let a = node.find_child(&25);
+        let b = node.find_child(&30);
+        let c = node.find_child(&60);
 
         assert!(a == Some(3));
         assert!(b == Some(4));

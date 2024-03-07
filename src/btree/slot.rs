@@ -58,11 +58,11 @@ where
     }
 }
 
-impl<V> From<Either<V>> for BytesMut
+impl<V> From<&Either<V>> for BytesMut
 where
     V: Storable,
 {
-    fn from(value: Either<V>) -> Self {
+    fn from(value: &Either<V>) -> Self {
         let mut ret = BytesMut::zeroed(Either::<V>::SIZE);
         match value {
             Either::Value(v) => {
@@ -154,16 +154,16 @@ where
     }
 }
 
-impl<K, V> From<Slot<K, V>> for BytesMut
+impl<K, V> From<&Slot<K, V>> for BytesMut
 where
     K: Storable,
     V: Storable,
 {
-    fn from(slot: Slot<K, V>) -> Self {
+    fn from(slot: &Slot<K, V>) -> Self {
         let mut ret = BytesMut::zeroed(Slot::<K, V>::SIZE);
 
         slot.0.write_to(&mut ret, 0);
-        ret[size_of::<K>()..].copy_from_slice(&BytesMut::from(slot.1));
+        ret[size_of::<K>()..].copy_from_slice(&BytesMut::from(&slot.1));
 
         ret
     }
