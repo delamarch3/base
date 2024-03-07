@@ -26,9 +26,9 @@ pub struct BTree<K, V, D: Disk = FileSystem> {
 
 impl<K, V, D> BTree<K, V, D>
 where
-    K: Storable + Copy + Send + Sync + Display + Ord + Increment,
-    V: Storable + Copy + Send + Sync + Display + Eq,
-    D: Disk + Send + Sync,
+    K: Storable + Copy + Ord + Increment,
+    V: Storable + Copy + Eq,
+    D: Disk,
 {
     pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
         Self {
