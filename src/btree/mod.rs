@@ -39,9 +39,13 @@ where
         }
     }
 
+    pub fn root(&self) -> PageId {
+        self.root
+    }
+
     // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
-    pub fn insert(&mut self, key: K, value: V) -> crate::Result<()> {
+    pub fn insert(&mut self, key: &K, value: &V) -> crate::Result<()> {
         let pin;
         let rpage = match self.root {
             -1 => {
@@ -78,10 +82,10 @@ where
         &'a self,
         mut prev_page: Option<&'a PageWriteGuard<'a>>,
         mut page: PageWriteGuard<'a>,
-        key: K,
-        value: V,
+        key: &K,
+        value: &V,
     ) -> crate::Result<Option<(Slot<K, V>, Slot<K, V>)>> {
-        let mut node = Node::from(&page.data);
+        let mut node: Node<K, V> = Node::from(&page.data);
 
         let mut split = None;
         if node.almost_full() {
@@ -113,7 +117,9 @@ where
                         }
                         None => {
                             // Reached leaf node
-                            nnode.values.replace(Slot(key, Either::Value(value)));
+                            nnode
+                                .values
+                                .replace(Slot(key.clone(), Either::Value(value.clone())));
                             writep!(npage, &PageBuf::from(&nnode));
 
                             return Ok(node.get_separators(Some(nnode)));
@@ -160,7 +166,8 @@ where
                 }
                 None => {
                     // Reached leaf node
-                    node.values.replace(Slot(key, Either::Value(value)));
+                    node.values
+                        .replace(Slot(key.clone(), Either::Value(value.clone())));
                     writep!(page, &PageBuf::from(&node));
 
                     return Ok(node.get_separators(split));
@@ -464,7 +471,7 @@ mod test {
         let inserts = inserts!(range, i32);
 
         for (k, v) in &inserts {
-            btree.insert(*k, *v)?;
+            btree.insert(k, v)?;
         }
 
         pc.flush_all_pages()?;
@@ -509,7 +516,7 @@ mod test {
         let inserts = inserts!(range, i32);
 
         for (k, v) in &inserts {
-            btree.insert(*k, *v)?;
+            btree.insert(k, v)?;
         }
 
         pc.flush_all_pages()?;
@@ -539,7 +546,7 @@ mod test {
         let range = -50..50;
         let mut want = inserts!(range, i32);
         for (k, v) in &want {
-            btree.insert(*k, *v)?;
+            btree.insert(k, v)?;
         }
 
         pc2.flush_all_pages()?;
@@ -601,7 +608,7 @@ mod test {
 
             let mut inserts = inserts!(range, i32);
             for (k, v) in &inserts {
-                btree.insert(*k, *v)?;
+                btree.insert(k, v)?;
             }
 
             pc2.flush_all_pages()?;

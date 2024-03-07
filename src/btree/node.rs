@@ -232,8 +232,8 @@ where
     }
 
     #[inline]
-    pub fn last_key(&self) -> Option<K> {
-        self.values.last().map(|s| s.0.clone())
+    pub fn last_key(&self) -> Option<&K> {
+        self.values.last().map(|s| &s.0)
     }
 
     #[inline]
