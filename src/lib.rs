@@ -1,6 +1,7 @@
 pub mod binder;
 pub mod bitmap;
 pub mod btree;
+pub mod catalog;
 pub mod disk;
 pub mod hash_table;
 pub mod page;
