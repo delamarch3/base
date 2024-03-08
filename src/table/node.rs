@@ -3,9 +3,8 @@ use std::ops::Range;
 use bytes::BytesMut;
 
 use crate::{
-    btree::slot::Increment,
     page::{PageBuf, PageId, PAGE_SIZE},
-    storable::Storable,
+    table::tuple::{RId, Slot, Tuple, TupleInfoBuf, TupleMeta},
 };
 
 /*
@@ -18,116 +17,6 @@ use crate::{
     Tuple:
     RId | Data
 */
-
-#[derive(Debug, PartialEq, Copy, Clone, PartialOrd, Eq, Ord)]
-pub struct RId {
-    pub page_id: PageId,
-    pub slot_id: u32,
-}
-
-#[derive(Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
-pub struct Tuple {
-    pub r_id: RId,
-    pub data: BytesMut,
-}
-
-impl Increment for Tuple {
-    fn increment(&mut self) {
-        todo!()
-    }
-
-    fn next(&self) -> Self {
-        todo!()
-    }
-}
-
-// TODO
-impl Storable for Tuple {
-    const SIZE: usize = 0;
-
-    type ByteArray = [u8; 0];
-
-    fn into_bytes(self) -> Self::ByteArray {
-        todo!()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        todo!()
-    }
-}
-
-impl Storable for RId {
-    const SIZE: usize = 0;
-
-    type ByteArray = [u8; 0];
-
-    fn into_bytes(self) -> Self::ByteArray {
-        todo!()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        todo!()
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct TupleMeta {
-    pub deleted: bool,
-}
-
-impl From<&[u8]> for TupleMeta {
-    fn from(value: &[u8]) -> Self {
-        let deleted = u8::from_be_bytes(value[0..1].try_into().unwrap()) > 1;
-
-        Self { deleted }
-    }
-}
-
-pub const OFFSET: Range<usize> = 0..4;
-pub const LEN: Range<usize> = 4..8;
-pub const META: Range<usize> = 8..Slot::SIZE;
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct Slot {
-    offset: u32,
-    len: u32,
-    meta: TupleMeta,
-}
-
-impl From<&[u8]> for Slot {
-    fn from(buf: &[u8]) -> Self {
-        let offset = u32::from_be_bytes(buf[OFFSET].try_into().unwrap());
-        let len = u32::from_be_bytes(buf[LEN].try_into().unwrap());
-        let meta = TupleMeta::from(&buf[META]);
-
-        Self { offset, len, meta }
-    }
-}
-
-type TupleInfoBuf = [u8; Slot::SIZE];
-impl From<&Slot> for TupleInfoBuf {
-    fn from(value: &Slot) -> Self {
-        let mut ret = [0; Slot::SIZE];
-
-        ret[OFFSET].copy_from_slice(&value.offset.to_be_bytes());
-        ret[LEN].copy_from_slice(&value.len.to_be_bytes());
-        ret[META].copy_from_slice(&[value.meta.deleted as u8]);
-
-        ret
-    }
-}
-
-impl Slot {
-    const SIZE: usize = 9;
-}
 
 pub const NEXT_PAGE_ID: Range<usize> = 0..4;
 pub const TUPLES_LEN: Range<usize> = 4..8;
@@ -257,7 +146,7 @@ impl Node {
 
         let Slot { offset, len, meta } = self.slots[slot_id as usize];
         let mut tuple = Tuple {
-            r_id: *r_id,
+            rid: *r_id,
             data: BytesMut::zeroed(len as usize),
         };
 
@@ -361,14 +250,14 @@ mod test {
         assert_eq!(
             Tuple {
                 data: tuple_a,
-                r_id: r_id_a
+                rid: r_id_a
             },
             have_a
         );
         assert_eq!(
             Tuple {
                 data: tuple_b,
-                r_id: r_id_b
+                rid: r_id_b
             },
             have_b
         )

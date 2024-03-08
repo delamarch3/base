@@ -4,7 +4,8 @@ use crate::{
     disk::{Disk, FileSystem},
     page::{PageBuf, PageId},
     page_cache::{Result, SharedPageCache},
-    table::node::{Node, RId, Tuple, TupleMeta},
+    table::node::Node,
+    table::tuple::{RId, Tuple, TupleMeta},
     writep,
 };
 
@@ -108,7 +109,7 @@ impl<D: Disk> List<D> {
 
         let mut tuple = node.get(&r_id);
         if let Some((_, tuple)) = &mut tuple {
-            tuple.r_id = r_id;
+            tuple.rid = r_id;
         }
 
         Ok(tuple)
@@ -178,7 +179,7 @@ mod test {
         page_cache::PageCache,
         replacer::LRU,
         table::list::List,
-        table::node::{RId, Tuple, TupleMeta},
+        table::tuple::{RId, Tuple, TupleMeta},
     };
 
     #[test]

@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    mem::size_of,
     sync::atomic::{AtomicU32, Ordering::Relaxed},
 };
 
@@ -11,13 +12,76 @@ use crate::{
     page_cache::SharedPageCache,
     table::{
         list::List as Table,
-        node::{RId, Tuple},
+        tuple::{RId, Tuple},
     },
 };
 
-pub enum ColumnType {
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub enum Value {
+    TinyInt(i8),
+    Bool(bool),
+    Int(i32),
+    BigInt(i64),
+    Varchar(String),
+}
+
+impl Value {
+    pub fn from(ty: &Type, data: &[u8]) -> Value {
+        match ty {
+            Type::TinyInt => {
+                assert_eq!(data.len(), size_of::<i8>());
+                Value::TinyInt(i8::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::Bool => {
+                assert_eq!(data.len(), size_of::<bool>());
+                Value::Bool(u8::from_be_bytes(data.try_into().unwrap()) > 0)
+            }
+            Type::Int => {
+                assert_eq!(data.len(), size_of::<i32>());
+                Value::Int(i32::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::BigInt => {
+                assert_eq!(data.len(), size_of::<i64>());
+                Value::BigInt(i64::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::Varchar => {
+                let str = std::str::from_utf8(data).expect("todo");
+                Value::Varchar(str.into())
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::TinyInt(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::BigInt(v) => write!(f, "{}", v),
+            Value::Varchar(v) => write!(f, "{}", v),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Type {
+    TinyInt,
+    Bool,
     Int,
+    BigInt,
     Varchar,
+}
+
+impl Type {
+    pub fn size(&self) -> usize {
+        match self {
+            Type::TinyInt | Type::Bool => 1,
+            Type::Int => 4,
+            Type::BigInt => 8,
+            Type::Varchar => 0,
+        }
+    }
 }
 
 pub enum Length {
@@ -25,15 +89,45 @@ pub enum Length {
     Variable,
 }
 
+#[derive(Debug)]
 pub struct Column {
-    name: String,
-    ty: ColumnType,
-    len: Length,
-    offset: u32,
+    pub name: String,
+    pub ty: Type,
+    pub offset: usize,
+}
+
+impl Column {
+    pub fn size(&self) -> usize {
+        self.ty.size()
+    }
 }
 
 pub struct Schema {
     columns: Vec<Column>,
+    size: usize,
+}
+
+impl Schema {
+    pub fn new(columns: Vec<Column>) -> Self {
+        Self {
+            size: columns.iter().fold(0, |acc, c| acc + c.size()),
+            columns,
+        }
+    }
+}
+
+impl Schema {
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Column> {
+        self.columns.iter()
+    }
 }
 
 pub type OId = u32;
@@ -146,7 +240,7 @@ impl<D: Disk> Catalog<D> {
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     let (_, tuple) = result.expect("todo");
-                    btree.insert(&tuple, &tuple.r_id).expect("todo");
+                    btree.insert(&tuple, &tuple.rid).expect("todo");
                 }
 
                 // TODO: Save this somewhere
