@@ -16,6 +16,7 @@ use crate::{
     },
 };
 
+// TODO: Move to tuple?
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum Value {
     TinyInt(i8),
