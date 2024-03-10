@@ -175,50 +175,107 @@ mod test {
         table::tuple::{Comparand, RId, Tuple},
     };
 
-    fn into_bytes(values: Vec<Value>) -> BytesMut {
-        let mut bytes = BytesMut::new();
+    struct Variable {
+        data: BytesMut,
+        offset_offset: usize,
+    }
 
-        let mut offset = 0;
-        for v in values {
-            match v {
-                Value::TinyInt(v) => {
-                    bytes.resize(offset + size_of::<i8>(), 0);
+    #[derive(Default)]
+    struct TupleBuilder {
+        data: BytesMut,
+        variable: Vec<Variable>,
+        offset: usize,
+    }
 
-                    bytes[offset..offset + size_of::<i8>()].copy_from_slice(&i8::to_be_bytes(v));
-                    offset += size_of::<i8>();
-                }
-                Value::Bool(v) => {
-                    bytes.resize(offset + size_of::<bool>(), 0);
-
-                    bytes[offset..offset + size_of::<bool>()]
-                        .copy_from_slice(&u8::to_be_bytes(if v { 1 } else { 0 }));
-                    offset += size_of::<bool>();
-                }
-                Value::Int(v) => {
-                    bytes.resize(offset + size_of::<i32>(), 0);
-
-                    bytes[offset..offset + size_of::<i32>()].copy_from_slice(&i32::to_be_bytes(v));
-                    offset += size_of::<i32>();
-                }
-                Value::BigInt(v) => {
-                    bytes.resize(offset + size_of::<i64>(), 0);
-
-                    bytes[offset..offset + size_of::<i64>()].copy_from_slice(&i64::to_be_bytes(v));
-                    offset += size_of::<i64>();
-                }
-                Value::Varchar(v) => {
-                    bytes.resize(offset + 2 + v.len(), 0);
-
-                    // TODO: Save space - need to know the end offset here, also need to consider
-                    // multiple variable length columns
-                    bytes[offset..offset + 2].copy_from_slice(&u16::to_be_bytes(v.len() as u16));
-                    bytes[offset + 2..offset + 2 + v.len()].copy_from_slice(v.as_bytes());
-                    offset += 255 + 2;
-                }
+    impl TupleBuilder {
+        pub fn new() -> Self {
+            Self {
+                data: BytesMut::new(),
+                ..Default::default()
             }
         }
 
-        bytes
+        pub fn with_capacity(size: usize) -> Self {
+            Self {
+                data: BytesMut::with_capacity(size),
+                ..Default::default()
+            }
+        }
+
+        fn copy(&mut self, len: usize, data: &[u8]) {
+            // Or use put?
+            self.data[self.offset..self.offset + len].copy_from_slice(data);
+        }
+
+        fn resize(&mut self, size: usize) {
+            self.data.resize(self.offset + size, 0);
+        }
+
+        pub fn add(mut self, v: &Value) -> Self {
+            match v {
+                Value::TinyInt(v) => {
+                    self.resize(size_of::<i8>());
+                    self.copy(size_of::<i8>(), &i8::to_be_bytes(*v));
+                    self.offset += size_of::<i8>();
+                }
+                Value::Bool(v) => {
+                    self.data.resize(self.offset + size_of::<bool>(), 0);
+
+                    self.data[self.offset..self.offset + size_of::<bool>()]
+                        .copy_from_slice(&u8::to_be_bytes(if *v { 1 } else { 0 }));
+                    self.offset += size_of::<bool>();
+                }
+                Value::Int(v) => {
+                    self.data.resize(self.offset + size_of::<i32>(), 0);
+
+                    self.data[self.offset..self.offset + size_of::<i32>()]
+                        .copy_from_slice(&i32::to_be_bytes(*v));
+                    self.offset += size_of::<i32>();
+                }
+                Value::BigInt(v) => {
+                    self.data.resize(self.offset + size_of::<i64>(), 0);
+
+                    self.data[self.offset..self.offset + size_of::<i64>()]
+                        .copy_from_slice(&i64::to_be_bytes(*v));
+                    self.offset += size_of::<i64>();
+                }
+                Value::Varchar(v) => {
+                    self.data.resize(self.offset + 4, 0);
+
+                    // First two bytes is the offset, which we won't know until the build()
+                    // Second two bytes is the length
+                    self.data[self.offset + 2..self.offset + 4]
+                        .copy_from_slice(&u16::to_be_bytes(v.len() as u16));
+
+                    self.variable.push(Variable {
+                        data: BytesMut::from(&v[..]),
+                        offset_offset: self.offset,
+                    });
+                    self.offset += 4;
+                }
+            };
+
+            self
+        }
+
+        pub fn build(mut self) -> BytesMut {
+            for Variable {
+                data,
+                offset_offset,
+            } in self.variable
+            {
+                // Update offset
+                self.data[offset_offset..offset_offset + 2]
+                    .copy_from_slice(&u16::to_be_bytes(self.offset as u16));
+
+                // Write variable length data to end of tuple
+                self.data.resize(self.offset + data.len(), 0);
+                self.data[self.offset..self.offset + data.len()].copy_from_slice(&data);
+                self.offset += data.len()
+            }
+
+            self.data
+        }
     }
 
     #[test]
@@ -230,8 +287,8 @@ mod test {
 
         struct Test {
             schema: Schema,
-            lhs: Vec<Value>,
-            rhs: Vec<Value>,
+            lhs: BytesMut,
+            rhs: BytesMut,
             want: Ordering,
         }
 
@@ -254,8 +311,16 @@ mod test {
                         offset: 5,
                     },
                 ]),
-                lhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(100)],
-                rhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(100)],
+                lhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(false))
+                    .add(&Value::BigInt(100))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(false))
+                    .add(&Value::BigInt(100))
+                    .build(),
                 want: Equal,
             },
             Test {
@@ -276,8 +341,16 @@ mod test {
                         offset: 5,
                     },
                 ]),
-                lhs: vec![Value::Int(4), Value::Bool(true), Value::BigInt(100)],
-                rhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(100)],
+                lhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(true))
+                    .add(&Value::BigInt(100))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(false))
+                    .add(&Value::BigInt(100))
+                    .build(),
                 want: Greater,
             },
             Test {
@@ -298,8 +371,16 @@ mod test {
                         offset: 5,
                     },
                 ]),
-                lhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(90)],
-                rhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(100)],
+                lhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(false))
+                    .add(&Value::BigInt(90))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::Int(4))
+                    .add(&Value::Bool(false))
+                    .add(&Value::BigInt(100))
+                    .build(),
                 want: Less,
             },
             Test {
@@ -315,8 +396,14 @@ mod test {
                         offset: 1,
                     },
                 ]),
-                lhs: vec![Value::TinyInt(1), Value::Varchar("Column".into())],
-                rhs: vec![Value::TinyInt(1), Value::Varchar("Column".into())],
+                lhs: TupleBuilder::new()
+                    .add(&Value::TinyInt(1))
+                    .add(&Value::Varchar("Column".into()))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::TinyInt(1))
+                    .add(&Value::Varchar("Column".into()))
+                    .build(),
                 want: Equal,
             },
             Test {
@@ -332,8 +419,14 @@ mod test {
                         offset: 255 + 2,
                     },
                 ]),
-                lhs: vec![Value::Varchar("Column A".into()), Value::TinyInt(1)],
-                rhs: vec![Value::Varchar("Column B".into()), Value::TinyInt(1)],
+                lhs: TupleBuilder::new()
+                    .add(&Value::Varchar("Column A".into()))
+                    .add(&Value::TinyInt(1))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::Varchar("Column B".into()))
+                    .add(&Value::TinyInt(1))
+                    .build(),
                 want: Less,
             },
             Test {
@@ -349,8 +442,14 @@ mod test {
                         offset: 255 + 2,
                     },
                 ]),
-                lhs: vec![Value::Varchar("Column A".into()), Value::TinyInt(1)],
-                rhs: vec![Value::Varchar("Column".into()), Value::TinyInt(1)],
+                lhs: TupleBuilder::new()
+                    .add(&Value::Varchar("Column A".into()))
+                    .add(&Value::TinyInt(1))
+                    .build(),
+                rhs: TupleBuilder::new()
+                    .add(&Value::Varchar("Column".into()))
+                    .add(&Value::TinyInt(1))
+                    .build(),
                 want: Greater,
             },
         ];
@@ -362,14 +461,8 @@ mod test {
             want,
         } in tcs
         {
-            let lhs = Tuple {
-                rid,
-                data: into_bytes(lhs),
-            };
-            let rhs = Tuple {
-                rid,
-                data: into_bytes(rhs),
-            };
+            let lhs = Tuple { rid, data: lhs };
+            let rhs = Tuple { rid, data: rhs };
 
             let have = Comparand(&schema, &lhs).cmp(&Comparand(&schema, &rhs));
             assert_eq!(want, have);

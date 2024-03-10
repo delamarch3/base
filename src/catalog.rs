@@ -30,15 +30,21 @@ impl Value {
     pub fn from(column: &Column, data: &[u8]) -> Value {
         let data = match column.ty {
             Type::Varchar => {
-                // TODO: Save space - need to know the end offset here, also need to consider
-                // multiple variable length columns
-                // First 2 bytes is the size
-                let size =
+                // First two bytes is the offset
+                let offset =
                     u16::from_be_bytes(data[column.offset..column.offset + 2].try_into().unwrap())
                         as usize;
-                assert!(column.offset + 2 + size <= data.len());
 
-                &data[column.offset + 2..column.offset + 2 + size]
+                // Second two bytes is the size
+                let size = u16::from_be_bytes(
+                    data[column.offset + 2..column.offset + 4]
+                        .try_into()
+                        .unwrap(),
+                ) as usize;
+
+                assert!(offset + size <= data.len());
+
+                &data[offset..offset + size]
             }
             _ => {
                 assert!(column.offset + column.size() <= data.len());
@@ -98,7 +104,7 @@ impl Type {
             Type::TinyInt | Type::Bool => 1,
             Type::Int => 4,
             Type::BigInt => 8,
-            Type::Varchar => 255 + 2, // TODO: Save space
+            Type::Varchar => 4, // [offset(2) , size(2)]
         }
     }
 }
