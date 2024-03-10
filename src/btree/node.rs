@@ -44,7 +44,7 @@ const NODE_NEXT: Range<usize> = 10..14;
 const NODE_ID: Range<usize> = 14..18;
 const NODE_VALUES_START: usize = 18;
 
-// | NodeType (1) | Root (1) | Len(4) | Max (4) | Next (4) | PageId (4) | Values
+// | NodeType (1) | Root (1) | Len (4) | Max (4) | Next (4) | PageId (4) | Values
 #[derive(PartialEq, Clone, Debug)]
 pub struct Node<K, V> {
     pub t: NodeType,
@@ -70,6 +70,7 @@ where
         let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
         let mut values = BTreeSet::new();
+        // TODO: size_of::<Tuple>() is not the actual size of the tuple
         let size = Slot::<K, V>::SIZE;
 
         let left = &buf[NODE_VALUES_START..];
@@ -110,6 +111,7 @@ where
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
         ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
 
+        // TODO: size_of::<Tuple>() is not the actual size of the tuple
         let size = Slot::<K, V>::SIZE;
         let mut from = NODE_VALUES_START;
         for value in &node.values {
@@ -138,8 +140,8 @@ where
 
 impl<K, V> Node<K, V>
 where
-    K: Storable + Clone + Ord,
-    V: Storable + Clone + Eq,
+    K: Clone + Ord,
+    V: Clone + Eq,
 {
     pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool) -> Self {
         Self {

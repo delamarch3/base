@@ -261,7 +261,7 @@ impl<D: Disk> Catalog<D> {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
                 // TODO: Use key schema
-                let mut btree = BTree::<Tuple, RId, _>::new(self.pc.clone(), 16);
+                let mut btree = BTree::<RId, _>::new(self.pc.clone(), 16);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     let (_, tuple) = result.expect("todo");
