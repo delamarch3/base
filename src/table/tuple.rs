@@ -200,13 +200,9 @@ mod test {
 
         pub fn add(mut self, v: &Value) -> Self {
             match v {
-                Value::TinyInt(v) => {
-                    self.data.put(&i8::to_be_bytes(*v)[..]);
-                }
+                Value::TinyInt(v) => self.data.put(&i8::to_be_bytes(*v)[..]),
                 Value::Bool(v) => self.data.put(&u8::to_be_bytes(if *v { 1 } else { 0 })[..]),
-                Value::Int(v) => {
-                    self.data.put(&i32::to_be_bytes(*v)[..]);
-                }
+                Value::Int(v) => self.data.put(&i32::to_be_bytes(*v)[..]),
                 Value::BigInt(v) => self.data.put(&i64::to_be_bytes(*v)[..]),
                 Value::Varchar(v) => {
                     let offset = self.data.len();
