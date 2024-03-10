@@ -165,10 +165,7 @@ impl<'a, 'b> Ord for Comparand<'a, 'b> {
 #[cfg(test)]
 mod test {
     use bytes::{BufMut, BytesMut};
-    use std::{
-        cmp::Ordering::{self, *},
-        mem::size_of,
-    };
+    use std::cmp::Ordering::{self, *};
 
     use crate::{
         catalog::{Column, Schema, Type, Value},
