@@ -172,11 +172,12 @@ mod test {
 
     use crate::{
         catalog::{Column, Schema, Type, Value},
+        page::PAGE_SIZE,
         table::tuple::{Comparand, RId, Tuple},
     };
 
-    fn into_bytes(values: Vec<Value>, size: usize) -> BytesMut {
-        let mut bytes = BytesMut::zeroed(size);
+    fn into_bytes(values: Vec<Value>) -> BytesMut {
+        let mut bytes = BytesMut::zeroed(PAGE_SIZE);
 
         let mut offset = 0;
         for v in values {
@@ -353,11 +354,11 @@ mod test {
         {
             let lhs = Tuple {
                 rid,
-                data: into_bytes(lhs, schema.size()),
+                data: into_bytes(lhs),
             };
             let rhs = Tuple {
                 rid,
-                data: into_bytes(rhs, schema.size()),
+                data: into_bytes(rhs),
             };
 
             let have = Comparand(&schema, &lhs).cmp(&Comparand(&schema, &rhs));

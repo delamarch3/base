@@ -116,6 +116,7 @@ impl Node {
         Some(tuple_offset)
     }
 
+    // TODO: Save space - update meta? Variable len data goes at end of tuple
     pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple_data)?;
         let slot_id = self.len();
