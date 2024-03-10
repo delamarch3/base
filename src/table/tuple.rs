@@ -243,11 +243,7 @@ mod test {
                     .copy_from_slice(&u16::to_be_bytes(offset as u16));
 
                 // Write variable length data to end of tuple
-                // self.data.resize(offset + data.len(), 0);
-                // self.data[offset..offset + data.len()].copy_from_slice(&data);
-
                 self.data.put(data);
-                // self.offset += data.len()
             }
 
             self.data
