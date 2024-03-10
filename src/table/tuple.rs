@@ -172,35 +172,45 @@ mod test {
 
     use crate::{
         catalog::{Column, Schema, Type, Value},
-        page::PAGE_SIZE,
         table::tuple::{Comparand, RId, Tuple},
     };
 
     fn into_bytes(values: Vec<Value>) -> BytesMut {
-        let mut bytes = BytesMut::zeroed(PAGE_SIZE);
+        let mut bytes = BytesMut::new();
 
         let mut offset = 0;
         for v in values {
             match v {
                 Value::TinyInt(v) => {
+                    bytes.resize(offset + size_of::<i8>(), 0);
+
                     bytes[offset..offset + size_of::<i8>()].copy_from_slice(&i8::to_be_bytes(v));
                     offset += size_of::<i8>();
                 }
                 Value::Bool(v) => {
+                    bytes.resize(offset + size_of::<bool>(), 0);
+
                     bytes[offset..offset + size_of::<bool>()]
                         .copy_from_slice(&u8::to_be_bytes(if v { 1 } else { 0 }));
                     offset += size_of::<bool>();
                 }
                 Value::Int(v) => {
+                    bytes.resize(offset + size_of::<i32>(), 0);
+
                     bytes[offset..offset + size_of::<i32>()].copy_from_slice(&i32::to_be_bytes(v));
                     offset += size_of::<i32>();
                 }
                 Value::BigInt(v) => {
+                    bytes.resize(offset + size_of::<i64>(), 0);
+
                     bytes[offset..offset + size_of::<i64>()].copy_from_slice(&i64::to_be_bytes(v));
                     offset += size_of::<i64>();
                 }
                 Value::Varchar(v) => {
-                    // TODO: Save space
+                    bytes.resize(offset + 2 + v.len(), 0);
+
+                    // TODO: Save space - need to know the end offset here, also need to consider
+                    // multiple variable length columns
                     bytes[offset..offset + 2].copy_from_slice(&u16::to_be_bytes(v.len() as u16));
                     bytes[offset + 2..offset + 2 + v.len()].copy_from_slice(v.as_bytes());
                     offset += 255 + 2;

@@ -27,11 +27,10 @@ pub enum Value {
 
 impl Value {
     pub fn from(column: &Column, data: &[u8]) -> Value {
-        assert!(column.offset + column.size() <= data.len());
-
         let data = match column.ty {
             Type::Varchar => {
-                // TODO: Save space
+                // TODO: Save space - need to know the end offset here, also need to consider
+                // multiple variable length columns
                 // First 2 bytes is the size
                 let size =
                     u16::from_be_bytes(data[column.offset..column.offset + 2].try_into().unwrap())
@@ -40,8 +39,12 @@ impl Value {
 
                 &data[column.offset + 2..column.offset + 2 + size]
             }
-            _ => &data[column.offset..column.offset + column.size()],
+            _ => {
+                assert!(column.offset + column.size() <= data.len());
+                &data[column.offset..column.offset + column.size()]
+            }
         };
+
         match column.ty {
             Type::TinyInt => {
                 assert_eq!(data.len(), size_of::<i8>());
