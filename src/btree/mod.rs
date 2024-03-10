@@ -451,7 +451,7 @@ mod test {
     }
 
     #[test]
-    fn test_btree() -> crate::Result<()> {
+    fn test_btree_values() -> crate::Result<()> {
         const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;

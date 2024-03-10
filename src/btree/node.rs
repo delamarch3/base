@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, ops::Range};
+use std::ops::Range;
 
 use bytes::BytesMut;
 
@@ -49,11 +49,11 @@ const NODE_VALUES_START: usize = 18;
 pub struct Node<K, V> {
     pub t: NodeType,
     pub is_root: bool,
-    len: u32,
+    len: u32, // TODO: len doesn't need to be in struct
     max: u32,
     pub next: PageId,
     pub id: PageId,
-    values: BTreeSet<Slot<K, V>>,
+    values: Vec<Slot<K, V>>,
 }
 
 impl<K, V> From<&PageBuf> for Node<K, V>
@@ -69,7 +69,7 @@ where
         let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
         let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
-        let mut values = BTreeSet::new();
+        let mut values = Vec::new();
         let size = Slot::<K, V>::SIZE;
 
         let left = &buf[NODE_VALUES_START..];
@@ -78,7 +78,7 @@ where
         while rem > 0 {
             let bytes = &left[from..from + size];
             let slot = Slot::from(bytes);
-            values.insert(slot);
+            values.push(slot);
             from += size;
             rem -= 1;
         }
@@ -149,21 +149,14 @@ where
             max,
             next: -1,
             id,
-            values: BTreeSet::new(),
+            values: Vec::new(),
         }
     }
 
     /// Split out half of self's values into a new node.
     pub fn split(&mut self, id: PageId) -> Node<K, V> {
-        let mid = self
-            .values
-            .iter()
-            .nth(self.values.len() / 2)
-            .expect("there should be a mid node")
-            .clone();
-
         // All values in the greater half end up in `rest`
-        let rest = self.values.split_off(&mid);
+        let rest = self.values.split_off(self.values.len() / 2);
         self.len = self.values.len() as u32;
         self.is_root = false;
 
@@ -241,36 +234,75 @@ where
         self.values.len() >= self.max as usize / 2
     }
 
-    pub fn insert(&mut self, value: Slot<K, V>) -> bool {
-        self.values.insert(value)
+    pub fn insert(&mut self, slot: Slot<K, V>) -> bool {
+        let mut i = self.values.len();
+        for (j, Slot(k, _)) in self.values.iter().enumerate() {
+            if k == &slot.0 {
+                // Duplicate key
+                return false;
+            }
+
+            if k > &slot.0 {
+                i = j;
+                break;
+            }
+        }
+
+        self.values.insert(i, slot);
+        true
     }
 
-    pub fn replace(&mut self, value: Slot<K, V>) -> Option<Slot<K, V>> {
-        self.values.replace(value)
+    pub fn replace(&mut self, mut slot: Slot<K, V>) -> Option<Slot<K, V>> {
+        let mut i = self.values.len();
+        for (j, Slot(k, _)) in self.values.iter().enumerate() {
+            if k == &slot.0 {
+                std::mem::swap(&mut self.values[j], &mut slot);
+                return Some(slot);
+            }
+
+            if k > &slot.0 {
+                i = j;
+                break;
+            }
+        }
+
+        self.values.insert(i, slot);
+        None
     }
 
     pub fn pop_last(&mut self) -> Option<Slot<K, V>> {
-        self.values.pop_last()
+        self.values.pop()
     }
 
     pub fn first(&self) -> Option<&Slot<K, V>> {
         self.values.first()
     }
 
-    pub fn iter(&self) -> std::collections::btree_set::Iter<'_, Slot<K, V>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Slot<K, V>> {
         self.values.iter()
     }
 
-    pub fn into_iter(self) -> std::collections::btree_set::IntoIter<Slot<K, V>> {
+    pub fn into_iter(self) -> std::vec::IntoIter<Slot<K, V>> {
         self.values.into_iter()
     }
 
-    pub fn get(&self, value: &Slot<K, V>) -> Option<&Slot<K, V>> {
-        self.values.get(value)
+    pub fn get(&self, slot: &Slot<K, V>) -> Option<&Slot<K, V>> {
+        self.values.iter().find(|Slot(k, _)| k == &slot.0)
     }
 
-    pub fn remove(&mut self, value: &Slot<K, V>) -> bool {
-        self.values.remove(value)
+    pub fn remove(&mut self, slot: &Slot<K, V>) -> bool {
+        if let Some(i) = self
+            .values
+            .iter()
+            .enumerate()
+            .find(|(_, Slot(k, _))| k == &slot.0)
+            .map(|(i, _)| i)
+        {
+            self.values.remove(i);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -289,7 +321,7 @@ mod test {
             max: 20,
             next: -1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Value(20)),
                 Slot(0, Either::Pointer(1)),
                 Slot(20, Either::Value(30)),
@@ -300,7 +332,7 @@ mod test {
                 Slot(3, Either::Pointer(4)),
                 Slot(50, Either::Value(60)),
                 Slot(4, Either::Pointer(5)),
-            ]),
+            ],
         };
 
         let bytes = PageBuf::from(node.clone());
@@ -319,7 +351,7 @@ mod test {
             max: 20,
             next: -1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Value(1)),
                 Slot(20, Either::Value(2)),
                 Slot(30, Either::Value(3)),
@@ -331,7 +363,7 @@ mod test {
                 Slot(90, Either::Value(9)),
                 Slot(100, Either::Value(10)),
                 Slot(110, Either::Value(11)),
-            ]),
+            ],
         };
 
         let new = node.split(1);
@@ -343,13 +375,13 @@ mod test {
             max: 20,
             next: 1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Value(1)),
                 Slot(20, Either::Value(2)),
                 Slot(30, Either::Value(3)),
                 Slot(40, Either::Value(4)),
                 Slot(50, Either::Value(5)),
-            ]),
+            ],
         };
 
         assert!(node == expected, "\nExpected: {:?}\n    Node: {:?}\n", expected, node);
@@ -361,14 +393,14 @@ mod test {
             max: 20,
             next: -1,
             id: 1,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(60, Either::Value(6)),
                 Slot(70, Either::Value(7)),
                 Slot(80, Either::Value(8)),
                 Slot(90, Either::Value(9)),
                 Slot(100, Either::Value(10)),
                 Slot(110, Either::Value(11)),
-            ]),
+            ],
         };
 
         assert!(new == expected_new, "\nExpected: {:?}\n    Node: {:?}\n", expected_new, new);
@@ -383,13 +415,13 @@ mod test {
             max: 20,
             next: 1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Value(1)),
                 Slot(20, Either::Value(2)),
                 Slot(30, Either::Value(3)),
                 Slot(40, Either::Value(4)),
                 Slot(50, Either::Value(5)),
-            ]),
+            ],
         };
 
         let other = Node {
@@ -399,14 +431,14 @@ mod test {
             max: 20,
             next: -1,
             id: 1,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(60, Either::Value(6)),
                 Slot(70, Either::Value(7)),
                 Slot(80, Either::Value(8)),
                 Slot(90, Either::Value(9)),
                 Slot(100, Either::Value(10)),
                 Slot(110, Either::Value(11)),
-            ]),
+            ],
         };
 
         let Some(slots) = node.get_separators(Some(other)) else {
@@ -425,13 +457,13 @@ mod test {
             max: 20,
             next: 1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Pointer(1)),
                 Slot(20, Either::Pointer(2)),
                 Slot(30, Either::Pointer(3)),
                 Slot(40, Either::Pointer(4)),
                 Slot(50, Either::Pointer(5)),
-            ]),
+            ],
         };
 
         let other = Node {
@@ -441,14 +473,14 @@ mod test {
             max: 20,
             next: -1,
             id: 1,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(60, Either::Pointer(6)),
                 Slot(70, Either::Pointer(7)),
                 Slot(80, Either::Pointer(8)),
                 Slot(90, Either::Pointer(9)),
                 Slot(100, Either::Pointer(10)),
                 Slot(110, Either::Pointer(11)),
-            ]),
+            ],
         };
 
         let Some(slots) = node.get_separators(Some(other)) else {
@@ -467,13 +499,13 @@ mod test {
             max: 20,
             next: 1,
             id: 0,
-            values: BTreeSet::from([
+            values: vec![
                 Slot(10, Either::Pointer(1)),
                 Slot(20, Either::Pointer(2)),
                 Slot(30, Either::Pointer(3)),
                 Slot(40, Either::Pointer(4)),
                 Slot(50, Either::Pointer(5)),
-            ]),
+            ],
         };
 
         let a = node.find_child(&25);
@@ -483,5 +515,79 @@ mod test {
         assert!(a == Some(3));
         assert!(b == Some(4));
         assert!(c == Some(1));
+    }
+
+    macro_rules! inserts {
+        ($range:expr, $t:ty) => {{
+            use rand::{seq::SliceRandom, thread_rng};
+            let mut ret = Vec::with_capacity($range.len());
+
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
+
+            for key in keys {
+                ret.push(Slot(key, Either::Pointer(0)));
+            }
+
+            ret
+        }};
+    }
+
+    #[test]
+    fn test_values() {
+        let mut node: Node<i32, i32> = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 0,
+            max: 0,
+            next: 1,
+            id: 0,
+            values: vec![],
+        };
+
+        // Insert
+        let range = -50..50;
+        let mut want = inserts!(range, i32);
+
+        for slot in want.iter().rev() {
+            node.insert(*slot);
+        }
+
+        want.sort();
+
+        assert_eq!(want, node.values);
+
+        // Get
+        let mut have = Vec::new();
+        for slot in &want {
+            match node.get(&slot) {
+                Some(s) => have.push(*s),
+                None => panic!("expected to find {slot:?}"),
+            }
+        }
+        assert_eq!(want, have);
+
+        // Delete
+        let (first_half, second_half) = want.split_at(want.len() / 2);
+        for Slot(k, _) in first_half {
+            assert!(node.remove(&Slot(*k, Either::Pointer(-1))));
+        }
+        assert_eq!(node.values.len(), second_half.len());
+
+        for slot in first_half {
+            match node.get(&slot) {
+                Some(_) => panic!("unexpected deleted slot: {slot:?}"),
+                None => {}
+            }
+        }
+
+        for slot in second_half {
+            match node.get(&slot) {
+                Some(_) => {}
+                None => panic!("expected to find {slot:?}"),
+            }
+        }
+
+        // Replace
     }
 }
