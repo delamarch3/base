@@ -74,10 +74,7 @@ impl Storable for Tuple {
 
 impl Tuple {
     pub fn get_value(&self, column: &Column) -> Value {
-        assert!(column.offset + column.size() <= self.data.len());
-
-        // TODO: handle varchar
-        Value::from(&column.ty, &self.data[column.offset..column.offset + column.size()])
+        Value::from(&column, &self.data)
     }
 }
 
@@ -202,8 +199,10 @@ mod test {
                     offset += size_of::<i64>();
                 }
                 Value::Varchar(v) => {
-                    bytes[offset..offset + v.len()].copy_from_slice(v.as_bytes());
-                    offset += v.len();
+                    // TODO: Save space
+                    bytes[offset..offset + 2].copy_from_slice(&u16::to_be_bytes(v.len() as u16));
+                    bytes[offset + 2..offset + 2 + v.len()].copy_from_slice(v.as_bytes());
+                    offset += 255 + 2;
                 }
             }
         }
@@ -291,6 +290,57 @@ mod test {
                 lhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(90)],
                 rhs: vec![Value::Int(4), Value::Bool(false), Value::BigInt(100)],
                 want: Less,
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_a".into(),
+                        ty: Type::TinyInt,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::Varchar,
+                        offset: 1,
+                    },
+                ]),
+                lhs: vec![Value::TinyInt(1), Value::Varchar("Column".into())],
+                rhs: vec![Value::TinyInt(1), Value::Varchar("Column".into())],
+                want: Equal,
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_a".into(),
+                        ty: Type::Varchar,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::TinyInt,
+                        offset: 255 + 2,
+                    },
+                ]),
+                lhs: vec![Value::Varchar("Column A".into()), Value::TinyInt(1)],
+                rhs: vec![Value::Varchar("Column B".into()), Value::TinyInt(1)],
+                want: Less,
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_a".into(),
+                        ty: Type::Varchar,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::TinyInt,
+                        offset: 255 + 2,
+                    },
+                ]),
+                lhs: vec![Value::Varchar("Column A".into()), Value::TinyInt(1)],
+                rhs: vec![Value::Varchar("Column".into()), Value::TinyInt(1)],
+                want: Greater,
             },
         ];
 
