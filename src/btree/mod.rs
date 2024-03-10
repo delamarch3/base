@@ -67,8 +67,8 @@ where
             let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
             self.root = new_root.id;
 
-            new_root.values.insert(s);
-            new_root.values.insert(os);
+            new_root.insert(s);
+            new_root.insert(os);
 
             let mut w = new_root_page.write();
             writep!(w, &PageBuf::from(&new_root));
@@ -107,8 +107,8 @@ where
                         Some(ptr) => ptr,
                         None if nnode.t == NodeType::Internal => {
                             // Bump the last node if no pointer found
-                            let Slot(_, v) = nnode.values.pop_last().unwrap();
-                            nnode.values.insert(Slot(key.next(), v));
+                            let Slot(_, v) = nnode.pop_last().unwrap();
+                            nnode.insert(Slot(key.next(), v));
 
                             match nnode.find_child(&key) {
                                 Some(ptr) => ptr,
@@ -117,9 +117,7 @@ where
                         }
                         None => {
                             // Reached leaf node
-                            nnode
-                                .values
-                                .replace(Slot(key.clone(), Either::Value(value.clone())));
+                            nnode.replace(Slot(key.clone(), Either::Value(value.clone())));
                             writep!(npage, &PageBuf::from(&nnode));
 
                             return Ok(node.get_separators(Some(nnode)));
@@ -131,8 +129,8 @@ where
 
                     prev_page.take();
                     if let Some((s, os)) = self._insert(Some(&npage), cpage, key, value)? {
-                        nnode.values.replace(s);
-                        nnode.values.replace(os);
+                        nnode.replace(s);
+                        nnode.replace(os);
                     }
 
                     // Write the new node
@@ -156,8 +154,8 @@ where
                 Some(ptr) => ptr,
                 None if node.t == NodeType::Internal => {
                     // Bump the last node if no pointer found
-                    let Slot(_, v) = node.values.pop_last().unwrap();
-                    node.values.insert(Slot(key.next(), v));
+                    let Slot(_, v) = node.pop_last().unwrap();
+                    node.insert(Slot(key.next(), v));
 
                     match node.find_child(&key) {
                         Some(ptr) => ptr,
@@ -166,8 +164,7 @@ where
                 }
                 None => {
                     // Reached leaf node
-                    node.values
-                        .replace(Slot(key.clone(), Either::Value(value.clone())));
+                    node.replace(Slot(key.clone(), Either::Value(value.clone())));
                     writep!(page, &PageBuf::from(&node));
 
                     return Ok(node.get_separators(split));
@@ -179,8 +176,8 @@ where
 
             prev_page.take();
             if let Some((s, os)) = self._insert(Some(&page), cpage, key, value)? {
-                node.values.replace(s);
-                node.values.replace(os);
+                node.replace(s);
+                node.replace(os);
             }
 
             // Write the original node
@@ -214,7 +211,7 @@ where
 
         // Find first leaf
         if node.t != NodeType::Leaf {
-            let Slot(_, v) = node.values.first().unwrap();
+            let Slot(_, v) = node.first().unwrap();
             match v {
                 Either::Pointer(ptr) => {
                     let pin = self.pc.fetch_page(*ptr)?;
@@ -227,7 +224,7 @@ where
             };
         }
 
-        acc.extend(node.values.iter().map(|Slot(k, v)| match v {
+        acc.extend(node.iter().map(|Slot(k, v)| match v {
             Either::Value(v) => (k.clone(), v.clone()),
             Either::Pointer(_) => unreachable!(),
         }));
@@ -268,11 +265,10 @@ where
         to: &K,
     ) -> crate::Result<()> {
         let node = Node::from(&page.data);
-
+        let next = node.next;
         let len = acc.len();
         acc.extend(
-            node.values
-                .into_iter()
+            node.into_iter()
                 .skip_while(|Slot(k, _)| k < from)
                 .take_while(|Slot(k, _)| k <= to)
                 .map(|Slot(k, v)| {
@@ -287,11 +283,11 @@ where
             return Ok(());
         }
 
-        if node.next == -1 {
+        if next == -1 {
             return Ok(());
         }
 
-        let next_page = self.pc.fetch_page(node.next)?;
+        let next_page = self.pc.fetch_page(next)?;
         let r = next_page.read();
 
         prev_page.take();
@@ -330,7 +326,7 @@ where
             Some(ptr) => self._get(key, ptr),
             None if node.t == NodeType::Leaf => {
                 let slot = Slot(key, Either::Pointer(-1));
-                Ok(node.values.get(&slot).map(|s| s.clone()))
+                Ok(node.get(&slot).map(|s| s.clone()))
             }
             None => Ok(None),
         }
@@ -353,7 +349,7 @@ where
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
                 let slot = Slot(key, Either::Pointer(-1));
-                let rem = node.values.remove(&slot);
+                let rem = node.remove(&slot);
                 if rem {
                     writep!(w, &PageBuf::from(&node));
                 }
@@ -381,7 +377,7 @@ where
 
         dbg!(&node);
 
-        for slot in &node.values {
+        for slot in node.iter() {
             match slot.1 {
                 Either::Value(_) => return,
                 Either::Pointer(ptr) => self._print(ptr),
@@ -400,7 +396,7 @@ where
             return Ok(ptr);
         }
 
-        let Slot(_, v) = node.values.first().unwrap();
+        let Slot(_, v) = node.first().unwrap();
         match v {
             Either::Pointer(ptr) => self.first(*ptr),
             Either::Value(_) => unreachable!(),

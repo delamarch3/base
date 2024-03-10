@@ -53,7 +53,7 @@ pub struct Node<K, V> {
     max: u32,
     pub next: PageId,
     pub id: PageId,
-    pub values: BTreeSet<Slot<K, V>>,
+    values: BTreeSet<Slot<K, V>>,
 }
 
 impl<K, V> From<&PageBuf> for Node<K, V>
@@ -239,6 +239,38 @@ where
     #[inline]
     pub fn almost_full(&self) -> bool {
         self.values.len() >= self.max as usize / 2
+    }
+
+    pub fn insert(&mut self, value: Slot<K, V>) -> bool {
+        self.values.insert(value)
+    }
+
+    pub fn replace(&mut self, value: Slot<K, V>) -> Option<Slot<K, V>> {
+        self.values.replace(value)
+    }
+
+    pub fn pop_last(&mut self) -> Option<Slot<K, V>> {
+        self.values.pop_last()
+    }
+
+    pub fn first(&self) -> Option<&Slot<K, V>> {
+        self.values.first()
+    }
+
+    pub fn iter(&self) -> std::collections::btree_set::Iter<'_, Slot<K, V>> {
+        self.values.iter()
+    }
+
+    pub fn into_iter(self) -> std::collections::btree_set::IntoIter<Slot<K, V>> {
+        self.values.into_iter()
+    }
+
+    pub fn get(&self, value: &Slot<K, V>) -> Option<&Slot<K, V>> {
+        self.values.get(value)
+    }
+
+    pub fn remove(&mut self, value: &Slot<K, V>) -> bool {
+        self.values.remove(value)
     }
 }
 
