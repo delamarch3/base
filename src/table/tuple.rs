@@ -164,7 +164,7 @@ impl<'a, 'b> Ord for Comparand<'a, 'b> {
 
 #[cfg(test)]
 mod test {
-    use bytes::BytesMut;
+    use bytes::{BufMut, BytesMut};
     use std::{
         cmp::Ordering::{self, *},
         mem::size_of,
@@ -184,7 +184,6 @@ mod test {
     struct TupleBuilder {
         data: BytesMut,
         variable: Vec<Variable>,
-        offset: usize,
     }
 
     impl TupleBuilder {
@@ -202,56 +201,29 @@ mod test {
             }
         }
 
-        fn copy(&mut self, len: usize, data: &[u8]) {
-            // Or use put?
-            self.data[self.offset..self.offset + len].copy_from_slice(data);
-        }
-
-        fn resize(&mut self, size: usize) {
-            self.data.resize(self.offset + size, 0);
-        }
-
         pub fn add(mut self, v: &Value) -> Self {
             match v {
                 Value::TinyInt(v) => {
-                    self.resize(size_of::<i8>());
-                    self.copy(size_of::<i8>(), &i8::to_be_bytes(*v));
-                    self.offset += size_of::<i8>();
+                    self.data.put(&i8::to_be_bytes(*v)[..]);
                 }
-                Value::Bool(v) => {
-                    self.data.resize(self.offset + size_of::<bool>(), 0);
-
-                    self.data[self.offset..self.offset + size_of::<bool>()]
-                        .copy_from_slice(&u8::to_be_bytes(if *v { 1 } else { 0 }));
-                    self.offset += size_of::<bool>();
-                }
+                Value::Bool(v) => self.data.put(&u8::to_be_bytes(if *v { 1 } else { 0 })[..]),
                 Value::Int(v) => {
-                    self.data.resize(self.offset + size_of::<i32>(), 0);
-
-                    self.data[self.offset..self.offset + size_of::<i32>()]
-                        .copy_from_slice(&i32::to_be_bytes(*v));
-                    self.offset += size_of::<i32>();
+                    self.data.put(&i32::to_be_bytes(*v)[..]);
                 }
-                Value::BigInt(v) => {
-                    self.data.resize(self.offset + size_of::<i64>(), 0);
-
-                    self.data[self.offset..self.offset + size_of::<i64>()]
-                        .copy_from_slice(&i64::to_be_bytes(*v));
-                    self.offset += size_of::<i64>();
-                }
+                Value::BigInt(v) => self.data.put(&i64::to_be_bytes(*v)[..]),
                 Value::Varchar(v) => {
-                    self.data.resize(self.offset + 4, 0);
+                    let offset = self.data.len();
 
                     // First two bytes is the offset, which we won't know until the build()
                     // Second two bytes is the length
-                    self.data[self.offset + 2..self.offset + 4]
+                    self.data.resize(offset + 4, 0);
+                    self.data[offset + 2..offset + 4]
                         .copy_from_slice(&u16::to_be_bytes(v.len() as u16));
 
                     self.variable.push(Variable {
                         data: BytesMut::from(&v[..]),
-                        offset_offset: self.offset,
+                        offset_offset: offset,
                     });
-                    self.offset += 4;
                 }
             };
 
@@ -264,14 +236,18 @@ mod test {
                 offset_offset,
             } in self.variable
             {
+                let offset = self.data.len();
+
                 // Update offset
                 self.data[offset_offset..offset_offset + 2]
-                    .copy_from_slice(&u16::to_be_bytes(self.offset as u16));
+                    .copy_from_slice(&u16::to_be_bytes(offset as u16));
 
                 // Write variable length data to end of tuple
-                self.data.resize(self.offset + data.len(), 0);
-                self.data[self.offset..self.offset + data.len()].copy_from_slice(&data);
-                self.offset += data.len()
+                // self.data.resize(offset + data.len(), 0);
+                // self.data[offset..offset + data.len()].copy_from_slice(&data);
+
+                self.data.put(data);
+                // self.offset += data.len()
             }
 
             self.data
