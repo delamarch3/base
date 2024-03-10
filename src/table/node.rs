@@ -27,7 +27,6 @@ pub const SLOTS_START: usize = 12;
 pub struct Node {
     page_start: *mut u8,
     pub next_page_id: PageId,
-    tuples_len: u32,
     deleted_tuples_len: u32,
     slots: Vec<Slot>,
 }
@@ -54,9 +53,7 @@ impl From<&PageBuf> for Node {
 
         Self {
             page_start,
-            // next_page_id: if next_page_id == 0 { -1 } else { next_page_id },
             next_page_id,
-            tuples_len,
             deleted_tuples_len,
             slots,
         }
@@ -68,7 +65,7 @@ impl From<&Node> for PageBuf {
         let mut ret: PageBuf = [0; PAGE_SIZE];
 
         ret[NEXT_PAGE_ID].copy_from_slice(&table.next_page_id.to_be_bytes());
-        ret[TUPLES_LEN].copy_from_slice(&table.tuples_len.to_be_bytes());
+        ret[TUPLES_LEN].copy_from_slice(&(table.slots.len() as u32).to_be_bytes());
         ret[DELETED_TUPLES_LEN].copy_from_slice(&table.deleted_tuples_len.to_be_bytes());
 
         const SLOT_SIZE: usize = Slot::SIZE;
@@ -99,7 +96,7 @@ impl Node {
     const HEADER_SIZE: usize = 12;
 
     pub fn len(&self) -> u32 {
-        self.tuples_len
+        self.slots.len() as u32
     }
 
     pub fn next_tuple_offset(&self, tuple_data: &BytesMut) -> Option<usize> {
@@ -111,7 +108,7 @@ impl Node {
         let tuple_offset = offset - tuple_data.len();
 
         // Ensure tuple isn't written over header/slots
-        let size = Self::HEADER_SIZE + Slot::SIZE * (self.tuples_len as usize + 1);
+        let size = Self::HEADER_SIZE + Slot::SIZE * (self.len() as usize + 1);
         if tuple_offset < size {
             return None;
         }
@@ -121,15 +118,15 @@ impl Node {
 
     pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple_data)?;
-        let slot_id = self.tuples_len;
+        let slot_id = self.len();
         self.slots.push(Slot {
             offset: offset as u32,
             len: tuple_data.len() as u32,
             meta: *meta,
         });
-        self.tuples_len += 1;
 
         unsafe {
+            // TODO: This writes to the page buffer but doesn't set the dirty flag
             let tuples_ptr = self.page_start.add(offset);
             let tuples = std::slice::from_raw_parts_mut(tuples_ptr, PAGE_SIZE - offset);
             tuples[..tuple_data.len()].copy_from_slice(&tuple_data);
@@ -140,7 +137,7 @@ impl Node {
 
     pub fn get(&self, r_id: &RId) -> Option<(TupleMeta, Tuple)> {
         let slot_id = r_id.slot_id;
-        if slot_id > self.tuples_len {
+        if slot_id > self.len() {
             todo!()
         }
 
@@ -182,7 +179,6 @@ mod test {
         let mut table = Node {
             page_start: buf.as_mut_ptr(),
             next_page_id: 10,
-            tuples_len: 2,
             deleted_tuples_len: 0,
             slots: vec![
                 Slot {
@@ -223,7 +219,6 @@ mod test {
         let mut table = Node {
             page_start: buf.as_mut_ptr(),
             next_page_id: 0,
-            tuples_len: 0,
             deleted_tuples_len: 0,
             slots: Vec::new(),
         };

@@ -76,6 +76,7 @@ impl Tuple {
     pub fn get_value(&self, column: &Column) -> Value {
         assert!(column.offset + column.size() <= self.data.len());
 
+        // TODO: handle varchar
         Value::from(&column.ty, &self.data[column.offset..column.offset + column.size()])
     }
 }
@@ -114,6 +115,10 @@ impl From<&[u8]> for Slot {
     }
 }
 
+impl Slot {
+    pub const SIZE: usize = 9;
+}
+
 pub type TupleInfoBuf = [u8; Slot::SIZE];
 impl From<&Slot> for TupleInfoBuf {
     fn from(value: &Slot) -> Self {
@@ -125,10 +130,6 @@ impl From<&Slot> for TupleInfoBuf {
 
         ret
     }
-}
-
-impl Slot {
-    pub const SIZE: usize = 9;
 }
 
 pub struct Comparand<'a, 'b>(&'a Schema, &'b Tuple);
