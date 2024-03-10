@@ -138,8 +138,8 @@ where
 
 impl<K, V> Node<K, V>
 where
-    K: Storable + Clone + Ord,
-    V: Storable + Clone + Eq,
+    K: Clone + Ord,
+    V: Clone + Eq,
 {
     pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool) -> Self {
         Self {
