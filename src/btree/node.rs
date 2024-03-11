@@ -370,12 +370,14 @@ where
         self.values.into_iter()
     }
 
+    // TODO: Accept &BytesMut (tuple data) instead to avoid clone
     pub fn get(&self, slot: &Slot<V>) -> Option<&Slot<V>> {
         self.values
             .iter()
             .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, &slot.0))
     }
 
+    // TODO: Accept &BytesMut (tuple data) instead to avoid clone
     pub fn remove(&mut self, slot: &Slot<V>) -> bool {
         if let Some(i) = self
             .values

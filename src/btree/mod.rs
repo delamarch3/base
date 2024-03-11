@@ -311,7 +311,7 @@ where
         }
     }
 
-    pub fn get(&self, key: Tuple) -> crate::Result<Option<Slot<V>>> {
+    pub fn get(&self, key: &Tuple) -> crate::Result<Option<Slot<V>>> {
         if self.root == -1 {
             return Ok(None);
         }
@@ -319,7 +319,7 @@ where
         self._get(key, self.root)
     }
 
-    fn _get(&self, key: Tuple, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
+    fn _get(&self, key: &Tuple, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
         let node = Node::from(&r.data, &self.schema);
@@ -327,14 +327,14 @@ where
         match node.find_child(&key) {
             Some(ptr) => self._get(key, ptr),
             None if node.t == NodeType::Leaf => {
-                let slot = Slot(key, Either::Pointer(-1));
+                let slot = Slot(key.clone(), Either::Pointer(-1));
                 Ok(node.get(&slot).map(|s| s.clone()))
             }
             None => Ok(None),
         }
     }
 
-    pub fn delete(&self, key: Tuple) -> crate::Result<bool> {
+    pub fn delete(&self, key: &Tuple) -> crate::Result<bool> {
         if self.root == -1 {
             return Ok(false);
         }
@@ -342,7 +342,7 @@ where
         self._delete(key, self.root)
     }
 
-    fn _delete(&self, key: Tuple, ptr: PageId) -> crate::Result<bool> {
+    fn _delete(&self, key: &Tuple, ptr: PageId) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
         let mut node: Node<V> = Node::from(&w.data, &self.schema);
@@ -350,7 +350,7 @@ where
         match node.find_child(&key) {
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
-                let slot = Slot(key, Either::Pointer(-1));
+                let slot = Slot(key.clone(), Either::Pointer(-1));
                 let rem = node.remove(&slot);
                 if rem {
                     writep!(w, &PageBuf::from(&node));
@@ -428,230 +428,255 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use rand::{seq::SliceRandom, thread_rng, Rng};
+#[cfg(test)]
+mod test {
+    use rand::{seq::SliceRandom, thread_rng, Rng};
 
-//     use crate::{disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRU};
+    use crate::{
+        catalog::{Column, Type},
+        disk::Memory,
+        page::PAGE_SIZE,
+        page_cache::PageCache,
+        replacer::LRU,
+    };
 
-//     use super::*;
+    use super::*;
 
-//     macro_rules! inserts {
-//         ($range:expr, $t:ty) => {{
-//             let mut ret = Vec::with_capacity($range.len());
+    macro_rules! inserts {
+        ($range:expr, $t:ty) => {{
+            let mut ret = Vec::with_capacity($range.len());
 
-//             let mut keys = $range.collect::<Vec<$t>>();
-//             keys.shuffle(&mut thread_rng());
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
 
-//             for key in keys {
-//                 let value = key + 10;
-//                 ret.push((key, value));
-//             }
+            for key in keys {
+                let value = key + 10;
+                ret.push((key.into(), value));
+            }
 
-//             ret
-//         }};
-//     }
+            ret
+        }};
+    }
 
-//         #[test]
-//         fn test_btree_values() -> crate::Result<()> {
-//             const MAX: usize = 8;
-//             const MEMORY: usize = PAGE_SIZE * 128;
-//             const K: usize = 2;
+    #[test]
+    fn test_btree_values() -> crate::Result<()> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 128;
+        const K: usize = 2;
 
-//         let disk = Memory::new::<MEMORY>();
-//         let lru = LRU::new(K);
-//         let pc = PageCache::new(disk, lru, 0);
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRU::new(K);
+        let pc = PageCache::new(disk, lru, 0);
 
-//         let mut btree = BTree::new(pc.clone(), MAX as u32);
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
+        let mut btree = BTree::new(pc.clone(), schema, MAX as u32);
 
-//         // Insert and get
-//         let range = -50..50;
-//         let inserts = inserts!(range, i32);
+        // Insert and get
+        let range = -50..50;
+        let inserts = inserts!(range, i32);
 
-//         for (k, v) in &inserts {
-//             btree.insert(k, v)?;
-//         }
+        for (k, v) in &inserts {
+            btree.insert(k, v)?;
+        }
 
-//         pc.flush_all_pages()?;
+        pc.flush_all_pages()?;
 
-//         for (k, v) in &inserts {
-//             let have = btree.get(*k)?;
-//             let want = Some(Slot(*k, Either::Value(*v)));
-//             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-//         }
+        for (k, v) in &inserts {
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        }
 
-//         // Delete half and make sure they no longer exist in the tree
-//         let (first_half, second_half) = inserts.split_at(inserts.len() / 2);
-//         for (k, _) in first_half {
-//             btree.delete(*k)?;
-//         }
+        // Delete half and make sure they no longer exist in the tree
+        let (first_half, second_half) = inserts.split_at(inserts.len() / 2);
+        for (k, _) in first_half {
+            btree.delete(k)?;
+        }
 
-//         pc.flush_all_pages()?;
+        pc.flush_all_pages()?;
 
-//         for (k, _) in first_half {
-//             match btree.get(*k)? {
-//                 Some(_) => panic!("Unexpected deleted key: {k}"),
-//                 None => {}
-//             };
-//         }
+        for (k, _) in first_half {
+            match btree.get(k)? {
+                Some(_) => panic!("Unexpected deleted key: {:x?}", k.data),
+                None => {}
+            };
+        }
 
-//         // Make sure other half can still be accessed
-//         for (k, v) in second_half {
-//             let test = match btree.get(*k)? {
-//                 Some(t) => t,
-//                 None => panic!("Could not find {k}:{v} in the second half"),
-//             };
+        // Make sure other half can still be accessed
+        for (k, v) in second_half {
+            let test = match btree.get(k)? {
+                Some(t) => t,
+                None => panic!("Could not find {:x?}:{v} in the second half", k.data),
+            };
 
-//             let have = match test.1 {
-//                 Either::Value(v) => v,
-//                 Either::Pointer(_) => unreachable!(),
-//             };
-//             assert!(have == *v, "Want: {v}\nHave: {have}");
-//         }
+            let have = match test.1 {
+                Either::Value(v) => v,
+                Either::Pointer(_) => unreachable!(),
+            };
+            assert!(have == *v, "Want: {v}\nHave: {have}");
+        }
 
-//         // Insert and get a different range
-//         let range = -25..100;
-//         let inserts = inserts!(range, i32);
+        // Insert and get a different range
+        let range = -25..100;
+        let inserts = inserts!(range, i32);
 
-//         for (k, v) in &inserts {
-//             btree.insert(k, v)?;
-//         }
+        for (k, v) in &inserts {
+            btree.insert(k, v)?;
+        }
 
-//         pc.flush_all_pages()?;
+        pc.flush_all_pages()?;
 
-//         for (k, v) in &inserts {
-//             let have = btree.get(*k)?;
-//             let want = Some(Slot(*k, Either::Value(*v)));
-//             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-//         }
+        for (k, v) in &inserts {
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        }
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     #[test]
-//     fn test_btree_scan() -> crate::Result<()> {
-//         const MAX: usize = 8;
-//         const MEMORY: usize = PAGE_SIZE * 64;
-//         const K: usize = 2;
+    #[test]
+    fn test_btree_scan() -> crate::Result<()> {
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 64;
+        const K: usize = 2;
 
-//         let disk = Memory::new::<MEMORY>();
-//         let lru = LRU::new(K);
-//         let pc = PageCache::new(disk, lru, 0);
-//         let pc2 = pc.clone();
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRU::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
 
-//         let mut btree = BTree::new(pc, MAX as u32);
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
+        let mut btree = BTree::new(pc, schema.clone(), MAX as u32);
 
-//         let range = -50..50;
-//         let mut want = inserts!(range, i32);
-//         for (k, v) in &want {
-//             btree.insert(k, v)?;
-//         }
+        let range = -50..50;
+        let mut want = inserts!(range, i32);
+        for (k, v) in &want {
+            btree.insert(k, v)?;
+        }
 
-//         pc2.flush_all_pages()?;
+        pc2.flush_all_pages()?;
 
-//         for (k, v) in &want {
-//             let have = btree.get(*k)?;
-//             let want = Some(Slot(*k, Either::Value(*v)));
-//             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-//         }
+        for (k, v) in &want {
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
+            assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        }
 
-//         want.sort();
-//         let have = btree.scan()?;
-//         assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+        want.sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
+        let have = btree.scan()?;
+        assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     #[test]
-//     fn test_btree_range() -> crate::Result<()> {
-//         struct TestCase {
-//             name: &'static str,
-//             range: std::ops::Range<i32>,
-//             from: i32,
-//             to: i32,
-//         }
+    #[test]
+    fn test_btree_range() -> crate::Result<()> {
+        struct TestCase {
+            name: &'static str,
+            range: std::ops::Range<i32>,
+            from: Tuple,
+            to: Tuple,
+        }
 
-//         const MAX: usize = 8;
-//         const MEMORY: usize = PAGE_SIZE * 128;
-//         const K: usize = 2;
+        const MAX: usize = 8;
+        const MEMORY: usize = PAGE_SIZE * 128;
+        const K: usize = 2;
 
-//         let disk = Memory::new::<MEMORY>();
-//         let lru = LRU::new(K);
-//         let pc = PageCache::new(disk, lru, 0);
-//         let pc2 = pc.clone();
+        let disk = Memory::new::<MEMORY>();
+        let lru = LRU::new(K);
+        let pc = PageCache::new(disk, lru, 0);
+        let pc2 = pc.clone();
 
-//         let tcs = [
-//             TestCase {
-//                 name: "random range",
-//                 range: -50..50,
-//                 from: rand::thread_rng().gen_range(-50..0),
-//                 to: rand::thread_rng().gen_range(0..50),
-//             },
-//             TestCase {
-//                 name: "out of bounds range",
-//                 range: -50..50,
-//                 from: -100,
-//                 to: -50,
-//             },
-//         ];
+        let tcs = [
+            TestCase {
+                name: "random range",
+                range: -50..50,
+                from: rand::thread_rng().gen_range(-50..0).into(),
+                to: rand::thread_rng().gen_range(0..50).into(),
+            },
+            TestCase {
+                name: "out of bounds range",
+                range: -50..50,
+                from: (-100).into(),
+                to: (-50).into(),
+            },
+        ];
 
-//         for TestCase {
-//             name,
-//             range,
-//             from,
-//             to,
-//         } in tcs
-//         {
-//             let mut btree = BTree::new(pc.clone(), MAX as u32);
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
 
-//             let mut inserts = inserts!(range, i32);
-//             for (k, v) in &inserts {
-//                 btree.insert(k, v)?;
-//             }
+        for TestCase {
+            name,
+            range,
+            from,
+            to,
+        } in tcs
+        {
+            let mut btree = BTree::new(pc.clone(), schema.clone(), MAX as u32);
 
-//             pc2.flush_all_pages()?;
+            let mut inserts = inserts!(range, i32);
+            for (k, v) in &inserts {
+                btree.insert(k, v)?;
+            }
 
-//             for (k, v) in &inserts {
-//                 let have = btree.get(*k)?;
-//                 let want = Some(Slot(*k, Either::Value(*v)));
-//                 assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-//             }
+            pc2.flush_all_pages()?;
 
-//             inserts.sort();
+            for (k, v) in &inserts {
+                let have = btree.get(k)?;
+                let want = Some(Slot(k.clone(), Either::Value(*v)));
+                assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
+            }
 
-//             let want = inserts
-//                 .into_iter()
-//                 .filter(|s| s.0 >= from && s.0 <= to)
-//                 .collect::<Vec<(i32, i32)>>();
+            inserts.sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
 
-//             let have = btree.range(&from, &to)?;
-//             assert!(
-//                 want == have,
-//                 "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
-//                 name,
-//                 want,
-//                 have,
-//                 (from, to)
-//             );
-//         }
+            let want = inserts
+                .into_iter()
+                .filter(|(k, _)| {
+                    Comparand(&schema, k) >= Comparand(&schema, &from)
+                        && Comparand(&schema, k) <= Comparand(&schema, &to)
+                })
+                .collect::<Vec<(Tuple, i32)>>();
 
-//         Ok(())
-//     }
+            let have = btree.range(&from, &to)?;
+            assert!(
+                want == have,
+                "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
+                name,
+                want,
+                have,
+                (from, to)
+            );
+        }
 
-//     #[test]
-//     fn test_btree_tuple() -> crate::Result<()> {
-//         use crate::table::tuple::{RId, Tuple};
+        Ok(())
+    }
 
-//         const MAX: usize = 8;
-//         const MEMORY: usize = PAGE_SIZE * 1;
-//         const K: usize = 2;
+    // #[test]
+    // fn test_btree_tuple() -> crate::Result<()> {
+    //     use crate::table::tuple::{RId, Tuple};
 
-//         let disk = Memory::new::<MEMORY>();
-//         let lru = LRU::new(K);
-//         let pc = PageCache::new(disk, lru, 0);
+    //     const MAX: usize = 8;
+    //     const MEMORY: usize = PAGE_SIZE * 1;
+    //     const K: usize = 2;
 
-//         let mut btree: BTree<Tuple, RId, _> = BTree::new(pc.clone(), MAX as u32);
+    //     let disk = Memory::new::<MEMORY>();
+    //     let lru = LRU::new(K);
+    //     let pc = PageCache::new(disk, lru, 0);
 
-//         Ok(())
-//     }
-// }
+    //     let mut btree: BTree<Tuple, RId, _> = BTree::new(pc.clone(), MAX as u32);
+
+    //     Ok(())
+    // }
+}
