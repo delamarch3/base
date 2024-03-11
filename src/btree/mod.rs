@@ -326,10 +326,7 @@ where
 
         match node.find_child(&key) {
             Some(ptr) => self._get(key, ptr),
-            None if node.t == NodeType::Leaf => {
-                let slot = Slot(key.clone(), Either::Pointer(-1));
-                Ok(node.get(&slot).map(|s| s.clone()))
-            }
+            None if node.t == NodeType::Leaf => Ok(node.get(&key).map(|s| s.clone())),
             None => Ok(None),
         }
     }
@@ -350,8 +347,7 @@ where
         match node.find_child(&key) {
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
-                let slot = Slot(key.clone(), Either::Pointer(-1));
-                let rem = node.remove(&slot);
+                let rem = node.remove(&key);
                 if rem {
                     writep!(w, &PageBuf::from(&node));
                 }

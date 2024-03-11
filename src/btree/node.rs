@@ -329,20 +329,18 @@ where
         self.values.into_iter()
     }
 
-    // TODO: Accept &BytesMut (tuple data) instead to avoid clone
-    pub fn get(&self, slot: &Slot<V>) -> Option<&Slot<V>> {
+    pub fn get(&self, key: &Tuple) -> Option<&Slot<V>> {
         self.values
             .iter()
-            .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, &slot.0))
+            .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, &key))
     }
 
-    // TODO: Accept &BytesMut (tuple data) instead to avoid clone
-    pub fn remove(&mut self, slot: &Slot<V>) -> bool {
+    pub fn remove(&mut self, key: &Tuple) -> bool {
         if let Some(i) = self
             .values
             .iter()
             .enumerate()
-            .find(|(_, Slot(k, _))| Comparand(self.schema, k) == Comparand(self.schema, &slot.0))
+            .find(|(_, Slot(k, _))| Comparand(self.schema, k) == Comparand(self.schema, &key))
             .map(|(i, _)| i)
         {
             self.values.remove(i);
@@ -655,10 +653,10 @@ mod test {
 
         // Get
         let mut have = Vec::new();
-        for slot in &want {
-            match node.get(&slot) {
+        for Slot(k, _) in &want {
+            match node.get(&k) {
                 Some(s) => have.push(s.clone()),
-                None => panic!("expected to find {slot:?}"),
+                None => panic!("expected to find {k:?}"),
             }
         }
         assert_eq!(want, have);
@@ -666,21 +664,21 @@ mod test {
         // Delete
         let (first_half, second_half) = want.split_at(want.len() / 2);
         for Slot(k, _) in first_half {
-            assert!(node.remove(&Slot(k.clone(), Either::Pointer(-1))));
+            assert!(node.remove(&k));
         }
         assert_eq!(node.values.len(), second_half.len());
 
-        for slot in first_half {
-            match node.get(&slot) {
-                Some(_) => panic!("unexpected deleted slot: {slot:?}"),
+        for Slot(k, _) in first_half {
+            match node.get(&k) {
+                Some(_) => panic!("unexpected deleted slot: {k:?}"),
                 None => {}
             }
         }
 
-        for slot in second_half {
-            match node.get(&slot) {
+        for Slot(k, _) in second_half {
+            match node.get(&k) {
                 Some(_) => {}
-                None => panic!("expected to find {slot:?}"),
+                None => panic!("expected to find {k:?}"),
             }
         }
 
