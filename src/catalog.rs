@@ -2,7 +2,6 @@
 
 use std::{
     collections::HashMap,
-    mem::size_of,
     sync::atomic::{AtomicU32, Ordering::Relaxed},
 };
 
@@ -15,79 +14,6 @@ use crate::{
         tuple::{RId, Tuple},
     },
 };
-
-// TODO: Move to tuple?
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum Value {
-    TinyInt(i8),
-    Bool(bool),
-    Int(i32),
-    BigInt(i64),
-    Varchar(String),
-}
-
-impl Value {
-    pub fn from(column: &Column, data: &[u8]) -> Value {
-        let data = match column.ty {
-            Type::Varchar => {
-                // First two bytes is the offset
-                let offset =
-                    u16::from_be_bytes(data[column.offset..column.offset + 2].try_into().unwrap())
-                        as usize;
-
-                // Second two bytes is the size
-                let size = u16::from_be_bytes(
-                    data[column.offset + 2..column.offset + 4]
-                        .try_into()
-                        .unwrap(),
-                ) as usize;
-
-                assert!(offset + size <= data.len());
-
-                &data[offset..offset + size]
-            }
-            _ => {
-                assert!(column.offset + column.size() <= data.len());
-                &data[column.offset..column.offset + column.size()]
-            }
-        };
-
-        match column.ty {
-            Type::TinyInt => {
-                assert_eq!(data.len(), size_of::<i8>());
-                Value::TinyInt(i8::from_be_bytes(data.try_into().unwrap()))
-            }
-            Type::Bool => {
-                assert_eq!(data.len(), size_of::<bool>());
-                Value::Bool(u8::from_be_bytes(data.try_into().unwrap()) > 0)
-            }
-            Type::Int => {
-                assert_eq!(data.len(), size_of::<i32>());
-                Value::Int(i32::from_be_bytes(data.try_into().unwrap()))
-            }
-            Type::BigInt => {
-                assert_eq!(data.len(), size_of::<i64>());
-                Value::BigInt(i64::from_be_bytes(data.try_into().unwrap()))
-            }
-            Type::Varchar => {
-                let str = std::str::from_utf8(data).expect("todo");
-                Value::Varchar(str.into())
-            }
-        }
-    }
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::TinyInt(v) => write!(f, "{}", v),
-            Value::Bool(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::BigInt(v) => write!(f, "{}", v),
-            Value::Varchar(v) => write!(f, "{}", v),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum Type {
