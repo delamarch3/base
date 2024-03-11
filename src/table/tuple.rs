@@ -1,16 +1,89 @@
 use std::{
     cmp::Ordering::{self, *},
+    mem::size_of,
     ops::Range,
 };
 
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 
 use crate::{
     btree::slot::Increment,
-    catalog::{Column, Schema, Value},
+    catalog::{Column, Schema, Type},
     page::PageId,
     storable::Storable,
 };
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub enum Value {
+    TinyInt(i8),
+    Bool(bool),
+    Int(i32),
+    BigInt(i64),
+    Varchar(String),
+}
+
+impl Value {
+    pub fn from(column: &Column, data: &[u8]) -> Value {
+        let data = match column.ty {
+            Type::Varchar => {
+                // First two bytes is the offset
+                let offset =
+                    u16::from_be_bytes(data[column.offset..column.offset + 2].try_into().unwrap())
+                        as usize;
+
+                // Second two bytes is the size
+                let size = u16::from_be_bytes(
+                    data[column.offset + 2..column.offset + 4]
+                        .try_into()
+                        .unwrap(),
+                ) as usize;
+
+                assert!(offset + size <= data.len());
+
+                &data[offset..offset + size]
+            }
+            _ => {
+                assert!(column.offset + column.size() <= data.len());
+                &data[column.offset..column.offset + column.size()]
+            }
+        };
+
+        match column.ty {
+            Type::TinyInt => {
+                assert_eq!(data.len(), size_of::<i8>());
+                Value::TinyInt(i8::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::Bool => {
+                assert_eq!(data.len(), size_of::<bool>());
+                Value::Bool(u8::from_be_bytes(data.try_into().unwrap()) > 0)
+            }
+            Type::Int => {
+                assert_eq!(data.len(), size_of::<i32>());
+                Value::Int(i32::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::BigInt => {
+                assert_eq!(data.len(), size_of::<i64>());
+                Value::BigInt(i64::from_be_bytes(data.try_into().unwrap()))
+            }
+            Type::Varchar => {
+                let str = std::str::from_utf8(data).expect("todo");
+                Value::Varchar(str.into())
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::TinyInt(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::BigInt(v) => write!(f, "{}", v),
+            Value::Varchar(v) => write!(f, "{}", v),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Copy, Clone, PartialOrd, Eq, Ord)]
 pub struct RId {
@@ -162,86 +235,86 @@ impl<'a, 'b> Ord for Comparand<'a, 'b> {
     }
 }
 
+struct Variable {
+    data: BytesMut,
+    offset_offset: usize,
+}
+
+#[derive(Default)]
+pub struct TupleBuilder {
+    data: BytesMut,
+    variable: Vec<Variable>,
+}
+
+impl TupleBuilder {
+    pub fn new() -> Self {
+        Self {
+            data: BytesMut::new(),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_capacity(size: usize) -> Self {
+        Self {
+            data: BytesMut::with_capacity(size),
+            ..Default::default()
+        }
+    }
+
+    pub fn add(mut self, v: &Value) -> Self {
+        match v {
+            Value::TinyInt(v) => self.data.put(&i8::to_be_bytes(*v)[..]),
+            Value::Bool(v) => self.data.put(&u8::to_be_bytes(if *v { 1 } else { 0 })[..]),
+            Value::Int(v) => self.data.put(&i32::to_be_bytes(*v)[..]),
+            Value::BigInt(v) => self.data.put(&i64::to_be_bytes(*v)[..]),
+            Value::Varchar(v) => {
+                let offset = self.data.len();
+
+                // First two bytes is the offset, which we won't know until the build()
+                // Second two bytes is the length
+                self.data.resize(offset + 4, 0);
+                self.data[offset + 2..offset + 4]
+                    .copy_from_slice(&u16::to_be_bytes(v.len() as u16));
+
+                self.variable.push(Variable {
+                    data: BytesMut::from(&v[..]),
+                    offset_offset: offset,
+                });
+            }
+        };
+
+        self
+    }
+
+    pub fn build(mut self) -> BytesMut {
+        for Variable {
+            data,
+            offset_offset,
+        } in self.variable
+        {
+            let offset = self.data.len();
+
+            // Update offset
+            self.data[offset_offset..offset_offset + 2]
+                .copy_from_slice(&u16::to_be_bytes(offset as u16));
+
+            // Write variable length data to end of tuple
+            self.data.put(data);
+        }
+
+        self.data
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use bytes::{BufMut, BytesMut};
+    use bytes::BytesMut;
     use std::cmp::Ordering::{self, *};
 
     use crate::{
-        catalog::{Column, Schema, Type, Value},
-        table::tuple::{Comparand, RId, Tuple},
+        catalog::{Column, Schema, Type},
+        table::tuple::{Comparand, RId, Tuple, TupleBuilder, Value},
     };
-
-    struct Variable {
-        data: BytesMut,
-        offset_offset: usize,
-    }
-
-    #[derive(Default)]
-    struct TupleBuilder {
-        data: BytesMut,
-        variable: Vec<Variable>,
-    }
-
-    impl TupleBuilder {
-        pub fn new() -> Self {
-            Self {
-                data: BytesMut::new(),
-                ..Default::default()
-            }
-        }
-
-        pub fn with_capacity(size: usize) -> Self {
-            Self {
-                data: BytesMut::with_capacity(size),
-                ..Default::default()
-            }
-        }
-
-        pub fn add(mut self, v: &Value) -> Self {
-            match v {
-                Value::TinyInt(v) => self.data.put(&i8::to_be_bytes(*v)[..]),
-                Value::Bool(v) => self.data.put(&u8::to_be_bytes(if *v { 1 } else { 0 })[..]),
-                Value::Int(v) => self.data.put(&i32::to_be_bytes(*v)[..]),
-                Value::BigInt(v) => self.data.put(&i64::to_be_bytes(*v)[..]),
-                Value::Varchar(v) => {
-                    let offset = self.data.len();
-
-                    // First two bytes is the offset, which we won't know until the build()
-                    // Second two bytes is the length
-                    self.data.resize(offset + 4, 0);
-                    self.data[offset + 2..offset + 4]
-                        .copy_from_slice(&u16::to_be_bytes(v.len() as u16));
-
-                    self.variable.push(Variable {
-                        data: BytesMut::from(&v[..]),
-                        offset_offset: offset,
-                    });
-                }
-            };
-
-            self
-        }
-
-        pub fn build(mut self) -> BytesMut {
-            for Variable {
-                data,
-                offset_offset,
-            } in self.variable
-            {
-                let offset = self.data.len();
-
-                // Update offset
-                self.data[offset_offset..offset_offset + 2]
-                    .copy_from_slice(&u16::to_be_bytes(offset as u16));
-
-                // Write variable length data to end of tuple
-                self.data.put(data);
-            }
-
-            self.data
-        }
-    }
 
     #[test]
     fn test_comparator() {
