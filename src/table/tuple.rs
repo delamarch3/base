@@ -85,7 +85,7 @@ impl std::fmt::Display for Value {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, PartialOrd, Eq, Ord)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
 pub struct RId {
     pub page_id: PageId,
     pub slot_id: u32,
@@ -110,7 +110,7 @@ impl Storable for RId {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tuple {
     pub rid: RId,
     pub data: BytesMut,
@@ -126,28 +126,79 @@ impl Increment for Tuple {
     }
 }
 
+// impl PartialEq for Tuple {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.data.eq(&other.data)
+//     }
+// }
+
+// impl Eq for Tuple {}
+
 // TODO
-impl Storable for Tuple {
-    const SIZE: usize = 0;
+// impl Storable for Tuple {
+//     const SIZE: usize = 0;
 
-    type ByteArray = [u8; 0];
+//     type ByteArray = [u8; 0];
 
-    fn into_bytes(self) -> Self::ByteArray {
-        todo!()
-    }
+//     fn into_bytes(self) -> Self::ByteArray {
+//         todo!()
+//     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
-    }
+//     fn from_bytes(bytes: &[u8]) -> Self {
+//         Self {
+//             data: bytes.into(),
+//             ..Default::default()
+//         }
+//     }
 
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        todo!()
-    }
-}
+//     fn write_to(&self, dst: &mut [u8], pos: usize) {
+//         dst[pos..pos + self.data.len()].copy_from_slice(&self.data);
+//     }
+// }
 
 impl Tuple {
+    pub fn from(buf: &[u8], schema: &Schema) -> Tuple {
+        let mut data = BytesMut::new();
+        let mut var = 0;
+
+        // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
+        // This assumes the tuple begins at the zeroth byte
+        for Column {
+            name: _,
+            ty,
+            offset,
+        } in schema.columns()
+        {
+            data.put(&buf[*offset..*offset + ty.size()]);
+            match ty {
+                Type::Varchar => {
+                    // Add to `var` to extend `data` at the end
+                    var += u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
+                        as usize;
+                }
+                _ => {}
+            }
+        }
+
+        // Variable length section
+        data.put(&buf[data.len()..data.len() + var]);
+
+        Self {
+            data,
+            ..Default::default()
+        }
+    }
+
+    pub fn increment(&self, schema: &Schema) {
+        todo!()
+    }
+
     pub fn get_value(&self, column: &Column) -> Value {
         Value::from(&column, &self.data)
+    }
+
+    pub fn size(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -202,23 +253,23 @@ impl From<&Slot> for TupleInfoBuf {
     }
 }
 
-pub struct Comparand<'a, 'b>(&'a Schema, &'b Tuple);
+// pub struct Comparand<'a, 'b, T>(pub &'a Schema, pub &'b T);
+pub struct Comparand<'a, T>(pub &'a Schema, pub T);
 
-impl<'a, 'b> PartialEq for Comparand<'a, 'b> {
+impl<'a, 'b> PartialEq for Comparand<'a, &'b Tuple> {
     fn eq(&self, other: &Self) -> bool {
         self.1.data.eq(&other.1.data)
     }
 }
+impl<'a, 'b> Eq for Comparand<'a, &'b Tuple> {}
 
-impl<'a, 'b> Eq for Comparand<'a, 'b> {}
-
-impl<'a, 'b> PartialOrd for Comparand<'a, 'b> {
+impl<'a, 'b> PartialOrd for Comparand<'a, &'b Tuple> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a, 'b> Ord for Comparand<'a, 'b> {
+impl<'a, 'b> Ord for Comparand<'a, &'b Tuple> {
     fn cmp(&self, other: &Self) -> Ordering {
         for (_, col) in self.0.iter().enumerate() {
             let lhs = self.1.get_value(col);
@@ -232,6 +283,64 @@ impl<'a, 'b> Ord for Comparand<'a, 'b> {
         }
 
         Equal
+    }
+}
+
+// impl<'a, 'b> PartialEq for Comparand<'a, 'b, Tuple> {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.1.data.eq(&other.1.data)
+//     }
+// }
+// impl<'a, 'b> Eq for Comparand<'a, 'b, Tuple> {}
+
+// impl<'a, 'b> PartialOrd for Comparand<'a, 'b, Tuple> {
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
+
+// impl<'a, 'b> Ord for Comparand<'a, 'b, Tuple> {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         for (_, col) in self.0.iter().enumerate() {
+//             let lhs = self.1.get_value(col);
+//             let rhs = other.1.get_value(col);
+
+//             match lhs.cmp(&rhs) {
+//                 Less => return Less,
+//                 Greater => return Greater,
+//                 _ => {}
+//             }
+//         }
+
+//         Equal
+//     }
+// }
+
+impl<'a> PartialEq for Comparand<'a, i32> {
+    fn eq(&self, other: &Self) -> bool {
+        self.1.eq(&other.1)
+    }
+}
+impl<'a> Eq for Comparand<'a, i32> {}
+
+impl<'a> PartialOrd for Comparand<'a, i32> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for Comparand<'a, i32> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+}
+
+impl Into<Tuple> for i32 {
+    fn into(self) -> Tuple {
+        Tuple {
+            data: TupleBuilder::new().add(&Value::Int(self)).build(),
+            ..Default::default()
+        }
     }
 }
 

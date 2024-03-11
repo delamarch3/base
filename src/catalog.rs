@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    btree::BTree,
+    // btree::BTree,
     disk::{Disk, FileSystem},
     page_cache::SharedPageCache,
     table::{
@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Type {
     TinyInt,
     Bool,
@@ -40,7 +40,7 @@ pub enum Length {
     Variable,
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Column {
     pub name: String,
     pub ty: Type,
@@ -53,6 +53,7 @@ impl Column {
     }
 }
 
+#[derive(PartialEq, Clone, Debug)]
 pub struct Schema {
     columns: Vec<Column>,
     size: usize,
@@ -64,6 +65,18 @@ impl Schema {
             size: columns.iter().fold(0, |acc, c| acc + c.size()),
             columns,
         }
+    }
+
+    // TODO: might not be needed
+    pub fn empty() -> Self {
+        Self {
+            size: 0,
+            columns: Vec::new(),
+        }
+    }
+
+    pub fn columns(&self) -> &Vec<Column> {
+        &self.columns
     }
 }
 
@@ -187,15 +200,15 @@ impl<D: Disk> Catalog<D> {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
                 // TODO: Use key schema
-                let mut btree = BTree::<RId, _>::new(self.pc.clone(), 16);
-                let info = self.tables.get(&self.table_names[table_name])?;
-                for result in info.table.iter().expect("todo") {
-                    let (_, tuple) = result.expect("todo");
-                    btree.insert(&tuple, &tuple.rid).expect("todo");
-                }
+                // let mut btree = BTree::<RId, _>::new(self.pc.clone(), 16);
+                // let info = self.tables.get(&self.table_names[table_name])?;
+                // for result in info.table.iter().expect("todo") {
+                //     let (_, tuple) = result.expect("todo");
+                //     btree.insert(&tuple, &tuple.rid).expect("todo");
+                // }
 
-                // TODO: Save this somewhere
-                let _root = btree.root();
+                // // TODO: Save this somewhere
+                // let _root = btree.root();
             }
         };
 

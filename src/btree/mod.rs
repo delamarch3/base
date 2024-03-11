@@ -8,11 +8,12 @@ use crate::{
         node::{Node, NodeType},
         slot::{Either, Slot},
     },
+    catalog::Schema,
     disk::{Disk, FileSystem},
     page::{PageBuf, PageId, PageReadGuard, PageWriteGuard},
     page_cache::SharedPageCache,
     storable::Storable,
-    table::tuple::Tuple,
+    table::tuple::{Comparand, Tuple},
     writep,
 };
 
@@ -22,6 +23,7 @@ pub struct BTree<V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
     max: u32,
+    schema: Schema,
     _data: PhantomData<V>,
 }
 
@@ -30,11 +32,12 @@ where
     V: Storable + Clone + Eq,
     D: Disk,
 {
-    pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
+    pub fn new(pc: SharedPageCache<D>, schema: Schema, max: u32) -> Self {
         Self {
             root: -1,
             pc,
             max,
+            schema,
             _data: PhantomData,
         }
     }
@@ -50,7 +53,7 @@ where
         let rpage = match self.root {
             -1 => {
                 pin = self.pc.new_page()?;
-                let node: Node<Tuple, V> = Node::new(pin.id, self.max, NodeType::Leaf, true);
+                let node: Node<V> = Node::new(pin.id, self.max, NodeType::Leaf, true, &self.schema);
                 let mut page = pin.write();
                 writep!(page, &PageBuf::from(&node));
                 page
@@ -64,7 +67,8 @@ where
 
         if let Some((s, os)) = self._insert(None, rpage, key, value)? {
             let new_root_page = self.pc.new_page()?;
-            let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
+            let mut new_root =
+                Node::new(new_root_page.id, self.max, NodeType::Internal, true, &self.schema);
             self.root = new_root.id;
 
             new_root.insert(s);
@@ -84,8 +88,8 @@ where
         mut page: PageWriteGuard<'a>,
         key: &Tuple,
         value: &V,
-    ) -> crate::Result<Option<(Slot<Tuple, V>, Slot<Tuple, V>)>> {
-        let mut node: Node<Tuple, V> = Node::from(&page.data);
+    ) -> crate::Result<Option<(Slot<V>, Slot<V>)>> {
+        let mut node: Node<V> = Node::from(&page.data, &self.schema);
 
         let mut split = None;
         if node.almost_full() {
@@ -93,7 +97,7 @@ where
             let mut npage = new_page.write();
             let mut nnode = node.split(new_page.id);
 
-            if key >= node.last_key().unwrap() {
+            if Comparand(&self.schema, key) >= Comparand(&self.schema, node.last_key().unwrap()) {
                 // Write the node
                 writep!(page, &PageBuf::from(&node));
 
@@ -207,7 +211,7 @@ where
         page: PageReadGuard<'a>,
         acc: &'a mut Vec<(Tuple, V)>,
     ) -> crate::Result<()> {
-        let node: Node<Tuple, V> = Node::from(&page.data);
+        let node: Node<V> = Node::from(&page.data, &self.schema);
 
         // Find first leaf
         if node.t != NodeType::Leaf {
@@ -264,13 +268,13 @@ where
         from: &Tuple,
         to: &Tuple,
     ) -> crate::Result<()> {
-        let node = Node::from(&page.data);
+        let node = Node::from(&page.data, &self.schema);
         let next = node.next;
         let len = acc.len();
         acc.extend(
             node.into_iter()
-                .skip_while(|Slot(k, _)| k < from)
-                .take_while(|Slot(k, _)| k <= to)
+                .skip_while(|Slot(k, _)| Comparand(&self.schema, k) < Comparand(&self.schema, from))
+                .take_while(|Slot(k, _)| Comparand(&self.schema, k) <= Comparand(&self.schema, to))
                 .map(|Slot(k, v)| {
                     let v = match v {
                         Either::Value(v) => v,
@@ -300,7 +304,7 @@ where
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<Tuple, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self.get_ptr(key, ptr),
@@ -309,7 +313,7 @@ where
         }
     }
 
-    pub fn get(&self, key: Tuple) -> crate::Result<Option<Slot<Tuple, V>>> {
+    pub fn get(&self, key: Tuple) -> crate::Result<Option<Slot<V>>> {
         if self.root == -1 {
             return Ok(None);
         }
@@ -317,10 +321,10 @@ where
         self._get(key, self.root)
     }
 
-    fn _get(&self, key: Tuple, ptr: PageId) -> crate::Result<Option<Slot<Tuple, V>>> {
+    fn _get(&self, key: Tuple, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node = Node::from(&r.data);
+        let node = Node::from(&r.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self._get(key, ptr),
@@ -343,7 +347,7 @@ where
     fn _delete(&self, key: Tuple, ptr: PageId) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
-        let mut node: Node<Tuple, V> = Node::from(&w.data);
+        let mut node: Node<V> = Node::from(&w.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self._delete(key, ptr),
@@ -373,7 +377,7 @@ where
     fn _print(&self, ptr: PageId) {
         let page = self.pc.fetch_page(ptr).unwrap();
         let r = page.read();
-        let node: Node<Tuple, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
 
         dbg!(&node);
 
@@ -391,7 +395,7 @@ where
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<Tuple, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
         if node.t == NodeType::Leaf {
             return Ok(ptr);
         }
@@ -416,7 +420,7 @@ where
         while cur != -1 {
             let pin = self.pc.fetch_page(cur)?;
             let page = pin.read();
-            let node: Node<Tuple, V> = Node::from(&page.data);
+            let node: Node<V> = Node::from(&page.data, &self.schema);
 
             ret += 1;
             cur = node.next;
