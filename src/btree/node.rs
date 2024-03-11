@@ -11,7 +11,7 @@ use crate::{
     table::tuple::{Comparand, Tuple},
 };
 
-use super::slot::{Increment, Slot};
+use super::slot::Slot;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeType {
@@ -275,8 +275,8 @@ where
 
     /// Using last values for separators
     fn get_separator(self) -> Slot<V> {
-        let ls = self.values.last().expect("there should be a last slot");
-        let k = if self.t == NodeType::Leaf { ls.0.next() } else { ls.0.clone() };
+        let Slot(k, _) = self.values.last().expect("there should be a last slot");
+        let k = if self.t == NodeType::Leaf { k.next(self.schema) } else { k.clone() };
         Slot(k, Either::Pointer(self.id))
     }
 
@@ -561,146 +561,168 @@ mod test {
         assert!(slots == expected);
     }
 
-    //     #[test]
-    //     fn test_get_separators_internal() {
-    //         let node: Node<u16, i32> = Node {
-    //             t: NodeType::Internal,
-    //             is_root: false,
-    //             len: 5,
-    //             max: 20,
-    //             next: 1,
-    //             id: 0,
-    //             values: vec![
-    //                 Slot(10, Either::Pointer(1)),
-    //                 Slot(20, Either::Pointer(2)),
-    //                 Slot(30, Either::Pointer(3)),
-    //                 Slot(40, Either::Pointer(4)),
-    //                 Slot(50, Either::Pointer(5)),
-    //             ],
-    //         };
+    #[test]
+    fn test_get_separators_internal() {
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
 
-    //         let other = Node {
-    //             t: NodeType::Internal,
-    //             is_root: false,
-    //             len: 6,
-    //             max: 20,
-    //             next: -1,
-    //             id: 1,
-    //             values: vec![
-    //                 Slot(60, Either::Pointer(6)),
-    //                 Slot(70, Either::Pointer(7)),
-    //                 Slot(80, Either::Pointer(8)),
-    //                 Slot(90, Either::Pointer(9)),
-    //                 Slot(100, Either::Pointer(10)),
-    //                 Slot(110, Either::Pointer(11)),
-    //             ],
-    //         };
+        let node: Node<i32> = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: vec![
+                Slot(10.into(), Either::Pointer(1)),
+                Slot(20.into(), Either::Pointer(2)),
+                Slot(30.into(), Either::Pointer(3)),
+                Slot(40.into(), Either::Pointer(4)),
+                Slot(50.into(), Either::Pointer(5)),
+            ],
+            schema: &schema,
+        };
 
-    //         let Some(slots) = node.get_separators(Some(other)) else {
-    //             panic!()
-    //         };
-    //         let expected = (Slot(50, Either::Pointer(0)), Slot(110, Either::Pointer(1)));
-    //         assert!(slots == expected);
-    //     }
+        let other = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 6,
+            max: 20,
+            next: -1,
+            id: 1,
+            values: vec![
+                Slot(60.into(), Either::Pointer(6)),
+                Slot(70.into(), Either::Pointer(7)),
+                Slot(80.into(), Either::Pointer(8)),
+                Slot(90.into(), Either::Pointer(9)),
+                Slot(100.into(), Either::Pointer(10)),
+                Slot(110.into(), Either::Pointer(11)),
+            ],
+            schema: &schema,
+        };
 
-    //     #[test]
-    //     fn test_find_child() {
-    //         let node: Node<i32, i32> = Node {
-    //             t: NodeType::Internal,
-    //             is_root: false,
-    //             len: 5,
-    //             max: 20,
-    //             next: 1,
-    //             id: 0,
-    //             values: vec![
-    //                 Slot(10, Either::Pointer(1)),
-    //                 Slot(20, Either::Pointer(2)),
-    //                 Slot(30, Either::Pointer(3)),
-    //                 Slot(40, Either::Pointer(4)),
-    //                 Slot(50, Either::Pointer(5)),
-    //             ],
-    //         };
+        let Some(slots) = node.get_separators(Some(other)) else {
+            panic!("expected separators")
+        };
+        let expected = (Slot(50.into(), Either::Pointer(0)), Slot(110.into(), Either::Pointer(1)));
+        assert!(slots == expected);
+    }
 
-    //         let a = node.find_child(&25);
-    //         let b = node.find_child(&30);
-    //         let c = node.find_child(&60);
+    #[test]
+    fn test_find_child() {
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
 
-    //         assert!(a == Some(3));
-    //         assert!(b == Some(4));
-    //         assert!(c == Some(1));
-    //     }
+        let node: Node<i32> = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 5,
+            max: 20,
+            next: 1,
+            id: 0,
+            values: vec![
+                Slot(10.into(), Either::Pointer(1)),
+                Slot(20.into(), Either::Pointer(2)),
+                Slot(30.into(), Either::Pointer(3)),
+                Slot(40.into(), Either::Pointer(4)),
+                Slot(50.into(), Either::Pointer(5)),
+            ],
+            schema: &schema,
+        };
 
-    //     macro_rules! inserts {
-    //         ($range:expr, $t:ty) => {{
-    //             use rand::{seq::SliceRandom, thread_rng};
-    //             let mut ret = Vec::with_capacity($range.len());
+        let a = node.find_child(&25.into());
+        let b = node.find_child(&30.into());
+        let c = node.find_child(&60.into());
 
-    //             let mut keys = $range.collect::<Vec<$t>>();
-    //             keys.shuffle(&mut thread_rng());
+        assert!(a == Some(3));
+        assert!(b == Some(4));
+        assert!(c == Some(1));
+    }
 
-    //             for key in keys {
-    //                 ret.push(Slot(key, Either::Pointer(0)));
-    //             }
+    macro_rules! inserts {
+        ($range:expr, $t:ty) => {{
+            use rand::{seq::SliceRandom, thread_rng};
+            let mut ret = Vec::with_capacity($range.len());
 
-    //             ret
-    //         }};
-    //     }
+            let mut keys = $range.collect::<Vec<$t>>();
+            keys.shuffle(&mut thread_rng());
 
-    //     #[test]
-    //     fn test_values() {
-    //         let mut node: Node<i32, i32> = Node {
-    //             t: NodeType::Internal,
-    //             is_root: false,
-    //             len: 0,
-    //             max: 0,
-    //             next: 1,
-    //             id: 0,
-    //             values: vec![],
-    //         };
+            for key in keys {
+                ret.push(Slot(key.into(), Either::Pointer(0)));
+            }
 
-    //         // Insert
-    //         let range = -50..50;
-    //         let mut want = inserts!(range, i32);
+            ret
+        }};
+    }
 
-    //         for slot in want.iter().rev() {
-    //             node.insert(*slot);
-    //         }
+    #[test]
+    fn test_values() {
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
 
-    //         want.sort();
+        let mut node: Node<i32> = Node {
+            t: NodeType::Internal,
+            is_root: false,
+            len: 0,
+            max: 0,
+            next: 1,
+            id: 0,
+            values: vec![],
+            schema: &schema,
+        };
 
-    //         assert_eq!(want, node.values);
+        // Insert
+        let range = -50..50;
+        let mut want = inserts!(range, i32);
 
-    //         // Get
-    //         let mut have = Vec::new();
-    //         for slot in &want {
-    //             match node.get(&slot) {
-    //                 Some(s) => have.push(*s),
-    //                 None => panic!("expected to find {slot:?}"),
-    //             }
-    //         }
-    //         assert_eq!(want, have);
+        for slot in want.iter().rev() {
+            node.insert(slot.clone());
+        }
 
-    //         // Delete
-    //         let (first_half, second_half) = want.split_at(want.len() / 2);
-    //         for Slot(k, _) in first_half {
-    //             assert!(node.remove(&Slot(*k, Either::Pointer(-1))));
-    //         }
-    //         assert_eq!(node.values.len(), second_half.len());
+        want.sort_by(|Slot(k, _), Slot(k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
 
-    //         for slot in first_half {
-    //             match node.get(&slot) {
-    //                 Some(_) => panic!("unexpected deleted slot: {slot:?}"),
-    //                 None => {}
-    //             }
-    //         }
+        assert_eq!(want, node.values);
 
-    //         for slot in second_half {
-    //             match node.get(&slot) {
-    //                 Some(_) => {}
-    //                 None => panic!("expected to find {slot:?}"),
-    //             }
-    //         }
+        // Get
+        let mut have = Vec::new();
+        for slot in &want {
+            match node.get(&slot) {
+                Some(s) => have.push(s.clone()),
+                None => panic!("expected to find {slot:?}"),
+            }
+        }
+        assert_eq!(want, have);
 
-    //         // Replace
-    //     }
+        // Delete
+        let (first_half, second_half) = want.split_at(want.len() / 2);
+        for Slot(k, _) in first_half {
+            assert!(node.remove(&Slot(k.clone(), Either::Pointer(-1))));
+        }
+        assert_eq!(node.values.len(), second_half.len());
+
+        for slot in first_half {
+            match node.get(&slot) {
+                Some(_) => panic!("unexpected deleted slot: {slot:?}"),
+                None => {}
+            }
+        }
+
+        for slot in second_half {
+            match node.get(&slot) {
+                Some(_) => {}
+                None => panic!("expected to find {slot:?}"),
+            }
+        }
+
+        // Replace
+    }
 }

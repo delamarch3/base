@@ -7,7 +7,6 @@ use std::{
 use bytes::{BufMut, BytesMut};
 
 use crate::{
-    btree::slot::Increment,
     catalog::{Column, Schema, Type},
     page::PageId,
     storable::Storable,
@@ -116,15 +115,15 @@ pub struct Tuple {
     pub data: BytesMut,
 }
 
-impl Increment for Tuple {
-    fn increment(&mut self) {
-        todo!()
-    }
+// impl Increment for Tuple {
+//     fn increment(&mut self) {
+//         todo!()
+//     }
 
-    fn next(&self) -> Self {
-        todo!()
-    }
-}
+//     fn next(&self) -> Self {
+//         todo!()
+//     }
+// }
 
 // impl PartialEq for Tuple {
 //     fn eq(&self, other: &Self) -> bool {
@@ -189,8 +188,45 @@ impl Tuple {
         }
     }
 
-    pub fn increment(&self, schema: &Schema) {
-        todo!()
+    pub fn increment(&mut self, schema: &Schema) {
+        *self = self.next(schema);
+    }
+
+    pub fn next(&self, schema: &Schema) -> Self {
+        assert!(schema.len() > 0);
+
+        // Increment the first column
+        let value = self.get_value(&schema.columns()[0]);
+
+        // TODO: handle overflow
+        let value = match value {
+            Value::TinyInt(v) => Value::TinyInt(v + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Int(v) => Value::Int(v + 1),
+            Value::BigInt(v) => Value::BigInt(v + 1),
+            Value::Varchar(mut v) => {
+                if let Some(c) = v.chars().nth(0) {
+                    let next = char::from_u32(c as u32 + 1).expect("handle invalid char");
+                    let len = char::len_utf8(next);
+                    let buf = unsafe { v.as_bytes_mut() };
+                    buf[0..len].copy_from_slice(&u32::to_be_bytes(next as u32)[0..len]);
+
+                    Value::Varchar(v)
+                } else {
+                    Value::Varchar("\0".into())
+                }
+            }
+        };
+
+        let mut builder = TupleBuilder::new().add(&value);
+        for column in &schema.columns()[1..] {
+            builder = builder.add(&self.get_value(column));
+        }
+
+        Self {
+            data: builder.build(),
+            ..Default::default()
+        }
     }
 
     pub fn get_value(&self, column: &Column) -> Value {
@@ -286,36 +322,6 @@ impl<'a, 'b> Ord for Comparand<'a, &'b Tuple> {
     }
 }
 
-// impl<'a, 'b> PartialEq for Comparand<'a, 'b, Tuple> {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.1.data.eq(&other.1.data)
-//     }
-// }
-// impl<'a, 'b> Eq for Comparand<'a, 'b, Tuple> {}
-
-// impl<'a, 'b> PartialOrd for Comparand<'a, 'b, Tuple> {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
-
-// impl<'a, 'b> Ord for Comparand<'a, 'b, Tuple> {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         for (_, col) in self.0.iter().enumerate() {
-//             let lhs = self.1.get_value(col);
-//             let rhs = other.1.get_value(col);
-
-//             match lhs.cmp(&rhs) {
-//                 Less => return Less,
-//                 Greater => return Greater,
-//                 _ => {}
-//             }
-//         }
-
-//         Equal
-//     }
-// }
-
 impl<'a> PartialEq for Comparand<'a, i32> {
     fn eq(&self, other: &Self) -> bool {
         self.1.eq(&other.1)
@@ -331,7 +337,7 @@ impl<'a> PartialOrd for Comparand<'a, i32> {
 
 impl<'a> Ord for Comparand<'a, i32> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.cmp(other)
+        self.1.cmp(&other.1)
     }
 }
 

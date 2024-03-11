@@ -17,8 +17,6 @@ use crate::{
     writep,
 };
 
-use self::slot::Increment;
-
 pub struct BTree<V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
@@ -112,7 +110,7 @@ where
                         None if nnode.t == NodeType::Internal => {
                             // Bump the last node if no pointer found
                             let Slot(_, v) = nnode.pop_last().unwrap();
-                            nnode.insert(Slot(key.next(), v));
+                            nnode.insert(Slot(key.next(&self.schema), v));
 
                             match nnode.find_child(&key) {
                                 Some(ptr) => ptr,
@@ -159,7 +157,7 @@ where
                 None if node.t == NodeType::Internal => {
                     // Bump the last node if no pointer found
                     let Slot(_, v) = node.pop_last().unwrap();
-                    node.insert(Slot(key.next(), v));
+                    node.insert(Slot(key.next(&self.schema), v));
 
                     match node.find_child(&key) {
                         Some(ptr) => ptr,
