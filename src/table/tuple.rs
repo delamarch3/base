@@ -115,46 +115,6 @@ pub struct Tuple {
     pub data: BytesMut,
 }
 
-// impl Increment for Tuple {
-//     fn increment(&mut self) {
-//         todo!()
-//     }
-
-//     fn next(&self) -> Self {
-//         todo!()
-//     }
-// }
-
-// impl PartialEq for Tuple {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.data.eq(&other.data)
-//     }
-// }
-
-// impl Eq for Tuple {}
-
-// TODO
-// impl Storable for Tuple {
-//     const SIZE: usize = 0;
-
-//     type ByteArray = [u8; 0];
-
-//     fn into_bytes(self) -> Self::ByteArray {
-//         todo!()
-//     }
-
-//     fn from_bytes(bytes: &[u8]) -> Self {
-//         Self {
-//             data: bytes.into(),
-//             ..Default::default()
-//         }
-//     }
-
-//     fn write_to(&self, dst: &mut [u8], pos: usize) {
-//         dst[pos..pos + self.data.len()].copy_from_slice(&self.data);
-//     }
-// }
-
 impl Tuple {
     pub fn from(buf: &[u8], schema: &Schema) -> Tuple {
         let mut data = BytesMut::new();

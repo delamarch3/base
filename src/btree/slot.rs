@@ -79,72 +79,10 @@ where
     }
 }
 
-// pub trait Increment {
-//     fn increment(&mut self);
-//     fn next(&self) -> Self;
-// }
-
-// macro_rules! impl_increment {
-//     ($( $t:ty ),*) => {
-//         $(
-//         impl Increment for $t {
-//             fn increment(&mut self) {
-//                 *self += 1;
-//             }
-
-//             fn next(&self) -> Self {
-//                 self + 1
-//             }
-//         }
-//         )*
-//     };
-// }
-
-// impl_increment!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
-
 // Size = 1 + size_of::<K>() + size_of::<V>()
 // | Key | Flag (1) | Value
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Slot<V>(pub Tuple, pub Either<V>);
-
-// impl<V> Slot<V> {
-//     pub fn increment(&mut self) {
-//         self.0.increment()
-//     }
-// }
-
-// impl<V> PartialOrd for Slot<V>
-// where
-//     V: PartialEq,
-// {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         Some(self.0.cmp(&other.0))
-//     }
-// }
-
-// impl<V> Ord for Slot<V>
-// where
-//     V: Eq,
-// {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         self.0.cmp(&other.0)
-//     }
-// }
-
-// impl<V> From<&[u8]> for Slot<V>
-// where
-//     V: Storable,
-// {
-//     fn from(value: &[u8]) -> Self {
-//         assert!(value.len() == Slot::<V>::SIZE);
-
-//         let ks = size_of::<K>();
-//         let key = K::from_bytes(&value[0..ks]);
-//         let value = Either::from(&value[ks..]);
-
-//         Self(key, value)
-//     }
-// }
 
 impl<V> From<&Slot<V>> for BytesMut
 where

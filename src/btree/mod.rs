@@ -662,21 +662,4 @@ mod test {
 
         Ok(())
     }
-
-    // #[test]
-    // fn test_btree_tuple() -> crate::Result<()> {
-    //     use crate::table::tuple::{RId, Tuple};
-
-    //     const MAX: usize = 8;
-    //     const MEMORY: usize = PAGE_SIZE * 1;
-    //     const K: usize = 2;
-
-    //     let disk = Memory::new::<MEMORY>();
-    //     let lru = LRU::new(K);
-    //     let pc = PageCache::new(disk, lru, 0);
-
-    //     let mut btree: BTree<Tuple, RId, _> = BTree::new(pc.clone(), MAX as u32);
-
-    //     Ok(())
-    // }
 }

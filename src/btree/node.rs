@@ -112,45 +112,6 @@ where
     }
 }
 
-// impl<'a, V> From<&PageBuf> for Node<'a, V>
-// where
-//     V: Storable + Eq,
-// {
-//     fn from(buf: &PageBuf) -> Self {
-//         let t = NodeType::from(buf[NODE_TYPE]);
-//         let is_root = buf[NODE_IS_ROOT] > 0;
-//         let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
-//         let max = u32::from_be_bytes(buf[NODE_MAX].try_into().unwrap());
-//         let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
-//         let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
-
-//         let mut values = Vec::new();
-//         let size = Slot::<V>::SIZE;
-
-//         let left = &buf[NODE_VALUES_START..];
-//         let mut from = 0;
-//         let mut rem = len;
-//         while rem > 0 {
-//             let bytes = &left[from..from + size];
-//             let slot = Slot::from(bytes);
-//             values.push(slot);
-//             from += size;
-//             rem -= 1;
-//         }
-
-//         Self {
-//             t,
-//             is_root,
-//             len,
-//             max,
-//             next,
-//             id,
-//             values,
-//             schema: None,
-//         }
-//     }
-// }
-
 impl<'a, V> From<&Node<'a, V>> for PageBuf
 where
     V: Storable,
