@@ -116,6 +116,7 @@ pub struct Tuple {
 }
 
 impl Tuple {
+    // TODO: unit tests
     pub fn from(buf: &[u8], schema: &Schema) -> Tuple {
         let mut data = BytesMut::new();
         let mut var = 0;
@@ -148,6 +149,7 @@ impl Tuple {
         }
     }
 
+    // TODO: unit tests
     pub fn increment(&mut self, schema: &Schema) {
         *self = self.next(schema);
     }

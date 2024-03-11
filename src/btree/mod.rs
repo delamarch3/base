@@ -17,20 +17,20 @@ use crate::{
     writep,
 };
 
-pub struct BTree<V, D: Disk = FileSystem> {
+pub struct BTree<'s, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
     max: u32,
-    schema: Schema,
+    schema: &'s Schema,
     _data: PhantomData<V>,
 }
 
-impl<V, D> BTree<V, D>
+impl<'s, V, D> BTree<'s, V, D>
 where
     V: Storable + Clone + Eq,
     D: Disk,
 {
-    pub fn new(pc: SharedPageCache<D>, schema: Schema, max: u32) -> Self {
+    pub fn new(pc: SharedPageCache<D>, schema: &'s Schema, max: u32) -> Self {
         Self {
             root: -1,
             pc,
@@ -473,7 +473,7 @@ mod test {
             ty: Type::Int,
             offset: 0,
         }]);
-        let mut btree = BTree::new(pc.clone(), schema, MAX as u32);
+        let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
 
         // Insert and get
         let range = -50..50;
@@ -555,7 +555,7 @@ mod test {
             ty: Type::Int,
             offset: 0,
         }]);
-        let mut btree = BTree::new(pc, schema.clone(), MAX as u32);
+        let mut btree = BTree::new(pc, &schema, MAX as u32);
 
         let range = -50..50;
         let mut want = inserts!(range, i32);
@@ -624,7 +624,7 @@ mod test {
             to,
         } in tcs
         {
-            let mut btree = BTree::new(pc.clone(), schema.clone(), MAX as u32);
+            let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
 
             let mut inserts = inserts!(range, i32);
             for (k, v) in &inserts {

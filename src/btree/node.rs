@@ -48,7 +48,7 @@ const NODE_VALUES_START: usize = 18;
 
 // | NodeType (1) | Root (1) | Len (4) | Max (4) | Next (4) | PageId (4) | Values
 #[derive(Clone, Debug)]
-pub struct Node<'a, V> {
+pub struct Node<'s, V> {
     pub t: NodeType,
     pub is_root: bool,
     len: u32, // TODO: len doesn't need to be in struct
@@ -56,10 +56,10 @@ pub struct Node<'a, V> {
     pub next: PageId,
     pub id: PageId,
     values: Vec<Slot<V>>,
-    schema: &'a Schema,
+    schema: &'s Schema,
 }
 
-impl<'a, V> PartialEq for Node<'a, V>
+impl<'s, V> PartialEq for Node<'s, V>
 where
     V: PartialEq,
 {
@@ -112,7 +112,7 @@ where
     }
 }
 
-impl<'a, V> From<&Node<'a, V>> for PageBuf
+impl<'s, V> From<&Node<'s, V>> for PageBuf
 where
     V: Storable,
 {
@@ -126,8 +126,6 @@ where
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
         ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
 
-        // TODO: size_of::<Tuple>() is not the actual size of the tuple
-        // let size = Slot::<Tuple, V>::SIZE;
         let mut from = NODE_VALUES_START;
         for value in &node.values {
             let size = Either::<V>::SIZE + value.0.size();
@@ -144,7 +142,7 @@ where
     }
 }
 
-impl<'a, V> From<Node<'a, V>> for PageBuf
+impl<'s, V> From<Node<'s, V>> for PageBuf
 where
     V: Copy + Storable,
 {
@@ -153,12 +151,11 @@ where
     }
 }
 
-impl<'a, V> Node<'a, V>
+impl<'s, V> Node<'s, V>
 where
-    // V: Clone + Eq,
     V: Storable,
 {
-    pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool, schema: &'a Schema) -> Self {
+    pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
         Self {
             t,
             is_root,
@@ -171,7 +168,7 @@ where
         }
     }
 
-    pub fn from(buf: &PageBuf, schema: &'a Schema) -> Self {
+    pub fn from(buf: &PageBuf, schema: &'s Schema) -> Self {
         let t = NodeType::from(buf[NODE_TYPE]);
         let is_root = buf[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
@@ -204,7 +201,7 @@ where
     }
 
     /// Split out half of self's values into a new node.
-    pub fn split(&mut self, id: PageId) -> Node<'a, V> {
+    pub fn split(&mut self, id: PageId) -> Node<'s, V> {
         // All values in the greater half end up in `rest`
         let rest = self.values.split_off(self.values.len() / 2);
         self.len = self.values.len() as u32;
@@ -297,6 +294,7 @@ where
         true
     }
 
+    // TODO: unit tests
     pub fn replace(&mut self, mut slot: Slot<V>) -> Option<Slot<V>> {
         let mut i = self.values.len();
         for (j, Slot(k, _)) in self.values.iter().enumerate() {
