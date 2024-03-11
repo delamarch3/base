@@ -295,6 +295,7 @@ where
     }
 
     // TODO: unit tests
+    // TODO: Accept ref to key and value separately - less cloning
     pub fn replace(&mut self, mut slot: Slot<V>) -> Option<Slot<V>> {
         let mut i = self.values.len();
         for (j, Slot(k, _)) in self.values.iter().enumerate() {
@@ -390,7 +391,7 @@ mod test {
             schema: &schema,
         };
 
-        let bytes = PageBuf::from(node.clone());
+        let bytes = PageBuf::from(&node);
 
         let node2: Node<i32> = Node::from(&bytes, &schema);
 
