@@ -7,7 +7,6 @@ use std::{
 use bytes::{BufMut, BytesMut};
 
 use crate::{
-    btree::slot::Increment,
     catalog::{Column, Schema, Type},
     page::PageId,
     storable::Storable,
@@ -85,7 +84,7 @@ impl std::fmt::Display for Value {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, PartialOrd, Eq, Ord)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
 pub struct RId {
     pub page_id: PageId,
     pub slot_id: u32,
@@ -110,44 +109,94 @@ impl Storable for RId {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tuple {
     pub rid: RId,
     pub data: BytesMut,
 }
 
-impl Increment for Tuple {
-    fn increment(&mut self) {
-        todo!()
-    }
-
-    fn next(&self) -> Self {
-        todo!()
-    }
-}
-
-// TODO
-impl Storable for Tuple {
-    const SIZE: usize = 0;
-
-    type ByteArray = [u8; 0];
-
-    fn into_bytes(self) -> Self::ByteArray {
-        todo!()
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        todo!()
-    }
-}
-
 impl Tuple {
+    // TODO: unit tests
+    pub fn from(buf: &[u8], schema: &Schema) -> Tuple {
+        let mut data = BytesMut::new();
+        let mut var = 0;
+
+        // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
+        // This assumes the tuple begins at the zeroth byte
+        for Column {
+            name: _,
+            ty,
+            offset,
+        } in schema.columns()
+        {
+            data.put(&buf[*offset..*offset + ty.size()]);
+            match ty {
+                Type::Varchar => {
+                    // Add to `var` to extend `data` at the end
+                    var += u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
+                        as usize;
+                }
+                _ => {}
+            }
+        }
+
+        // Variable length section
+        data.put(&buf[data.len()..data.len() + var]);
+
+        Self {
+            data,
+            ..Default::default()
+        }
+    }
+
+    // TODO: unit tests
+    pub fn increment(&mut self, schema: &Schema) {
+        *self = self.next(schema);
+    }
+
+    pub fn next(&self, schema: &Schema) -> Self {
+        assert!(schema.len() > 0);
+
+        // Increment the first column
+        let value = self.get_value(&schema.columns()[0]);
+
+        // TODO: handle overflow
+        let value = match value {
+            Value::TinyInt(v) => Value::TinyInt(v + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Int(v) => Value::Int(v + 1),
+            Value::BigInt(v) => Value::BigInt(v + 1),
+            Value::Varchar(mut v) => {
+                if let Some(c) = v.chars().nth(0) {
+                    let next = char::from_u32(c as u32 + 1).expect("handle invalid char");
+                    let len = char::len_utf8(next);
+                    let buf = unsafe { v.as_bytes_mut() };
+                    buf[0..len].copy_from_slice(&u32::to_be_bytes(next as u32)[0..len]);
+
+                    Value::Varchar(v)
+                } else {
+                    Value::Varchar("\0".into())
+                }
+            }
+        };
+
+        let mut builder = TupleBuilder::new().add(&value);
+        for column in &schema.columns()[1..] {
+            builder = builder.add(&self.get_value(column));
+        }
+
+        Self {
+            data: builder.build(),
+            ..Default::default()
+        }
+    }
+
     pub fn get_value(&self, column: &Column) -> Value {
         Value::from(&column, &self.data)
+    }
+
+    pub fn size(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -202,23 +251,23 @@ impl From<&Slot> for TupleInfoBuf {
     }
 }
 
-pub struct Comparand<'a, 'b>(&'a Schema, &'b Tuple);
+// pub struct Comparand<'a, 'b, T>(pub &'a Schema, pub &'b T);
+pub struct Comparand<'a, T>(pub &'a Schema, pub T);
 
-impl<'a, 'b> PartialEq for Comparand<'a, 'b> {
+impl<'a, 'b> PartialEq for Comparand<'a, &'b Tuple> {
     fn eq(&self, other: &Self) -> bool {
         self.1.data.eq(&other.1.data)
     }
 }
+impl<'a, 'b> Eq for Comparand<'a, &'b Tuple> {}
 
-impl<'a, 'b> Eq for Comparand<'a, 'b> {}
-
-impl<'a, 'b> PartialOrd for Comparand<'a, 'b> {
+impl<'a, 'b> PartialOrd for Comparand<'a, &'b Tuple> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a, 'b> Ord for Comparand<'a, 'b> {
+impl<'a, 'b> Ord for Comparand<'a, &'b Tuple> {
     fn cmp(&self, other: &Self) -> Ordering {
         for (_, col) in self.0.iter().enumerate() {
             let lhs = self.1.get_value(col);
@@ -232,6 +281,34 @@ impl<'a, 'b> Ord for Comparand<'a, 'b> {
         }
 
         Equal
+    }
+}
+
+impl<'a> PartialEq for Comparand<'a, i32> {
+    fn eq(&self, other: &Self) -> bool {
+        self.1.eq(&other.1)
+    }
+}
+impl<'a> Eq for Comparand<'a, i32> {}
+
+impl<'a> PartialOrd for Comparand<'a, i32> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for Comparand<'a, i32> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.1.cmp(&other.1)
+    }
+}
+
+impl Into<Tuple> for i32 {
+    fn into(self) -> Tuple {
+        Tuple {
+            data: TupleBuilder::new().add(&Value::Int(self)).build(),
+            ..Default::default()
+        }
     }
 }
 

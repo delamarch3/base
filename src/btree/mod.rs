@@ -8,33 +8,34 @@ use crate::{
         node::{Node, NodeType},
         slot::{Either, Slot},
     },
+    catalog::Schema,
     disk::{Disk, FileSystem},
     page::{PageBuf, PageId, PageReadGuard, PageWriteGuard},
     page_cache::SharedPageCache,
     storable::Storable,
+    table::tuple::{Comparand, Tuple},
     writep,
 };
 
-use self::slot::Increment;
-
-pub struct BTree<K, V, D: Disk = FileSystem> {
+pub struct BTree<'s, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
     max: u32,
-    _data: PhantomData<(K, V)>,
+    schema: &'s Schema,
+    _data: PhantomData<V>,
 }
 
-impl<K, V, D> BTree<K, V, D>
+impl<'s, V, D> BTree<'s, V, D>
 where
-    K: Storable + Clone + Ord + Increment,
     V: Storable + Clone + Eq,
     D: Disk,
 {
-    pub fn new(pc: SharedPageCache<D>, max: u32) -> Self {
+    pub fn new(pc: SharedPageCache<D>, schema: &'s Schema, max: u32) -> Self {
         Self {
             root: -1,
             pc,
             max,
+            schema,
             _data: PhantomData,
         }
     }
@@ -45,12 +46,12 @@ where
 
     // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
-    pub fn insert(&mut self, key: &K, value: &V) -> crate::Result<()> {
+    pub fn insert(&mut self, key: &Tuple, value: &V) -> crate::Result<()> {
         let pin;
         let rpage = match self.root {
             -1 => {
                 pin = self.pc.new_page()?;
-                let node: Node<K, V> = Node::new(pin.id, self.max, NodeType::Leaf, true);
+                let node: Node<V> = Node::new(pin.id, self.max, NodeType::Leaf, true, &self.schema);
                 let mut page = pin.write();
                 writep!(page, &PageBuf::from(&node));
                 page
@@ -64,7 +65,8 @@ where
 
         if let Some((s, os)) = self._insert(None, rpage, key, value)? {
             let new_root_page = self.pc.new_page()?;
-            let mut new_root = Node::new(new_root_page.id, self.max, NodeType::Internal, true);
+            let mut new_root =
+                Node::new(new_root_page.id, self.max, NodeType::Internal, true, &self.schema);
             self.root = new_root.id;
 
             new_root.insert(s);
@@ -82,10 +84,10 @@ where
         &'a self,
         mut prev_page: Option<&'a PageWriteGuard<'a>>,
         mut page: PageWriteGuard<'a>,
-        key: &K,
+        key: &Tuple,
         value: &V,
-    ) -> crate::Result<Option<(Slot<K, V>, Slot<K, V>)>> {
-        let mut node: Node<K, V> = Node::from(&page.data);
+    ) -> crate::Result<Option<(Slot<V>, Slot<V>)>> {
+        let mut node: Node<V> = Node::from(&page.data, &self.schema);
 
         let mut split = None;
         if node.almost_full() {
@@ -93,7 +95,7 @@ where
             let mut npage = new_page.write();
             let mut nnode = node.split(new_page.id);
 
-            if key >= node.last_key().unwrap() {
+            if Comparand(&self.schema, key) >= Comparand(&self.schema, node.last_key().unwrap()) {
                 // Write the node
                 writep!(page, &PageBuf::from(&node));
 
@@ -108,7 +110,7 @@ where
                         None if nnode.t == NodeType::Internal => {
                             // Bump the last node if no pointer found
                             let Slot(_, v) = nnode.pop_last().unwrap();
-                            nnode.insert(Slot(key.next(), v));
+                            nnode.insert(Slot(key.next(&self.schema), v));
 
                             match nnode.find_child(&key) {
                                 Some(ptr) => ptr,
@@ -155,7 +157,7 @@ where
                 None if node.t == NodeType::Internal => {
                     // Bump the last node if no pointer found
                     let Slot(_, v) = node.pop_last().unwrap();
-                    node.insert(Slot(key.next(), v));
+                    node.insert(Slot(key.next(&self.schema), v));
 
                     match node.find_child(&key) {
                         Some(ptr) => ptr,
@@ -187,7 +189,8 @@ where
         }
     }
 
-    pub fn scan(&self) -> crate::Result<Vec<(K, V)>> {
+    // TODO: return just the values instead? Less cloning
+    pub fn scan(&self) -> crate::Result<Vec<(Tuple, V)>> {
         let mut ret = Vec::new();
         if self.root == -1 {
             return Ok(ret);
@@ -205,9 +208,9 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(K, V)>,
+        acc: &'a mut Vec<(Tuple, V)>,
     ) -> crate::Result<()> {
-        let node: Node<K, V> = Node::from(&page.data);
+        let node: Node<V> = Node::from(&page.data, &self.schema);
 
         // Find first leaf
         if node.t != NodeType::Leaf {
@@ -240,7 +243,7 @@ where
         self._scan(Some(page), r, acc)
     }
 
-    pub fn range(&self, from: &K, to: &K) -> crate::Result<Vec<(K, V)>> {
+    pub fn range(&self, from: &Tuple, to: &Tuple) -> crate::Result<Vec<(Tuple, V)>> {
         let mut ret = Vec::new();
 
         let cur = match self.get_ptr(&from, self.root)? {
@@ -260,17 +263,17 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(K, V)>,
-        from: &K,
-        to: &K,
+        acc: &'a mut Vec<(Tuple, V)>,
+        from: &Tuple,
+        to: &Tuple,
     ) -> crate::Result<()> {
-        let node = Node::from(&page.data);
+        let node = Node::from(&page.data, &self.schema);
         let next = node.next;
         let len = acc.len();
         acc.extend(
             node.into_iter()
-                .skip_while(|Slot(k, _)| k < from)
-                .take_while(|Slot(k, _)| k <= to)
+                .skip_while(|Slot(k, _)| Comparand(&self.schema, k) < Comparand(&self.schema, from))
+                .take_while(|Slot(k, _)| Comparand(&self.schema, k) <= Comparand(&self.schema, to))
                 .map(|Slot(k, v)| {
                     let v = match v {
                         Either::Value(v) => v,
@@ -295,12 +298,12 @@ where
         self._range(Some(page), r, acc, from, to)
     }
 
-    fn get_ptr(&self, key: &K, ptr: PageId) -> crate::Result<Option<PageId>> {
+    fn get_ptr(&self, key: &Tuple, ptr: PageId) -> crate::Result<Option<PageId>> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<K, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self.get_ptr(key, ptr),
@@ -309,7 +312,8 @@ where
         }
     }
 
-    pub fn get(&self, key: K) -> crate::Result<Option<Slot<K, V>>> {
+    // TODO: return just the value instead? Less cloning
+    pub fn get(&self, key: &Tuple) -> crate::Result<Option<Slot<V>>> {
         if self.root == -1 {
             return Ok(None);
         }
@@ -317,22 +321,19 @@ where
         self._get(key, self.root)
     }
 
-    fn _get(&self, key: K, ptr: PageId) -> crate::Result<Option<Slot<K, V>>> {
+    fn _get(&self, key: &Tuple, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node = Node::from(&r.data);
+        let node = Node::from(&r.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self._get(key, ptr),
-            None if node.t == NodeType::Leaf => {
-                let slot = Slot(key, Either::Pointer(-1));
-                Ok(node.get(&slot).map(|s| s.clone()))
-            }
+            None if node.t == NodeType::Leaf => Ok(node.get(&key).map(|s| s.clone())),
             None => Ok(None),
         }
     }
 
-    pub fn delete(&self, key: K) -> crate::Result<bool> {
+    pub fn delete(&self, key: &Tuple) -> crate::Result<bool> {
         if self.root == -1 {
             return Ok(false);
         }
@@ -340,16 +341,15 @@ where
         self._delete(key, self.root)
     }
 
-    fn _delete(&self, key: K, ptr: PageId) -> crate::Result<bool> {
+    fn _delete(&self, key: &Tuple, ptr: PageId) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
-        let mut node: Node<K, V> = Node::from(&w.data);
+        let mut node: Node<V> = Node::from(&w.data, &self.schema);
 
         match node.find_child(&key) {
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
-                let slot = Slot(key, Either::Pointer(-1));
-                let rem = node.remove(&slot);
+                let rem = node.remove(&key);
                 if rem {
                     writep!(w, &PageBuf::from(&node));
                 }
@@ -373,7 +373,7 @@ where
     fn _print(&self, ptr: PageId) {
         let page = self.pc.fetch_page(ptr).unwrap();
         let r = page.read();
-        let node: Node<K, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
 
         dbg!(&node);
 
@@ -391,7 +391,7 @@ where
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<K, V> = Node::from(&r.data);
+        let node: Node<V> = Node::from(&r.data, &self.schema);
         if node.t == NodeType::Leaf {
             return Ok(ptr);
         }
@@ -416,7 +416,7 @@ where
         while cur != -1 {
             let pin = self.pc.fetch_page(cur)?;
             let page = pin.read();
-            let node: Node<K, V> = Node::from(&page.data);
+            let node: Node<V> = Node::from(&page.data, &self.schema);
 
             ret += 1;
             cur = node.next;
@@ -430,7 +430,13 @@ where
 mod test {
     use rand::{seq::SliceRandom, thread_rng, Rng};
 
-    use crate::{disk::Memory, page::PAGE_SIZE, page_cache::PageCache, replacer::LRU};
+    use crate::{
+        catalog::{Column, Type},
+        disk::Memory,
+        page::PAGE_SIZE,
+        page_cache::PageCache,
+        replacer::LRU,
+    };
 
     use super::*;
 
@@ -443,7 +449,7 @@ mod test {
 
             for key in keys {
                 let value = key + 10;
-                ret.push((key, value));
+                ret.push((key.into(), value));
             }
 
             ret
@@ -460,7 +466,12 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let mut btree = BTree::new(pc.clone(), MAX as u32);
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
+        let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
 
         // Insert and get
         let range = -50..50;
@@ -473,31 +484,31 @@ mod test {
         pc.flush_all_pages()?;
 
         for (k, v) in &inserts {
-            let have = btree.get(*k)?;
-            let want = Some(Slot(*k, Either::Value(*v)));
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
         }
 
         // Delete half and make sure they no longer exist in the tree
         let (first_half, second_half) = inserts.split_at(inserts.len() / 2);
         for (k, _) in first_half {
-            btree.delete(*k)?;
+            btree.delete(k)?;
         }
 
         pc.flush_all_pages()?;
 
         for (k, _) in first_half {
-            match btree.get(*k)? {
-                Some(_) => panic!("Unexpected deleted key: {k}"),
+            match btree.get(k)? {
+                Some(_) => panic!("Unexpected deleted key: {:x?}", k.data),
                 None => {}
             };
         }
 
         // Make sure other half can still be accessed
         for (k, v) in second_half {
-            let test = match btree.get(*k)? {
+            let test = match btree.get(k)? {
                 Some(t) => t,
-                None => panic!("Could not find {k}:{v} in the second half"),
+                None => panic!("Could not find {:x?}:{v} in the second half", k.data),
             };
 
             let have = match test.1 {
@@ -518,8 +529,8 @@ mod test {
         pc.flush_all_pages()?;
 
         for (k, v) in &inserts {
-            let have = btree.get(*k)?;
-            let want = Some(Slot(*k, Either::Value(*v)));
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
         }
 
@@ -537,7 +548,12 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
         let pc2 = pc.clone();
 
-        let mut btree = BTree::new(pc, MAX as u32);
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
+        let mut btree = BTree::new(pc, &schema, MAX as u32);
 
         let range = -50..50;
         let mut want = inserts!(range, i32);
@@ -548,12 +564,12 @@ mod test {
         pc2.flush_all_pages()?;
 
         for (k, v) in &want {
-            let have = btree.get(*k)?;
-            let want = Some(Slot(*k, Either::Value(*v)));
+            let have = btree.get(k)?;
+            let want = Some(Slot(k.clone(), Either::Value(*v)));
             assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
         }
 
-        want.sort();
+        want.sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
         let have = btree.scan()?;
         assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
 
@@ -565,8 +581,8 @@ mod test {
         struct TestCase {
             name: &'static str,
             range: std::ops::Range<i32>,
-            from: i32,
-            to: i32,
+            from: Tuple,
+            to: Tuple,
         }
 
         const MAX: usize = 8;
@@ -582,16 +598,22 @@ mod test {
             TestCase {
                 name: "random range",
                 range: -50..50,
-                from: rand::thread_rng().gen_range(-50..0),
-                to: rand::thread_rng().gen_range(0..50),
+                from: rand::thread_rng().gen_range(-50..0).into(),
+                to: rand::thread_rng().gen_range(0..50).into(),
             },
             TestCase {
                 name: "out of bounds range",
                 range: -50..50,
-                from: -100,
-                to: -50,
+                from: (-100).into(),
+                to: (-50).into(),
             },
         ];
+
+        let schema = Schema::new(vec![Column {
+            name: "".into(),
+            ty: Type::Int,
+            offset: 0,
+        }]);
 
         for TestCase {
             name,
@@ -600,7 +622,7 @@ mod test {
             to,
         } in tcs
         {
-            let mut btree = BTree::new(pc.clone(), MAX as u32);
+            let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
 
             let mut inserts = inserts!(range, i32);
             for (k, v) in &inserts {
@@ -610,17 +632,20 @@ mod test {
             pc2.flush_all_pages()?;
 
             for (k, v) in &inserts {
-                let have = btree.get(*k)?;
-                let want = Some(Slot(*k, Either::Value(*v)));
+                let have = btree.get(k)?;
+                let want = Some(Slot(k.clone(), Either::Value(*v)));
                 assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
             }
 
-            inserts.sort();
+            inserts.sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
 
             let want = inserts
                 .into_iter()
-                .filter(|s| s.0 >= from && s.0 <= to)
-                .collect::<Vec<(i32, i32)>>();
+                .filter(|(k, _)| {
+                    Comparand(&schema, k) >= Comparand(&schema, &from)
+                        && Comparand(&schema, k) <= Comparand(&schema, &to)
+                })
+                .collect::<Vec<(Tuple, i32)>>();
 
             let have = btree.range(&from, &to)?;
             assert!(
