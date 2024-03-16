@@ -99,11 +99,11 @@ impl Schema {
 
 pub type OId = u32;
 
-pub struct TableInfo {
+pub struct TableInfo<D: Disk = FileSystem> {
     name: String,
     schema: Schema,
     oid: OId,
-    meta: TableMeta,
+    table: Table<D>,
 }
 
 pub struct IndexMeta {
@@ -128,7 +128,7 @@ pub struct IndexInfo {
 
 pub struct Catalog<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
-    tables: HashMap<OId, TableInfo>,
+    tables: HashMap<OId, TableInfo<D>>,
     table_names: HashMap<String, OId>,
     next_table_oid: AtomicU32,
     indexes: HashMap<OId, IndexInfo>,
@@ -149,31 +149,35 @@ impl<D: Disk> Catalog<D> {
         }
     }
 
-    pub fn create_table(&mut self, name: &str, schema: Schema) -> Option<&TableInfo> {
+    pub fn create_table(
+        &mut self,
+        name: &str,
+        schema: Schema,
+    ) -> crate::Result<Option<&TableInfo<D>>> {
         if self.table_names.contains_key(name) {
-            return None;
+            return Ok(None);
         }
 
-        let oid = self.next_index_oid.fetch_add(1, Relaxed);
+        let oid = self.next_table_oid.fetch_add(1, Relaxed);
         let info = TableInfo {
             name: name.into(),
             schema,
             oid,
-            meta: TableMeta::default(),
+            table: Table::default(self.pc.clone())?,
         };
 
         self.table_names.insert(name.into(), oid);
         self.index_names.insert(name.into(), HashMap::new());
         self.tables.insert(oid, info);
 
+        Ok(self.tables.get(&oid))
+    }
+
+    pub fn get_table_by_oid(&self, oid: OId) -> Option<&TableInfo<D>> {
         self.tables.get(&oid)
     }
 
-    pub fn get_table_by_oid(&self, oid: OId) -> Option<&TableInfo> {
-        self.tables.get(&oid)
-    }
-
-    pub fn get_table_by_name(&self, name: &str) -> Option<&TableInfo> {
+    pub fn get_table_by_name(&self, name: &str) -> Option<&TableInfo<D>> {
         self.tables.get(self.table_names.get(name)?)
     }
 
@@ -206,8 +210,7 @@ impl<D: Disk> Catalog<D> {
             IndexType::BTree => {
                 let mut btree = BTree::<RId, _>::new(self.pc.clone(), &schema, 16);
                 let info = self.tables.get(&self.table_names[table_name])?;
-                let table = Table::new(self.pc.clone(), info.meta);
-                for result in table.iter().expect("todo") {
+                for result in info.table.iter().expect("todo") {
                     let (_, tuple) = result.expect("todo");
                     btree.insert(&tuple, &tuple.rid).expect("todo");
                 }
@@ -257,15 +260,16 @@ mod test {
         page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRU,
+        storable::Storable,
         table::{
             list::List as Table,
-            tuple::{RId, TupleBuilder, TupleMeta},
+            tuple::{RId, Tuple, TupleBuilder, TupleMeta, Value},
         },
     };
 
     #[test]
     fn test_btree_index() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 1;
+        const MEMORY: usize = PAGE_SIZE * 32;
         const K: usize = 2;
         let memory = Memory::new::<MEMORY>();
         let replacer = LRU::new(K);
@@ -293,12 +297,32 @@ mod test {
             },
         ]);
 
-        catalog.create_table(TABLE_A, table_schema);
-        let table = catalog
+        catalog.create_table(TABLE_A, table_schema)?;
+        let info = catalog
             .get_table_by_name(TABLE_A)
             .expect("table_a should exist");
-        let mut table = Table::new(pc.clone(), table.meta);
-        table.insert(&TupleBuilder::new().build(), &TupleMeta { deleted: false })?;
+        let rid = info
+            .table
+            .insert(
+                &TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into())) // TODO: slot panics when this is the last column?
+                    .add(&Value::BigInt(20))
+                    .build(),
+                &TupleMeta { deleted: false },
+            )?
+            .expect("there should be a rid");
+        let rid = info
+            .table
+            .insert(
+                &TupleBuilder::new()
+                    .add(&Value::Int(20))
+                    .add(&Value::Varchar("row_b".into())) // TODO: slot panics when this is the last column?
+                    .add(&Value::BigInt(30))
+                    .build(),
+                &TupleMeta { deleted: false },
+            )?
+            .expect("there should be a rid");
 
         let key_schema = Schema::new(vec![
             Column {
@@ -314,12 +338,13 @@ mod test {
         ]);
 
         catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, key_schema.clone());
-        let index = catalog
-            .get_index(TABLE_A, INDEX_A)
-            .expect("index_a should exist");
-        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 32);
-
-        // TODO: validate values
+        // let index = catalog
+        //     .get_index(TABLE_A, INDEX_A)
+        //     .expect("index_a should exist");
+        // let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 32);
+        // let have = index.scan()?;
+        // let want: Vec<(Tuple, RId)> = Vec::new();
+        // assert_eq!(want, have);
 
         Ok(())
     }

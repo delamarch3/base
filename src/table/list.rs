@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use bytes::BytesMut;
 
 use crate::{
@@ -9,7 +11,7 @@ use crate::{
     writep,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct TableMeta {
     first_page_id: PageId,
     last_page_id: PageId,
@@ -27,34 +29,59 @@ impl Default for TableMeta {
 pub struct List<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
     first_page_id: PageId,
-    last_page_id: PageId,
+    last_page_id: Mutex<PageId>,
 }
 
 impl<D: Disk> List<D> {
     pub fn new(
         pc: SharedPageCache<D>,
         TableMeta {
-            first_page_id,
-            last_page_id,
+            mut first_page_id,
+            mut last_page_id,
         }: TableMeta,
-    ) -> Self {
-        Self {
+    ) -> crate::Result<List<D>> {
+        assert!(
+            (first_page_id == -1 && last_page_id == -1)
+                || (first_page_id != -1 && last_page_id != -1)
+        );
+
+        if first_page_id == -1 || last_page_id == -1 {
+            let page = pc.new_page()?;
+            first_page_id = page.id;
+            last_page_id = page.id;
+        }
+
+        Ok(Self {
             pc,
             first_page_id,
-            last_page_id,
-        }
+            last_page_id: Mutex::new(last_page_id),
+        })
     }
 
-    pub fn default(pc: SharedPageCache<D>) -> Self {
-        Self {
+    pub fn default(pc: SharedPageCache<D>) -> crate::Result<List<D>> {
+        let page = pc.new_page()?;
+        let first_page_id = page.id;
+        let last_page_id = page.id;
+        drop(page);
+
+        Ok(Self {
             pc,
-            first_page_id: -1,
-            last_page_id: -1,
-        }
+            first_page_id,
+            last_page_id: Mutex::new(last_page_id),
+        })
+    }
+
+    fn last_page_id(&self) -> PageId {
+        *self.last_page_id.lock().expect("todo")
+    }
+
+    fn last_page_id_mut(&self) -> std::sync::MutexGuard<'_, PageId> {
+        self.last_page_id.lock().expect("todo")
     }
 
     pub fn iter(&self) -> Result<Iter<'_, D>> {
-        let page = self.pc.fetch_page(self.last_page_id)?;
+        let last_page_id = self.last_page_id();
+        let page = self.pc.fetch_page(last_page_id)?;
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
@@ -65,29 +92,22 @@ impl<D: Disk> List<D> {
                 slot_id: 0,
             },
             end: RId {
-                page_id: self.last_page_id,
+                page_id: last_page_id,
                 slot_id: node.len(),
             },
         })
     }
 
-    pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
-        let page = match self.last_page_id {
-            -1 => {
-                let page = self.pc.new_page()?;
-                self.first_page_id = page.id;
-                self.last_page_id = page.id;
-                page
-            }
-            _ => self.pc.fetch_page(self.last_page_id)?,
-        };
+    pub fn insert(&self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
+        let mut last_page_id = self.last_page_id_mut();
+        let page = self.pc.fetch_page(*last_page_id)?;
         let mut page_w = page.write();
         let mut node = Node::from(&page_w.data);
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
             writep!(page_w, &PageBuf::from(&node));
             return Ok(Some(RId {
-                page_id: self.last_page_id,
+                page_id: *last_page_id,
                 slot_id,
             }));
         }
@@ -100,7 +120,7 @@ impl<D: Disk> List<D> {
         let npage = self.pc.new_page()?;
         let mut npage_w = npage.write();
         node.next_page_id = npage.id;
-        self.last_page_id = npage.id;
+        *last_page_id = npage.id;
 
         // Write the next page id on first node
         // TODO: just write the page id instead of the entire page?
@@ -111,7 +131,7 @@ impl<D: Disk> List<D> {
             Some(slot_id) => {
                 writep!(npage_w, &PageBuf::from(&node));
                 Ok(Some(RId {
-                    page_id: self.last_page_id,
+                    page_id: *last_page_id,
                     slot_id,
                 }))
             }
@@ -120,10 +140,6 @@ impl<D: Disk> List<D> {
     }
 
     pub fn get(&self, r_id: RId) -> Result<Option<(TupleMeta, Tuple)>> {
-        if self.first_page_id == -1 || self.last_page_id == -1 {
-            return Ok(None);
-        }
-
         let page = self.pc.fetch_page(r_id.page_id)?;
         let page_r = page.read();
         let node = Node::from(&page_r.data);
@@ -215,14 +231,7 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let mut list = List::default(pc.clone());
-        if let Some(_) = list.get(RId {
-            page_id: 0,
-            slot_id: 0,
-        })? {
-            panic!("uninitialised list should return None")
-        }
-
+        let list = List::default(pc.clone())?;
         let meta = TupleMeta { deleted: false };
         let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
         let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
@@ -234,9 +243,9 @@ mod test {
             pc,
             TableMeta {
                 first_page_id: list.first_page_id,
-                last_page_id: list.last_page_id,
+                last_page_id: list.last_page_id(),
             },
-        );
+        )?;
 
         let (_, have_a) = list.get(r_id_a)?.unwrap();
         let (_, have_b) = list.get(r_id_b)?.unwrap();
@@ -257,13 +266,13 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
 
         let first_page_id = pc.new_page()?.id;
-        let mut list = List::new(
+        let list = List::new(
             pc.clone(),
             TableMeta {
                 first_page_id,
                 last_page_id: first_page_id,
             },
-        );
+        )?;
 
         const WANT_LEN: usize = 100;
         let meta = TupleMeta { deleted: false };

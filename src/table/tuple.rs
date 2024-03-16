@@ -92,20 +92,28 @@ pub struct RId {
 
 // TODO
 impl Storable for RId {
-    const SIZE: usize = 0;
+    const SIZE: usize = 8;
 
-    type ByteArray = [u8; 0];
+    type ByteArray = [u8; Self::SIZE];
 
     fn into_bytes(self) -> Self::ByteArray {
-        todo!()
+        let mut ret = [0; 8];
+        ret[0..4].copy_from_slice(&self.page_id.into_bytes());
+        ret[4..8].copy_from_slice(&self.slot_id.into_bytes());
+
+        ret
     }
 
+    // TODO: this is reading the wrong bytes
     fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
+        let page_id = i32::from_be_bytes(bytes[0..4].try_into().unwrap());
+        let slot_id = u32::from_be_bytes(bytes[4..8].try_into().unwrap());
+
+        Self { page_id, slot_id }
     }
 
     fn write_to(&self, dst: &mut [u8], pos: usize) {
-        todo!()
+        dst[pos..pos + Self::SIZE].copy_from_slice(&self.into_bytes());
     }
 }
 
@@ -340,6 +348,7 @@ impl TupleBuilder {
         }
     }
 
+    // TODO: Accept Into<Value>
     pub fn add(mut self, v: &Value) -> Self {
         match v {
             Value::TinyInt(v) => self.data.put(&i8::to_be_bytes(*v)[..]),

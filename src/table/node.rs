@@ -80,7 +80,7 @@ impl From<&Node> for PageBuf {
             Some(o) => o.offset as usize,
             None => return ret,
         };
-        assert!(offset < PAGE_SIZE);
+        assert!(offset < PAGE_SIZE, "tuple being written at PAGE_SIZE or greater");
 
         unsafe {
             let tuples_ptr = table.page_start.add(offset);
