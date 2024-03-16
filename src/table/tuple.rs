@@ -109,6 +109,8 @@ impl Storable for RId {
     }
 }
 
+// TODO: could data just be Vec<Value>, using schema to deserialise? evaluate once other components
+// built
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tuple {
     pub rid: RId,

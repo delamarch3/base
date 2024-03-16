@@ -271,6 +271,7 @@ where
         self.values.last().map(|s| &s.0)
     }
 
+    // TODO: prefer size of page over set max
     #[inline]
     pub fn almost_full(&self) -> bool {
         self.values.len() >= self.max as usize / 2

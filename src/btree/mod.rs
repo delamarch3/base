@@ -40,6 +40,21 @@ where
         }
     }
 
+    pub fn new_with_root(
+        pc: SharedPageCache<D>,
+        root: PageId,
+        schema: &'s Schema,
+        max: u32,
+    ) -> Self {
+        Self {
+            root,
+            pc,
+            max,
+            schema,
+            _data: PhantomData,
+        }
+    }
+
     pub fn root(&self) -> PageId {
         self.root
     }

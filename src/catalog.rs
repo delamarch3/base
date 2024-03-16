@@ -6,12 +6,13 @@ use std::{
 };
 
 use crate::{
-    // btree::BTree,
+    btree::BTree,
     disk::{Disk, FileSystem},
+    page::PageId,
     page_cache::SharedPageCache,
     table::{
-        list::List as Table,
-        tuple::{RId, Tuple},
+        list::{List as Table, TableMeta},
+        tuple::RId,
     },
 };
 
@@ -60,7 +61,9 @@ pub struct Schema {
 }
 
 impl Schema {
+    // TODO: accept a different Column type (ColumnDef?) and calculate offsets?
     pub fn new(columns: Vec<Column>) -> Self {
+        // TODO: ensure column names are unique
         Self {
             size: columns.iter().fold(0, |acc, c| acc + c.size()),
             columns,
@@ -96,11 +99,11 @@ impl Schema {
 
 pub type OId = u32;
 
-pub struct TableInfo<D: Disk = FileSystem> {
+pub struct TableInfo {
     name: String,
     schema: Schema,
     oid: OId,
-    table: Table<D>,
+    meta: TableMeta,
 }
 
 pub struct IndexMeta {
@@ -120,15 +123,16 @@ pub struct IndexInfo {
     schema: Schema,
     oid: OId,
     index_ty: IndexType,
+    root: PageId,
 }
 
 pub struct Catalog<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
-    tables: HashMap<OId, TableInfo<D>>,
+    tables: HashMap<OId, TableInfo>,
     table_names: HashMap<String, OId>,
     next_table_oid: AtomicU32,
     indexes: HashMap<OId, IndexInfo>,
-    index_names: HashMap<String, HashMap<String, OId>>,
+    index_names: HashMap<String, HashMap<String, OId>>, // table -> index -> oid
     next_index_oid: AtomicU32,
 }
 
@@ -145,7 +149,7 @@ impl<D: Disk> Catalog<D> {
         }
     }
 
-    pub fn create_table(&mut self, name: &str, schema: Schema) -> Option<&TableInfo<D>> {
+    pub fn create_table(&mut self, name: &str, schema: Schema) -> Option<&TableInfo> {
         if self.table_names.contains_key(name) {
             return None;
         }
@@ -155,7 +159,7 @@ impl<D: Disk> Catalog<D> {
             name: name.into(),
             schema,
             oid,
-            table: Table::default(self.pc.clone()),
+            meta: TableMeta::default(),
         };
 
         self.table_names.insert(name.into(), oid);
@@ -165,13 +169,12 @@ impl<D: Disk> Catalog<D> {
         self.tables.get(&oid)
     }
 
-    pub fn get_table_by_oid(&self, oid: OId) -> Option<&TableInfo<D>> {
+    pub fn get_table_by_oid(&self, oid: OId) -> Option<&TableInfo> {
         self.tables.get(&oid)
     }
 
-    pub fn get_table_by_name(&self, name: &str) -> Option<&TableInfo<D>> {
-        let oid = self.table_names.get(name)?;
-        self.tables.get(oid)
+    pub fn get_table_by_name(&self, name: &str) -> Option<&TableInfo> {
+        self.tables.get(self.table_names.get(name)?)
     }
 
     pub fn list_tables(&self) -> Vec<&String> {
@@ -184,8 +187,9 @@ impl<D: Disk> Catalog<D> {
         table_name: &str,
         index_ty: IndexType,
         schema: Schema,
-        column_ids: &Vec<u32>,
-    ) -> Option<IndexInfo> {
+    ) -> Option<&IndexInfo> {
+        // TODO: verify key schema against table schema
+
         if self.index_names.contains_key(index_name) {
             return None;
         }
@@ -196,45 +200,127 @@ impl<D: Disk> Catalog<D> {
             return None;
         }
 
+        let root;
         match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
-                // TODO: Use key schema
-                // let mut btree = BTree::<RId, _>::new(self.pc.clone(), 16);
-                // let info = self.tables.get(&self.table_names[table_name])?;
-                // for result in info.table.iter().expect("todo") {
-                //     let (_, tuple) = result.expect("todo");
-                //     btree.insert(&tuple, &tuple.rid).expect("todo");
-                // }
+                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &schema, 16);
+                let info = self.tables.get(&self.table_names[table_name])?;
+                let table = Table::new(self.pc.clone(), info.meta);
+                for result in table.iter().expect("todo") {
+                    let (_, tuple) = result.expect("todo");
+                    btree.insert(&tuple, &tuple.rid).expect("todo");
+                }
 
-                // // TODO: Save this somewhere
-                // let _root = btree.root();
+                root = btree.root();
             }
         };
 
         let oid = self.next_index_oid.fetch_add(1, Relaxed);
         indexed_table.insert(index_name.into(), oid);
 
-        let info = IndexInfo {
-            name: index_name.into(),
-            schema,
+        self.indexes.insert(
             oid,
-            index_ty,
-        };
-        self.indexes.insert(oid, info);
+            IndexInfo {
+                name: index_name.into(),
+                schema,
+                oid,
+                index_ty,
+                root,
+            },
+        );
+        indexed_table.insert(index_name.into(), oid);
 
-        todo!()
+        self.indexes.get(&oid)
     }
 
-    pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<IndexInfo> {
-        todo!()
+    pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<&IndexInfo> {
+        self.indexes
+            .get(self.index_names.get(table_name)?.get(index_name)?)
     }
 
-    pub fn get_index_by_oid(&self, oid: OId) -> Option<IndexInfo> {
-        todo!()
+    pub fn get_index_by_oid(&self, oid: OId) -> Option<&IndexInfo> {
+        self.indexes.get(&oid)
     }
 
-    pub fn list_indexes(&self) -> Vec<IndexInfo> {
-        todo!()
+    pub fn list_indexes(&self) -> Vec<&IndexInfo> {
+        self.indexes.iter().map(|(_, info)| info).collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        btree::BTree,
+        catalog::{Catalog, Column, IndexType, Schema, Type},
+        disk::Memory,
+        page::PAGE_SIZE,
+        page_cache::PageCache,
+        replacer::LRU,
+        table::{
+            list::List as Table,
+            tuple::{RId, TupleBuilder, TupleMeta},
+        },
+    };
+
+    #[test]
+    fn test_btree_index() -> crate::Result<()> {
+        const MEMORY: usize = PAGE_SIZE * 1;
+        const K: usize = 2;
+        let memory = Memory::new::<MEMORY>();
+        let replacer = LRU::new(K);
+        let pc = PageCache::new(memory, replacer, 0);
+
+        const TABLE_A: &str = "table_a";
+        const INDEX_A: &str = "index_a";
+        let mut catalog = Catalog::new(pc.clone());
+
+        let table_schema = Schema::new(vec![
+            Column {
+                name: "col_a".into(),
+                ty: Type::Int,
+                offset: 0,
+            },
+            Column {
+                name: "col_b".into(),
+                ty: Type::Varchar,
+                offset: 4,
+            },
+            Column {
+                name: "col_c".into(),
+                ty: Type::BigInt,
+                offset: 6,
+            },
+        ]);
+
+        catalog.create_table(TABLE_A, table_schema);
+        let table = catalog
+            .get_table_by_name(TABLE_A)
+            .expect("table_a should exist");
+        let mut table = Table::new(pc.clone(), table.meta);
+        table.insert(&TupleBuilder::new().build(), &TupleMeta { deleted: false })?;
+
+        let key_schema = Schema::new(vec![
+            Column {
+                name: "col_a".into(),
+                ty: Type::Int,
+                offset: 0,
+            },
+            Column {
+                name: "col_c".into(),
+                ty: Type::BigInt,
+                offset: 4,
+            },
+        ]);
+
+        catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, key_schema.clone());
+        let index = catalog
+            .get_index(TABLE_A, INDEX_A)
+            .expect("index_a should exist");
+        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 32);
+
+        // TODO: validate values
+
+        Ok(())
     }
 }

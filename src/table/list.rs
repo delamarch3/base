@@ -9,6 +9,21 @@ use crate::{
     writep,
 };
 
+#[derive(Clone, Copy)]
+pub struct TableMeta {
+    first_page_id: PageId,
+    last_page_id: PageId,
+}
+
+impl Default for TableMeta {
+    fn default() -> Self {
+        Self {
+            first_page_id: -1,
+            last_page_id: -1,
+        }
+    }
+}
+
 pub struct List<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
     first_page_id: PageId,
@@ -16,7 +31,13 @@ pub struct List<D: Disk = FileSystem> {
 }
 
 impl<D: Disk> List<D> {
-    pub fn new(pc: SharedPageCache<D>, first_page_id: PageId, last_page_id: PageId) -> Self {
+    pub fn new(
+        pc: SharedPageCache<D>,
+        TableMeta {
+            first_page_id,
+            last_page_id,
+        }: TableMeta,
+    ) -> Self {
         Self {
             pc,
             first_page_id,
@@ -179,7 +200,10 @@ mod test {
         page_cache::PageCache,
         replacer::LRU,
         table::list::List,
-        table::tuple::{RId, Tuple, TupleMeta},
+        table::{
+            list::TableMeta,
+            tuple::{RId, Tuple, TupleMeta},
+        },
     };
 
     #[test]
@@ -206,7 +230,13 @@ mod test {
         let r_id_a = list.insert(&tuple_a, &meta)?.unwrap();
         let r_id_b = list.insert(&tuple_b, &meta)?.unwrap();
 
-        let list = List::new(pc, list.first_page_id, list.last_page_id);
+        let list = List::new(
+            pc,
+            TableMeta {
+                first_page_id: list.first_page_id,
+                last_page_id: list.last_page_id,
+            },
+        );
 
         let (_, have_a) = list.get(r_id_a)?.unwrap();
         let (_, have_b) = list.get(r_id_b)?.unwrap();
@@ -227,7 +257,13 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
 
         let first_page_id = pc.new_page()?.id;
-        let mut list = List::new(pc.clone(), first_page_id, first_page_id);
+        let mut list = List::new(
+            pc.clone(),
+            TableMeta {
+                first_page_id,
+                last_page_id: first_page_id,
+            },
+        );
 
         const WANT_LEN: usize = 100;
         let meta = TupleMeta { deleted: false };
