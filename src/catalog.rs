@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Type {
     TinyInt,
     Bool,
@@ -60,13 +60,12 @@ impl<'a, const N: usize> From<[(&'a str, Type); N]> for Schema {
 
         let mut offset = 0;
         for (name, ty) in value {
-            let size = ty.size();
             columns.push(Column {
                 name: name.into(),
                 ty,
                 offset,
             });
-            offset += size;
+            offset += ty.size();
         }
 
         Self {
