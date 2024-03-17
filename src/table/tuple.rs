@@ -426,7 +426,7 @@ mod test {
 
     use crate::{
         catalog::{Column, Schema, Type},
-        table::tuple::{Comparand, RId, Tuple, TupleBuilder, Value},
+        table::tuple::{Comparand, Tuple, TupleBuilder, Value},
     };
 
     #[test]
@@ -439,18 +439,7 @@ mod test {
 
         let tcs = [
             Test {
-                schema: Schema::new(vec![
-                    Column {
-                        name: "col_b".into(),
-                        ty: Type::Varchar,
-                        offset: 0,
-                    },
-                    Column {
-                        name: "col_c".into(),
-                        ty: Type::Int,
-                        offset: 4,
-                    },
-                ]),
+                schema: [("col_b", Type::Varchar), ("col_c", Type::Int)].into(),
                 tuple: TupleBuilder::new()
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::Int(20))
@@ -461,23 +450,12 @@ mod test {
                     .build(),
             },
             Test {
-                schema: Schema::new(vec![
-                    Column {
-                        name: "col_a".into(),
-                        ty: Type::Int,
-                        offset: 0,
-                    },
-                    Column {
-                        name: "col_b".into(),
-                        ty: Type::Varchar,
-                        offset: 4,
-                    },
-                    Column {
-                        name: "col_c".into(),
-                        ty: Type::BigInt,
-                        offset: 8,
-                    },
-                ]),
+                schema: [
+                    ("col_a", Type::Int),
+                    ("col_b", Type::Varchar),
+                    ("col_c", Type::BigInt),
+                ]
+                .into(),
                 tuple: TupleBuilder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))

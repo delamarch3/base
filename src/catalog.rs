@@ -11,7 +11,7 @@ use crate::{
     page::PageId,
     page_cache::SharedPageCache,
     table::{
-        list::{List as Table, TableMeta},
+        list::List as Table,
         tuple::{RId, Tuple},
     },
 };
@@ -54,6 +54,28 @@ impl Column {
     }
 }
 
+impl<'a, const N: usize> From<[(&'a str, Type); N]> for Schema {
+    fn from(value: [(&'a str, Type); N]) -> Self {
+        let mut columns = Vec::new();
+
+        let mut offset = 0;
+        for (name, ty) in value {
+            let size = ty.size();
+            columns.push(Column {
+                name: name.into(),
+                ty,
+                offset,
+            });
+            offset += size;
+        }
+
+        Self {
+            size: columns.iter().fold(0, |acc, c| acc + c.size()),
+            columns,
+        }
+    }
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub struct Schema {
     columns: Vec<Column>,
@@ -61,7 +83,6 @@ pub struct Schema {
 }
 
 impl Schema {
-    // TODO: accept a different Column type (ColumnDef?) and calculate offsets?
     pub fn new(columns: Vec<Column>) -> Self {
         // TODO: ensure column names are unique
         Self {
@@ -281,23 +302,12 @@ mod test {
         const INDEX_A: &str = "index_a";
         let mut catalog = Catalog::new(pc.clone());
 
-        let table_schema = Schema::new(vec![
-            Column {
-                name: "col_a".into(),
-                ty: Type::Int,
-                offset: 0,
-            },
-            Column {
-                name: "col_b".into(),
-                ty: Type::Varchar,
-                offset: 4,
-            },
-            Column {
-                name: "col_c".into(),
-                ty: Type::BigInt,
-                offset: 8,
-            },
-        ]);
+        let table_schema = [
+            ("col_a", Type::Int),
+            ("col_b", Type::Varchar),
+            ("col_c", Type::BigInt),
+        ]
+        .into();
 
         catalog.create_table(TABLE_A, table_schema)?;
         let info = catalog
