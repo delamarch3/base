@@ -12,7 +12,7 @@ use crate::{
     page_cache::SharedPageCache,
     table::{
         list::{List as Table, TableMeta},
-        tuple::RId,
+        tuple::{RId, Tuple},
     },
 };
 
@@ -211,9 +211,15 @@ impl<D: Disk> Catalog<D> {
                 let mut btree = BTree::<RId, _>::new(self.pc.clone(), &schema, 16);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
-                    let (_, tuple) = result.expect("todo");
-                    btree.insert(&tuple, &tuple.rid).expect("todo");
+                    // Remove columns from the tuple to match schema
+                    let (_, Tuple { rid, data }) = result.expect("todo");
+                    let tuple = Tuple::from(&data, &schema);
+                    dbg!(&tuple);
+                    btree.insert(&tuple, &rid).expect("todo");
                 }
+
+                // FIXME: scan returns different data to what is inserted, compare to above dbg
+                dbg!(btree.scan().unwrap());
 
                 root = btree.root();
             }
@@ -260,11 +266,7 @@ mod test {
         page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRU,
-        storable::Storable,
-        table::{
-            list::List as Table,
-            tuple::{RId, Tuple, TupleBuilder, TupleMeta, Value},
-        },
+        table::tuple::{RId, Tuple, TupleBuilder, TupleMeta, Value},
     };
 
     #[test]
@@ -293,7 +295,7 @@ mod test {
             Column {
                 name: "col_c".into(),
                 ty: Type::BigInt,
-                offset: 6,
+                offset: 8,
             },
         ]);
 
@@ -301,8 +303,7 @@ mod test {
         let info = catalog
             .get_table_by_name(TABLE_A)
             .expect("table_a should exist");
-        let rid = info
-            .table
+        info.table
             .insert(
                 &TupleBuilder::new()
                     .add(&Value::Int(10))
@@ -312,8 +313,7 @@ mod test {
                 &TupleMeta { deleted: false },
             )?
             .expect("there should be a rid");
-        let rid = info
-            .table
+        info.table
             .insert(
                 &TupleBuilder::new()
                     .add(&Value::Int(20))
@@ -333,18 +333,45 @@ mod test {
             Column {
                 name: "col_c".into(),
                 ty: Type::BigInt,
-                offset: 4,
+                offset: 8,
             },
         ]);
 
         catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, key_schema.clone());
-        // let index = catalog
-        //     .get_index(TABLE_A, INDEX_A)
-        //     .expect("index_a should exist");
-        // let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 32);
-        // let have = index.scan()?;
-        // let want: Vec<(Tuple, RId)> = Vec::new();
-        // assert_eq!(want, have);
+        let index = catalog
+            .get_index(TABLE_A, INDEX_A)
+            .expect("index_a should exist");
+        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 16);
+        let have = index.scan()?;
+        let want: Vec<(Tuple, RId)> = vec![
+            (
+                Tuple {
+                    data: TupleBuilder::new()
+                        .add(&Value::Int(10))
+                        .add(&Value::BigInt(20))
+                        .build(),
+                    ..Default::default()
+                },
+                RId {
+                    page_id: 0,
+                    slot_id: 0,
+                },
+            ),
+            (
+                Tuple {
+                    data: TupleBuilder::new()
+                        .add(&Value::Int(20))
+                        .add(&Value::BigInt(30))
+                        .build(),
+                    ..Default::default()
+                },
+                RId {
+                    page_id: 0,
+                    slot_id: 1,
+                },
+            ),
+        ];
+        assert_eq!(want, have);
 
         Ok(())
     }

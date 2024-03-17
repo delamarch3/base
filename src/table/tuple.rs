@@ -30,7 +30,7 @@ impl Value {
                     u16::from_be_bytes(data[column.offset..column.offset + 2].try_into().unwrap())
                         as usize;
 
-                // Second two bytes is the size
+                // Second two bytes is the length
                 let size = u16::from_be_bytes(
                     data[column.offset + 2..column.offset + 4]
                         .try_into()
@@ -126,10 +126,15 @@ pub struct Tuple {
 }
 
 impl Tuple {
-    // TODO: unit tests
+    // TODO: rewrite to use TupleBuilder
     pub fn from(buf: &[u8], schema: &Schema) -> Tuple {
-        let mut data = BytesMut::new();
-        let mut var = 0;
+        struct Variable<'a> {
+            data: &'a [u8],
+            offset_offset: usize,
+        }
+
+        let mut ret = BytesMut::new();
+        let mut vars = Vec::new();
 
         // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
         // This assumes the tuple begins at the zeroth byte
@@ -139,22 +144,42 @@ impl Tuple {
             offset,
         } in schema.columns()
         {
-            data.put(&buf[*offset..*offset + ty.size()]);
+            let start = ret.len();
+            ret.put(&buf[*offset..*offset + ty.size()]);
+
             match ty {
                 Type::Varchar => {
-                    // Add to `var` to extend `data` at the end
-                    var += u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
-                        as usize;
+                    let (var_offset, length) = (
+                        u16::from_be_bytes((&buf[*offset..*offset + 2]).try_into().unwrap())
+                            as usize,
+                        u16::from_be_bytes((&buf[*offset + 2..*offset + 4]).try_into().unwrap())
+                            as usize,
+                    );
+
+                    // Data to add on at the end of the tuple
+                    vars.push(Variable {
+                        data: &buf[var_offset..var_offset + length],
+                        offset_offset: start,
+                    });
                 }
                 _ => {}
             }
         }
 
         // Variable length section
-        data.put(&buf[data.len()..data.len() + var]);
+        for Variable {
+            data,
+            offset_offset,
+        } in vars
+        {
+            // Write correct offset
+            let offset = ret.len();
+            ret[offset_offset..offset_offset + 2].copy_from_slice(&u16::to_be_bytes(offset as u16));
+            ret.put(data);
+        }
 
         Self {
-            data,
+            data: ret,
             ..Default::default()
         }
     }
@@ -358,7 +383,7 @@ impl TupleBuilder {
             Value::Varchar(v) => {
                 let offset = self.data.len();
 
-                // First two bytes is the offset, which we won't know until the build()
+                // First two bytes is the offset, which we won't know until build()
                 // Second two bytes is the length
                 self.data.resize(offset + 4, 0);
                 self.data[offset + 2..offset + 4]
@@ -405,12 +430,141 @@ mod test {
     };
 
     #[test]
-    fn test_comparator() {
-        let rid = RId {
-            page_id: 0,
-            slot_id: 0,
-        };
+    fn test_from() {
+        struct Test {
+            schema: Schema,
+            tuple: BytesMut,
+            want: BytesMut,
+        }
 
+        let tcs = [
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::Varchar,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_c".into(),
+                        ty: Type::Int,
+                        offset: 4,
+                    },
+                ]),
+                tuple: TupleBuilder::new()
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::Int(20))
+                    .build(),
+                want: TupleBuilder::new()
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::Int(20))
+                    .build(),
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_a".into(),
+                        ty: Type::Int,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::Varchar,
+                        offset: 4,
+                    },
+                    Column {
+                        name: "col_c".into(),
+                        ty: Type::BigInt,
+                        offset: 8,
+                    },
+                ]),
+                tuple: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+                want: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_b".into(),
+                        ty: Type::Varchar,
+                        offset: 4,
+                    },
+                    Column {
+                        name: "col_c".into(),
+                        ty: Type::BigInt,
+                        offset: 8,
+                    },
+                ]),
+                tuple: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+                want: TupleBuilder::new()
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+            },
+            Test {
+                schema: Schema::new(vec![Column {
+                    name: "col_b".into(),
+                    ty: Type::Varchar,
+                    offset: 4,
+                }]),
+                tuple: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+                want: TupleBuilder::new()
+                    .add(&Value::Varchar("row_a".into()))
+                    .build(),
+            },
+            Test {
+                schema: Schema::new(vec![
+                    Column {
+                        name: "col_a".into(),
+                        ty: Type::Int,
+                        offset: 0,
+                    },
+                    Column {
+                        name: "col_c".into(),
+                        ty: Type::BigInt,
+                        offset: 8,
+                    },
+                ]),
+                tuple: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::Varchar("row_a".into()))
+                    .add(&Value::BigInt(20))
+                    .build(),
+                want: TupleBuilder::new()
+                    .add(&Value::Int(10))
+                    .add(&Value::BigInt(20))
+                    .build(),
+            },
+        ];
+
+        for Test {
+            schema,
+            tuple,
+            want,
+        } in tcs
+        {
+            let Tuple { data: have, .. } = Tuple::from(&tuple, &schema);
+            assert_eq!(want, have);
+        }
+    }
+
+    #[test]
+    fn test_comparator() {
         struct Test {
             schema: Schema,
             lhs: BytesMut,
@@ -587,8 +741,14 @@ mod test {
             want,
         } in tcs
         {
-            let lhs = Tuple { rid, data: lhs };
-            let rhs = Tuple { rid, data: rhs };
+            let lhs = Tuple {
+                data: lhs,
+                ..Default::default()
+            };
+            let rhs = Tuple {
+                data: rhs,
+                ..Default::default()
+            };
 
             let have = Comparand(&schema, &lhs).cmp(&Comparand(&schema, &rhs));
             assert_eq!(want, have);

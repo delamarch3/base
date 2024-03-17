@@ -128,7 +128,6 @@ where
 
         let mut from = NODE_VALUES_START;
         for value in &node.values {
-            dbg!(value);
             let size = Either::<V>::SIZE + value.0.size();
             let slot = BytesMut::from(value);
             ret[from..from + size].copy_from_slice(&slot);
@@ -181,7 +180,6 @@ where
         let mut left = &buf[NODE_VALUES_START..];
         let mut rem = len;
         while rem > 0 {
-            // FIXME: this produces the wrong values
             let tuple = Tuple::from(left, schema);
             let slot_size = tuple.size() + Either::<V>::SIZE;
             let either = Either::from(&left[tuple.size()..slot_size]);
@@ -189,8 +187,6 @@ where
             left = &left[slot_size..];
             rem -= 1;
         }
-
-        dbg!(&values);
 
         Self {
             t,
