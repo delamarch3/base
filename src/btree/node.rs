@@ -51,7 +51,6 @@ const NODE_VALUES_START: usize = 18;
 pub struct Node<'s, V> {
     pub t: NodeType,
     pub is_root: bool,
-    len: u32, // TODO: len doesn't need to be in struct
     max: u32,
     pub next: PageId,
     pub id: PageId,
@@ -68,7 +67,6 @@ where
         struct Temp {
             t: NodeType,
             is_root: bool,
-            len: u32, // TODO: len doesn't need to be in struct
             max: u32,
             next: PageId,
             id: PageId,
@@ -77,14 +75,12 @@ where
         if (Temp {
             t: self.t,
             is_root: self.is_root,
-            len: self.len,
             max: self.max,
             next: self.next,
             id: self.id,
         }) != (Temp {
             t: other.t,
             is_root: other.is_root,
-            len: other.len,
             max: other.max,
             next: other.next,
             id: other.id,
@@ -159,7 +155,6 @@ where
         Self {
             t,
             is_root,
-            len: 0,
             max,
             next: -1,
             id,
@@ -191,7 +186,6 @@ where
         Self {
             t,
             is_root,
-            len,
             max,
             next,
             id,
@@ -204,13 +198,11 @@ where
     pub fn split(&mut self, id: PageId) -> Node<'s, V> {
         // All values in the greater half end up in `rest`
         let rest = self.values.split_off(self.values.len() / 2);
-        self.len = self.values.len() as u32;
         self.is_root = false;
 
         let mut new = Node {
             t: self.t,
             is_root: false,
-            len: rest.len() as u32,
             max: self.max,
             next: -1,
             id,
@@ -271,10 +263,11 @@ where
         self.values.last().map(|s| &s.0)
     }
 
-    // TODO: prefer size of page over set max
     #[inline]
     pub fn almost_full(&self) -> bool {
-        self.values.len() >= self.max as usize / 2
+        // TODO: Needs to take into account varchar
+        // VALUES_START + self.size >= PAGE_SIZE / 2
+        self.values.len() * self.schema.size() >= PAGE_SIZE / 2
     }
 
     pub fn insert(&mut self, slot: Slot<V>) -> bool {
@@ -373,7 +366,6 @@ mod test {
         let node = Node {
             t: NodeType::Leaf,
             is_root: true,
-            len: 10,
             max: 20,
             next: -1,
             id: 0,
@@ -410,7 +402,6 @@ mod test {
         let mut node = Node {
             t: NodeType::Leaf,
             is_root: true,
-            len: 11,
             max: 20,
             next: -1,
             id: 0,
@@ -435,7 +426,6 @@ mod test {
         let expected = Node {
             t: NodeType::Leaf,
             is_root: false,
-            len: 5,
             max: 20,
             next: 1,
             id: 0,
@@ -454,7 +444,6 @@ mod test {
         let expected_new = Node {
             t: NodeType::Leaf,
             is_root: false,
-            len: 6,
             max: 20,
             next: -1,
             id: 1,
@@ -483,7 +472,6 @@ mod test {
         let node = Node {
             t: NodeType::Leaf,
             is_root: false,
-            len: 5,
             max: 20,
             next: 1,
             id: 0,
@@ -500,7 +488,6 @@ mod test {
         let other = Node {
             t: NodeType::Leaf,
             is_root: false,
-            len: 6,
             max: 20,
             next: -1,
             id: 1,
@@ -533,7 +520,6 @@ mod test {
         let node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            len: 5,
             max: 20,
             next: 1,
             id: 0,
@@ -550,7 +536,6 @@ mod test {
         let other = Node {
             t: NodeType::Internal,
             is_root: false,
-            len: 6,
             max: 20,
             next: -1,
             id: 1,
@@ -583,7 +568,6 @@ mod test {
         let node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            len: 5,
             max: 20,
             next: 1,
             id: 0,
@@ -633,7 +617,6 @@ mod test {
         let mut node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            len: 0,
             max: 0,
             next: 1,
             id: 0,

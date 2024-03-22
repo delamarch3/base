@@ -79,7 +79,7 @@ where
     }
 }
 
-// Size = 1 + size_of::<K>() + size_of::<V>()
+// Size = 1 + Schema + size_of::<V>()
 // | Key | Flag (1) | Value
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Slot<V>(pub Tuple, pub Either<V>);
@@ -95,5 +95,11 @@ where
         ret[k.size()..k.size() + Either::<V>::SIZE].copy_from_slice(&BytesMut::from(v));
 
         ret
+    }
+}
+
+impl<V> Slot<V> {
+    pub fn size(&self) -> usize {
+        self.0.size() + Either::<V>::SIZE
     }
 }
