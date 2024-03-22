@@ -308,6 +308,8 @@ impl<D: Disk> Catalog<D> {
 
 #[cfg(test)]
 mod test {
+    use bytes::BytesMut;
+
     use crate::{
         btree::BTree,
         catalog::{Catalog, IndexType, Schema, Type},
@@ -326,81 +328,96 @@ mod test {
         let replacer = LRU::new(K);
         let pc = PageCache::new(memory, replacer, 0);
 
-        const TABLE_A: &str = "table_a";
-        const INDEX_A: &str = "index_a";
-        let mut catalog = Catalog::new(pc.clone());
+        struct Test {
+            schema: Schema,
+            key: &'static [&'static str],
+            tuples: Vec<BytesMut>,
+            want: Vec<(Tuple, RId)>,
+        }
 
-        let schema: Schema = [
-            ("col_a", Type::Int),
-            ("col_b", Type::Varchar),
-            ("col_c", Type::BigInt),
-        ]
-        .into();
-
-        catalog.create_table(TABLE_A, schema.clone())?;
-        let info = catalog
-            .get_table_by_name(TABLE_A)
-            .expect("table_a should exist");
-        info.table
-            .insert(
-                &TupleBuilder::new()
+        let tcs = [Test {
+            schema: [
+                ("col_a", Type::Int),
+                ("col_b", Type::Varchar),
+                ("col_c", Type::BigInt),
+            ]
+            .into(),
+            key: &["col_a", "col_c"],
+            tuples: vec![
+                TupleBuilder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into())) // TODO: slot panics when this is the last column?
                     .add(&Value::BigInt(20))
                     .build(),
-                &TupleMeta { deleted: false },
-            )?
-            .expect("there should be a rid");
-        info.table
-            .insert(
-                &TupleBuilder::new()
+                TupleBuilder::new()
                     .add(&Value::Int(20))
                     .add(&Value::Varchar("row_b".into())) // TODO: slot panics when this is the last column?
                     .add(&Value::BigInt(30))
                     .build(),
-                &TupleMeta { deleted: false },
-            )?
-            .expect("there should be a rid");
+            ],
+            want: vec![
+                (
+                    Tuple {
+                        data: TupleBuilder::new()
+                            .add(&Value::Int(10))
+                            .add(&Value::BigInt(20))
+                            .build(),
+                        ..Default::default()
+                    },
+                    RId {
+                        page_id: 0,
+                        slot_id: 0,
+                    },
+                ),
+                (
+                    Tuple {
+                        data: TupleBuilder::new()
+                            .add(&Value::Int(20))
+                            .add(&Value::BigInt(30))
+                            .build(),
+                        ..Default::default()
+                    },
+                    RId {
+                        page_id: 0,
+                        slot_id: 1,
+                    },
+                ),
+            ],
+        }];
 
-        let key = &["col_a", "col_c"];
-        let index_schema = schema.filter(key).compact();
+        const TABLE_A: &str = "table_a";
+        const INDEX_A: &str = "index_a";
+        for Test {
+            schema,
+            key,
+            tuples,
+            want,
+        } in tcs
+        {
+            let mut catalog = Catalog::new(pc.clone());
+            catalog.create_table(TABLE_A, schema.clone())?;
+            let info = catalog
+                .get_table_by_name(TABLE_A)
+                .expect("table_a should exist");
 
-        catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
-        let index = catalog
-            .get_index(TABLE_A, INDEX_A)
-            .expect("index_a should exist");
-        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema, 16);
-        let have = index.scan()?;
-        let want: Vec<(Tuple, RId)> = vec![
-            (
-                Tuple {
-                    data: TupleBuilder::new()
-                        .add(&Value::Int(10))
-                        .add(&Value::BigInt(20))
-                        .build(),
-                    ..Default::default()
-                },
-                RId {
-                    page_id: 0,
-                    slot_id: 0,
-                },
-            ),
-            (
-                Tuple {
-                    data: TupleBuilder::new()
-                        .add(&Value::Int(20))
-                        .add(&Value::BigInt(30))
-                        .build(),
-                    ..Default::default()
-                },
-                RId {
-                    page_id: 0,
-                    slot_id: 1,
-                },
-            ),
-        ];
+            for tuple in tuples {
+                info.table
+                    .insert(&tuple, &TupleMeta { deleted: false })?
+                    .expect("there should be a rid");
+            }
 
-        assert_eq!(want, have);
+            let index_schema = schema.filter(key).compact();
+
+            catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
+            let index = catalog
+                .get_index(TABLE_A, INDEX_A)
+                .expect("index_a should exist");
+            let index: BTree<RId, _> =
+                BTree::new_with_root(pc.clone(), index.root, &index_schema, 16);
+            let have = index.scan()?;
+
+            assert_eq!(want, have);
+        }
 
         Ok(())
     }
