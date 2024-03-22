@@ -96,6 +96,37 @@ impl Schema {
     pub fn columns(&self) -> &Vec<Column> {
         &self.columns
     }
+
+    pub fn filter(&self, cols: &[&str]) -> Self {
+        let mut size = 0;
+        let columns = self
+            .iter()
+            .filter(|Column { name, .. }| cols.contains(&name.as_str()))
+            .map(|col| {
+                size += col.ty.size();
+                col.clone()
+            })
+            .collect();
+
+        Self { columns, size }
+    }
+
+    pub fn compact(&self) -> Self {
+        let mut ret = self.clone();
+        let mut offset = 0;
+        ret.columns.iter_mut().for_each(
+            |Column {
+                 ty,
+                 offset: col_offset,
+                 ..
+             }| {
+                *col_offset = offset;
+                offset += ty.size()
+            },
+        );
+
+        ret
+    }
 }
 
 impl Schema {
@@ -205,7 +236,8 @@ impl<D: Disk> Catalog<D> {
         index_name: &str,
         table_name: &str,
         index_ty: IndexType,
-        schema: Schema,
+        schema: &Schema,
+        key: &[&str],
     ) -> Option<&IndexInfo> {
         // TODO: verify key schema against table schema
 
@@ -219,22 +251,24 @@ impl<D: Disk> Catalog<D> {
             return None;
         }
 
+        // Schema for creating key tuple from table tuple (offsets could be sparse)
+        let tuple_schema = schema.filter(key);
+
+        // Correct offsets for the index so they are read/written correctly
+        let index_schema = tuple_schema.compact();
+
         let root;
         match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
-                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &schema, 16);
+                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &index_schema, 16);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
                     let (_, Tuple { rid, data }) = result.expect("todo");
-                    let tuple = Tuple::from(&data, &schema);
-                    dbg!(&tuple);
+                    let tuple = Tuple::from(&data, &tuple_schema);
                     btree.insert(&tuple, &rid).expect("todo");
                 }
-
-                // FIXME: scan returns different data to what is inserted, compare to above dbg
-                dbg!(btree.scan().unwrap());
 
                 root = btree.root();
             }
@@ -247,7 +281,7 @@ impl<D: Disk> Catalog<D> {
             oid,
             IndexInfo {
                 name: index_name.into(),
-                schema,
+                schema: index_schema,
                 oid,
                 index_ty,
                 root,
@@ -276,7 +310,7 @@ impl<D: Disk> Catalog<D> {
 mod test {
     use crate::{
         btree::BTree,
-        catalog::{Catalog, Column, IndexType, Schema, Type},
+        catalog::{Catalog, IndexType, Schema, Type},
         disk::Memory,
         page::PAGE_SIZE,
         page_cache::PageCache,
@@ -296,14 +330,14 @@ mod test {
         const INDEX_A: &str = "index_a";
         let mut catalog = Catalog::new(pc.clone());
 
-        let table_schema = [
+        let schema: Schema = [
             ("col_a", Type::Int),
             ("col_b", Type::Varchar),
             ("col_c", Type::BigInt),
         ]
         .into();
 
-        catalog.create_table(TABLE_A, table_schema)?;
+        catalog.create_table(TABLE_A, schema.clone())?;
         let info = catalog
             .get_table_by_name(TABLE_A)
             .expect("table_a should exist");
@@ -328,24 +362,14 @@ mod test {
             )?
             .expect("there should be a rid");
 
-        let key_schema = Schema::new(vec![
-            Column {
-                name: "col_a".into(),
-                ty: Type::Int,
-                offset: 0,
-            },
-            Column {
-                name: "col_c".into(),
-                ty: Type::BigInt,
-                offset: 8,
-            },
-        ]);
+        let key = &["col_a", "col_c"];
+        let index_schema = schema.filter(key).compact();
 
-        catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, key_schema.clone());
+        catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
         let index = catalog
             .get_index(TABLE_A, INDEX_A)
             .expect("index_a should exist");
-        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &key_schema, 16);
+        let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema, 16);
         let have = index.scan()?;
         let want: Vec<(Tuple, RId)> = vec![
             (
@@ -375,6 +399,7 @@ mod test {
                 },
             ),
         ];
+
         assert_eq!(want, have);
 
         Ok(())
