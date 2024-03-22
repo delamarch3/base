@@ -36,11 +36,6 @@ impl Type {
     }
 }
 
-pub enum Length {
-    Fixed(u8),
-    Variable,
-}
-
 #[derive(PartialEq, Clone, Debug)]
 pub struct Column {
     pub name: String,
@@ -54,8 +49,8 @@ impl Column {
     }
 }
 
-impl<'a, const N: usize> From<[(&'a str, Type); N]> for Schema {
-    fn from(value: [(&'a str, Type); N]) -> Self {
+impl<const N: usize> From<[(&str, Type); N]> for Schema {
+    fn from(value: [(&str, Type); N]) -> Self {
         let mut columns = Vec::new();
 
         let mut offset = 0;
@@ -69,7 +64,7 @@ impl<'a, const N: usize> From<[(&'a str, Type); N]> for Schema {
         }
 
         Self {
-            size: columns.iter().fold(0, |acc, c| acc + c.size()),
+            size: offset,
             columns,
         }
     }
