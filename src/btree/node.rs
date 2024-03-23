@@ -41,10 +41,9 @@ impl From<NodeType> for u8 {
 const NODE_TYPE: usize = 0;
 const NODE_IS_ROOT: usize = 1;
 const NODE_LEN: Range<usize> = 2..6;
-const NODE_MAX: Range<usize> = 6..10;
-const NODE_NEXT: Range<usize> = 10..14;
-const NODE_ID: Range<usize> = 14..18;
-const NODE_VALUES_START: usize = 18;
+const NODE_NEXT: Range<usize> = 6..10;
+const NODE_ID: Range<usize> = 10..14;
+const NODE_VALUES_START: usize = 14;
 
 // | NodeType (1) | Root (1) | Len (4) | Max (4) | Next (4) | PageId (4) | Values
 #[derive(Clone, Debug)]
@@ -114,7 +113,6 @@ where
         ret[NODE_TYPE] = u8::from(node.t);
         ret[NODE_IS_ROOT] = node.is_root as u8;
         ret[NODE_LEN].copy_from_slice(&(node.values.len() as u32).to_be_bytes());
-        ret[NODE_MAX].copy_from_slice(&0u32.to_be_bytes());
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
         ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
 
@@ -162,7 +160,6 @@ where
         let t = NodeType::from(buf[NODE_TYPE]);
         let is_root = buf[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
-        let _max = u32::from_be_bytes(buf[NODE_MAX].try_into().unwrap());
         let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
         let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
