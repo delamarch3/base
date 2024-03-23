@@ -544,7 +544,6 @@ mod test {
 
     #[test]
     fn test_btree_scan() -> crate::Result<()> {
-        const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 64;
         const K: usize = 2;
 
@@ -590,7 +589,6 @@ mod test {
             to: Tuple,
         }
 
-        const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;
 

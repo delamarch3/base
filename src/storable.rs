@@ -1,9 +1,5 @@
 use std::mem::size_of;
 
-use bytes::BufMut;
-
-use crate::page::PageId;
-
 pub trait Storable: std::fmt::Debug {
     const SIZE: usize;
     type ByteArray;

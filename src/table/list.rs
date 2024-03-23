@@ -218,7 +218,7 @@ mod test {
         table::list::List,
         table::{
             list::TableMeta,
-            tuple::{RId, Tuple, TupleMeta},
+            tuple::{Tuple, TupleMeta},
         },
     };
 
