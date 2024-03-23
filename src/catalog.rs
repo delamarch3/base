@@ -261,7 +261,7 @@ impl<D: Disk> Catalog<D> {
         match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
-                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &index_schema, 16);
+                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &index_schema);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
@@ -412,8 +412,7 @@ mod test {
             let index = catalog
                 .get_index(TABLE_A, INDEX_A)
                 .expect("index_a should exist");
-            let index: BTree<RId, _> =
-                BTree::new_with_root(pc.clone(), index.root, &index_schema, 16);
+            let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema);
             let have = index.scan()?;
 
             assert_eq!(want, have);

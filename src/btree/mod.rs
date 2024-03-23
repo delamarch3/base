@@ -20,7 +20,6 @@ use crate::{
 pub struct BTree<'s, V, D: Disk = FileSystem> {
     root: PageId,
     pc: SharedPageCache<D>,
-    max: u32,
     schema: &'s Schema,
     _data: PhantomData<V>,
 }
@@ -30,26 +29,19 @@ where
     V: Storable + Clone + Eq,
     D: Disk,
 {
-    pub fn new(pc: SharedPageCache<D>, schema: &'s Schema, max: u32) -> Self {
+    pub fn new(pc: SharedPageCache<D>, schema: &'s Schema) -> Self {
         Self {
             root: -1,
             pc,
-            max,
             schema,
             _data: PhantomData,
         }
     }
 
-    pub fn new_with_root(
-        pc: SharedPageCache<D>,
-        root: PageId,
-        schema: &'s Schema,
-        max: u32,
-    ) -> Self {
+    pub fn new_with_root(pc: SharedPageCache<D>, root: PageId, schema: &'s Schema) -> Self {
         Self {
             root,
             pc,
-            max,
             schema,
             _data: PhantomData,
         }
@@ -66,7 +58,7 @@ where
         let rpage = match self.root {
             -1 => {
                 pin = self.pc.new_page()?;
-                let node: Node<V> = Node::new(pin.id, self.max, NodeType::Leaf, true, &self.schema);
+                let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true, &self.schema);
                 let mut page = pin.write();
                 writep!(page, &PageBuf::from(&node));
                 page
@@ -80,8 +72,7 @@ where
 
         if let Some((s, os)) = self._insert(None, rpage, key, value)? {
             let new_root_page = self.pc.new_page()?;
-            let mut new_root =
-                Node::new(new_root_page.id, self.max, NodeType::Internal, true, &self.schema);
+            let mut new_root = Node::new(new_root_page.id, NodeType::Internal, true, &self.schema);
             self.root = new_root.id;
 
             new_root.insert(s);
@@ -473,7 +464,6 @@ mod test {
 
     #[test]
     fn test_btree_values() -> crate::Result<()> {
-        const MAX: usize = 8;
         const MEMORY: usize = PAGE_SIZE * 128;
         const K: usize = 2;
 
@@ -486,7 +476,7 @@ mod test {
             ty: Type::Int,
             offset: 0,
         }]);
-        let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
+        let mut btree = BTree::new(pc.clone(), &schema);
 
         // Insert and get
         let range = -50..50;
@@ -568,7 +558,7 @@ mod test {
             ty: Type::Int,
             offset: 0,
         }]);
-        let mut btree = BTree::new(pc, &schema, MAX as u32);
+        let mut btree = BTree::new(pc, &schema);
 
         let range = -50..50;
         let mut want = inserts!(range, i32);
@@ -637,7 +627,7 @@ mod test {
             to,
         } in tcs
         {
-            let mut btree = BTree::new(pc.clone(), &schema, MAX as u32);
+            let mut btree = BTree::new(pc.clone(), &schema);
 
             let mut inserts = inserts!(range, i32);
             for (k, v) in &inserts {

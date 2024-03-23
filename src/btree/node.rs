@@ -51,7 +51,6 @@ const NODE_VALUES_START: usize = 18;
 pub struct Node<'s, V> {
     pub t: NodeType,
     pub is_root: bool,
-    max: u32,
     pub next: PageId,
     pub id: PageId,
     values: Vec<Slot<V>>,
@@ -67,7 +66,6 @@ where
         struct Temp {
             t: NodeType,
             is_root: bool,
-            max: u32,
             next: PageId,
             id: PageId,
         }
@@ -75,13 +73,11 @@ where
         if (Temp {
             t: self.t,
             is_root: self.is_root,
-            max: self.max,
             next: self.next,
             id: self.id,
         }) != (Temp {
             t: other.t,
             is_root: other.is_root,
-            max: other.max,
             next: other.next,
             id: other.id,
         }) {
@@ -118,7 +114,7 @@ where
         ret[NODE_TYPE] = u8::from(node.t);
         ret[NODE_IS_ROOT] = node.is_root as u8;
         ret[NODE_LEN].copy_from_slice(&(node.values.len() as u32).to_be_bytes());
-        ret[NODE_MAX].copy_from_slice(&node.max.to_be_bytes());
+        ret[NODE_MAX].copy_from_slice(&0u32.to_be_bytes());
         ret[NODE_NEXT].copy_from_slice(&node.next.to_be_bytes());
         ret[NODE_ID].copy_from_slice(&node.id.to_be_bytes());
 
@@ -151,11 +147,10 @@ impl<'s, V> Node<'s, V>
 where
     V: Storable,
 {
-    pub fn new(id: PageId, max: u32, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
+    pub fn new(id: PageId, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
         Self {
             t,
             is_root,
-            max,
             next: -1,
             id,
             values: Vec::new(),
@@ -167,7 +162,7 @@ where
         let t = NodeType::from(buf[NODE_TYPE]);
         let is_root = buf[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
-        let max = u32::from_be_bytes(buf[NODE_MAX].try_into().unwrap());
+        let _max = u32::from_be_bytes(buf[NODE_MAX].try_into().unwrap());
         let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
         let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
@@ -186,7 +181,6 @@ where
         Self {
             t,
             is_root,
-            max,
             next,
             id,
             values,
@@ -203,7 +197,6 @@ where
         let mut new = Node {
             t: self.t,
             is_root: false,
-            max: self.max,
             next: -1,
             id,
             values: rest,
@@ -366,7 +359,6 @@ mod test {
         let node = Node {
             t: NodeType::Leaf,
             is_root: true,
-            max: 20,
             next: -1,
             id: 0,
             values: vec![
@@ -402,7 +394,6 @@ mod test {
         let mut node = Node {
             t: NodeType::Leaf,
             is_root: true,
-            max: 20,
             next: -1,
             id: 0,
             values: vec![
@@ -426,7 +417,6 @@ mod test {
         let expected = Node {
             t: NodeType::Leaf,
             is_root: false,
-            max: 20,
             next: 1,
             id: 0,
             values: vec![
@@ -444,7 +434,6 @@ mod test {
         let expected_new = Node {
             t: NodeType::Leaf,
             is_root: false,
-            max: 20,
             next: -1,
             id: 1,
             values: vec![
@@ -472,7 +461,6 @@ mod test {
         let node = Node {
             t: NodeType::Leaf,
             is_root: false,
-            max: 20,
             next: 1,
             id: 0,
             values: vec![
@@ -488,7 +476,6 @@ mod test {
         let other = Node {
             t: NodeType::Leaf,
             is_root: false,
-            max: 20,
             next: -1,
             id: 1,
             values: vec![
@@ -520,7 +507,6 @@ mod test {
         let node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            max: 20,
             next: 1,
             id: 0,
             values: vec![
@@ -536,7 +522,6 @@ mod test {
         let other = Node {
             t: NodeType::Internal,
             is_root: false,
-            max: 20,
             next: -1,
             id: 1,
             values: vec![
@@ -568,7 +553,6 @@ mod test {
         let node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            max: 20,
             next: 1,
             id: 0,
             values: vec![
@@ -617,7 +601,6 @@ mod test {
         let mut node: Node<i32> = Node {
             t: NodeType::Internal,
             is_root: false,
-            max: 0,
             next: 1,
             id: 0,
             values: vec![],
