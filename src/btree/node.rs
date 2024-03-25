@@ -165,14 +165,12 @@ where
 
         let mut values = Vec::new();
         let mut left = &buf[NODE_VALUES_START..];
-        let mut rem = len;
-        while rem > 0 {
+        for _ in 0..len {
             let tuple = Tuple::from(left, schema);
             let slot_size = tuple.size() + Either::<V>::SIZE;
             let either = Either::from(&left[tuple.size()..slot_size]);
             values.push(Slot(tuple, either));
             left = &left[slot_size..];
-            rem -= 1;
         }
 
         Self {
