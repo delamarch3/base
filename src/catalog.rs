@@ -322,7 +322,7 @@ mod test {
 
     #[test]
     fn test_btree_index() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 32;
+        const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
         let memory = Memory::new::<MEMORY>();
         let replacer = LRU::new(K);

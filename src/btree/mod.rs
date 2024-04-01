@@ -381,7 +381,13 @@ where
         let r = page.read();
         let node: Node<V> = Node::from(&r.data, &self.schema);
 
-        dbg!(&node);
+        println!("BTreeNode {{");
+        println!("\tid: {}", node.id);
+        println!("\troot: {}", node.is_root);
+        println!("\ttype: {}", node.t);
+        println!("\tnext: {}", node.next);
+        println!("\tlen: {}", node.len());
+        println!("}}");
 
         for slot in node.iter() {
             match slot.1 {
@@ -464,7 +470,7 @@ mod test {
 
     #[test]
     fn test_btree_values() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 128;
+        const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
@@ -479,7 +485,7 @@ mod test {
         let mut btree = BTree::new(pc.clone(), &schema);
 
         // Insert and get
-        let range = -50..50;
+        let range = -230..230;
         let inserts = inserts!(range, i32);
 
         for (k, v) in &inserts {
@@ -524,7 +530,7 @@ mod test {
         }
 
         // Insert and get a different range
-        let range = -25..100;
+        let range = -25..300;
         let inserts = inserts!(range, i32);
 
         for (k, v) in &inserts {
@@ -544,7 +550,7 @@ mod test {
 
     #[test]
     fn test_btree_scan() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 64;
+        const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();
@@ -589,7 +595,7 @@ mod test {
             to: Tuple,
         }
 
-        const MEMORY: usize = PAGE_SIZE * 128;
+        const MEMORY: usize = PAGE_SIZE * 16;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();

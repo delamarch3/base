@@ -38,6 +38,15 @@ impl From<NodeType> for u8 {
     }
 }
 
+impl std::fmt::Display for NodeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeType::Internal => write!(f, "Internal"),
+            NodeType::Leaf => write!(f, "Leaf"),
+        }
+    }
+}
+
 const NODE_TYPE: usize = 0;
 const NODE_IS_ROOT: usize = 1;
 const NODE_LEN: Range<usize> = 2..6;
@@ -254,8 +263,9 @@ where
     #[inline]
     pub fn almost_full(&self) -> bool {
         // TODO: Needs to take into account varchar
-        // VALUES_START + self.size >= PAGE_SIZE / 2
-        self.values.len() * self.schema.size() >= PAGE_SIZE / 2
+        // schema.size() = key, either size = value size + flag
+        self.values.len() * (self.schema.size() + Either::<V>::SIZE)
+            >= (PAGE_SIZE - NODE_VALUES_START) / 4
     }
 
     pub fn insert(&mut self, slot: Slot<V>) -> bool {
@@ -331,6 +341,14 @@ where
         } else {
             false
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
     }
 }
 
