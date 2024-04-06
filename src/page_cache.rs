@@ -134,23 +134,7 @@ pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
 impl<D: Disk> PageCache<D> {
     pub fn new(disk: D, replacer: Arc<LRU>, next_page_id: PageId) -> Arc<Self> {
-        // Workaround to allocate pages since std::array::from_fn(|_| Page::default()) overflows
-        // the stack:
-        let mut pages;
-        unsafe {
-            let layout = std::alloc::Layout::new::<[Page; CACHE_SIZE]>();
-            let ptr = std::alloc::alloc(layout);
-            if ptr.is_null() {
-                std::alloc::handle_alloc_error(layout);
-            }
-
-            pages = Box::from_raw(ptr as *mut [Page; CACHE_SIZE]);
-
-            for page in pages.iter_mut() {
-                *page = Page::default();
-            }
-        };
-
+        let pages = Box::new(std::array::from_fn(|_| Page::default()));
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
@@ -262,7 +246,6 @@ impl<D: Disk> PageCache<D> {
 
 #[cfg(test)]
 mod test {
-    // FIXME: 'pointer being freed was not allocated' when run with all other tests
     use std::{sync::Arc, thread};
 
     use crate::{
@@ -274,7 +257,6 @@ mod test {
     };
 
     #[test]
-    #[ignore]
     fn test_pm_read() -> Result<(), PageCacheError> {
         const MEMORY: usize = PAGE_SIZE * CACHE_SIZE;
         const K: usize = 2;
@@ -317,7 +299,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_pm_replacer_full() -> Result<(), PageCacheError> {
         const MEMORY: usize = PAGE_SIZE * CACHE_SIZE;
         const K: usize = 2;
@@ -337,7 +318,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_free_list() {
         thread::scope(|s| {
             const SIZE: usize = 8;
