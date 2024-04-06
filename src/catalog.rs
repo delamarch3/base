@@ -335,55 +335,106 @@ mod test {
             want: Vec<(Tuple, RId)>,
         }
 
-        let tcs = [Test {
-            schema: [
-                ("col_a", Type::Int),
-                ("col_b", Type::Varchar),
-                ("col_c", Type::BigInt),
-            ]
-            .into(),
-            key: &["col_a", "col_c"],
-            tuples: vec![
-                TupleBuilder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into())) // TODO: slot panics when this is the last column?
-                    .add(&Value::BigInt(20))
-                    .build(),
-                TupleBuilder::new()
-                    .add(&Value::Int(20))
-                    .add(&Value::Varchar("row_b".into())) // TODO: slot panics when this is the last column?
-                    .add(&Value::BigInt(30))
-                    .build(),
-            ],
-            want: vec![
-                (
-                    Tuple {
-                        data: TupleBuilder::new()
-                            .add(&Value::Int(10))
-                            .add(&Value::BigInt(20))
-                            .build(),
-                        ..Default::default()
-                    },
-                    RId {
-                        page_id: 0,
-                        slot_id: 0,
-                    },
-                ),
-                (
-                    Tuple {
-                        data: TupleBuilder::new()
-                            .add(&Value::Int(20))
-                            .add(&Value::BigInt(30))
-                            .build(),
-                        ..Default::default()
-                    },
-                    RId {
-                        page_id: 0,
-                        slot_id: 1,
-                    },
-                ),
-            ],
-        }];
+        let tcs = [
+            Test {
+                schema: [
+                    ("col_a", Type::Int),
+                    ("col_b", Type::Varchar),
+                    ("col_c", Type::BigInt),
+                ]
+                .into(),
+                key: &["col_a", "col_c"],
+                tuples: vec![
+                    TupleBuilder::new()
+                        .add(&Value::Int(10))
+                        .add(&Value::Varchar("row_a".into())) // TODO: slot panics when this is the last column?
+                        .add(&Value::BigInt(20))
+                        .build(),
+                    TupleBuilder::new()
+                        .add(&Value::Int(20))
+                        .add(&Value::Varchar("row_b".into())) // TODO: slot panics when this is the last column?
+                        .add(&Value::BigInt(30))
+                        .build(),
+                ],
+                want: vec![
+                    (
+                        Tuple {
+                            data: TupleBuilder::new()
+                                .add(&Value::Int(10))
+                                .add(&Value::BigInt(20))
+                                .build(),
+                            ..Default::default()
+                        },
+                        RId {
+                            page_id: 0,
+                            slot_id: 0,
+                        },
+                    ),
+                    (
+                        Tuple {
+                            data: TupleBuilder::new()
+                                .add(&Value::Int(20))
+                                .add(&Value::BigInt(30))
+                                .build(),
+                            ..Default::default()
+                        },
+                        RId {
+                            page_id: 0,
+                            slot_id: 1,
+                        },
+                    ),
+                ],
+            },
+            Test {
+                schema: [
+                    ("col_a", Type::Int),
+                    ("col_b", Type::BigInt),
+                    ("col_c", Type::Varchar),
+                ]
+                .into(),
+                key: &["col_a", "col_c"],
+                tuples: vec![
+                    TupleBuilder::new()
+                        .add(&Value::Int(20))
+                        .add(&Value::BigInt(20))
+                        .add(&Value::Varchar("row_a".into()))
+                        .build(),
+                    TupleBuilder::new()
+                        .add(&Value::Int(20))
+                        .add(&Value::BigInt(30))
+                        .add(&Value::Varchar("row_b".into()))
+                        .build(),
+                ],
+                want: vec![
+                    (
+                        Tuple {
+                            data: TupleBuilder::new()
+                                .add(&Value::Int(20))
+                                .add(&Value::Varchar("row_a".into()))
+                                .build(),
+                            ..Default::default()
+                        },
+                        RId {
+                            page_id: 2,
+                            slot_id: 0,
+                        },
+                    ),
+                    (
+                        Tuple {
+                            data: TupleBuilder::new()
+                                .add(&Value::Int(20))
+                                .add(&Value::Varchar("row_b".into()))
+                                .build(),
+                            ..Default::default()
+                        },
+                        RId {
+                            page_id: 2,
+                            slot_id: 1,
+                        },
+                    ),
+                ],
+            },
+        ];
 
         const TABLE_A: &str = "table_a";
         const INDEX_A: &str = "index_a";
