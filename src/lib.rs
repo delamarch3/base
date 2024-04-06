@@ -7,6 +7,7 @@ pub mod hash_table;
 pub mod page;
 pub mod page_cache;
 pub mod pair;
+pub mod parser;
 pub mod replacer;
 pub mod storable;
 pub mod table;
