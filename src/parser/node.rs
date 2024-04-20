@@ -86,18 +86,18 @@ impl TryFrom<Token> for Type {
 // TODO: Support more join types
 #[derive(Debug, PartialEq)]
 pub enum JoinType {
+    None,
     Inner,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Node {
     Select {
-        columns: Vec<Node>,
-        table: Rc<Node>,            // TableRef|Select
+        exprs: Vec<Node>,
+        from: Box<Node>,            // TableRef|Select
         r#where: Option<Box<Node>>, // Expr
         group: Vec<Node>,
         order: Vec<Node>,
-        joins: Vec<Node>,
         limit: Option<Box<Node>>,
     },
 
@@ -145,10 +145,10 @@ pub enum Node {
 
     TableRef(String),
 
-    Join {
+    From {
         ty: JoinType,
-        left: Rc<Node>,           // TableRef|Select
-        right: Rc<Node>,          // TableRef|Select
+        left: Box<Node>,          // TableRef|Select
+        right: Box<Node>,         // TableRef|Select
         using: Option<Vec<Node>>, // ColumnRef
         expr: Option<Box<Node>>,  // Expr
         alias: Option<String>,
