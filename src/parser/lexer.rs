@@ -4,12 +4,11 @@ pub enum Token {
     LParen,
     RParen,
 
-    Create,
-    Table,
-
+    // TODO: could have Keyword(Word)
     Int,
     Varchar,
-
+    Create,
+    Table,
     Select,
     Insert,
     Update,
@@ -50,6 +49,7 @@ pub enum Token {
     StringLiteral(String),
     IntegerLiteral(u64),
 
+    // TODO: Should be Ident and CompoundIdent
     TableAndColumnReference(String, String),
     TableOrColumnReference(String),
 

@@ -34,38 +34,36 @@ fn parse(l: &mut Lexer) -> Result<Node> {
 
 pub fn select(l: &mut Lexer) -> Result<Node> {
     check_next!(l, Token::Select);
-
-    let columns = fields(l)?;
+    let projection = projection(l)?;
     check_next!(l, Token::From);
-    let mut table = Box::new(Node::From {
+
+    let mut from = Box::new(Node::From {
         ty: JoinType::None,
         left: Box::new(table_ref(l)?),
         right: Box::new(Node::None),
         using: None,
-        expr: None,
+        filter: None,
         alias: None,
     });
-
-    let mut r#where = None;
+    let mut filter = None;
     let mut group = vec![];
     let mut order = vec![];
     let mut limit = None;
-
     loop {
         match l.peek() {
             Token::Join => {
-                if r#where.is_some() || !group.is_empty() || !order.is_empty() || limit.is_some() {
+                if filter.is_some() || !group.is_empty() || !order.is_empty() || limit.is_some() {
                     Err(Unexpected(l.next()))?
                 }
 
-                join_tables(l, &mut table)?;
+                join_tables(l, &mut from)?;
             }
             Token::Where => {
-                if r#where.is_some() || !group.is_empty() || !order.is_empty() || limit.is_some() {
+                if filter.is_some() || !group.is_empty() || !order.is_empty() || limit.is_some() {
                     Err(Unexpected(l.next()))?
                 }
 
-                r#where = Some(Box::new(where_expr(l)?))
+                filter = Some(Box::new(where_expr(l)?))
             }
             Token::Group => {
                 if !group.is_empty() || !order.is_empty() || limit.is_some() {
@@ -93,9 +91,9 @@ pub fn select(l: &mut Lexer) -> Result<Node> {
     }
 
     Ok(Node::Select {
-        exprs: columns,
-        from: table,
-        r#where,
+        projection,
+        from,
+        filter,
         group,
         order,
         limit,
@@ -134,9 +132,9 @@ pub fn delete(l: &mut Lexer) -> Result<Node> {
         t => Err(Unexpected(t))?,
     };
 
-    let mut r#where = None;
+    let mut filter = None;
     if let Token::Where = l.peek() {
-        r#where = Some(Box::new(where_expr(l)?));
+        filter = Some(Box::new(where_expr(l)?));
     }
 
     let mut limit = None;
@@ -146,7 +144,7 @@ pub fn delete(l: &mut Lexer) -> Result<Node> {
 
     Ok(Node::Delete {
         table,
-        r#where,
+        filter,
         limit,
     })
 }
@@ -163,15 +161,15 @@ pub fn update(l: &mut Lexer) -> Result<Node> {
 
     let assignments = list(assignment)(l)?;
 
-    let mut r#where = None;
+    let mut filter = None;
     if let Token::Where = l.peek() {
-        r#where = Some(Box::new(where_expr(l)?));
+        filter = Some(Box::new(where_expr(l)?));
     }
 
     Ok(Node::Update {
         table,
         assignments,
-        r#where,
+        filter,
     })
 }
 
@@ -201,7 +199,8 @@ pub fn create(l: &mut Lexer) -> Result<Node> {
     Ok(Node::Create { table, columns })
 }
 
-fn fields(l: &mut Lexer) -> Result<Vec<Node>> {
+// TODO: should parse expressions
+fn projection(l: &mut Lexer) -> Result<Vec<Node>> {
     match l.peek() {
         Token::All => {
             l.next();
@@ -340,7 +339,7 @@ fn join_tables(l: &mut Lexer, left: &mut Box<Node>) -> Result<()> {
             ty,
             right,
             using,
-            expr,
+            filter: expr,
             alias,
             ..
         } => {
@@ -350,7 +349,7 @@ fn join_tables(l: &mut Lexer, left: &mut Box<Node>) -> Result<()> {
                 left: right_table,
                 right: Box::new(Node::None),
                 using: None,
-                expr: None,
+                filter: None,
                 alias: None,
             });
             *alias = None;
@@ -631,16 +630,16 @@ mod test {
                 Test {
                     input: "select * from tablea;",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(Node::From {
                                 ty: JoinType::None,
                                 left: Box::new(Node::TableRef("tablea".into())),
                                 right: Box::new(Node::None),
                                 using: None,
-                                expr: None,
+                                filter: None,
                                 alias: None,
                         }),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -649,7 +648,7 @@ mod test {
                 Test {
                     input: "select columna, columnb from tablea;",
                     want: Ok(Node::Select {
-                        exprs: vec![
+                        projection: vec![
                             Node::ColumnRef {
                                 table: None,
                                 column: "columna".into(),
@@ -667,11 +666,11 @@ mod test {
                                 left: Box::new(Node::TableRef("tablea".into())),
                                 right: Box::new(Node::None),
                                 using: None,
-                                expr: None,
+                                filter: None,
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -680,7 +679,7 @@ mod test {
                 Test {
                     input: "select columna, columnb, columnc from tablea;",
                     want: Ok(Node::Select {
-                        exprs: vec![
+                        projection: vec![
                             Node::ColumnRef {
                                 table: None,
                                 column: "columna".into(),
@@ -703,11 +702,11 @@ mod test {
                                 left: Box::new(Node::TableRef("tablea".into())),
                                 right: Box::new(Node::None),
                                 using: None,
-                                expr: None,
+                                filter: None,
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -716,7 +715,7 @@ mod test {
                 Test {
                     input: "select * from tablea join tableb using (columna, columnb);",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -726,7 +725,7 @@ mod test {
                                     left: Box::new(Node::TableRef("tableb".into())),
                                     right: Box::new(Node::None),
                                     using: None,
-                                    expr: None,
+                                    filter: None,
                                     alias: None,
                                 }),
                                 using: Some(vec![
@@ -741,11 +740,11 @@ mod test {
                                         alias: None,
                                     },
                                 ]),
-                                expr: None,
+                                filter: None,
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -754,7 +753,7 @@ mod test {
                 Test {
                     input: "select * from tablea join (select * from tableb) using (columna, columnb);",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -762,23 +761,23 @@ mod test {
                                 right: Box::new(Node::From {
                                     ty: JoinType::None,
                                     left: Box::new(Node::Select {
-                                        exprs: vec![Node::All],
+                                        projection: vec![Node::All],
                                         from: Box::new(Node::From {
                                                 ty: JoinType::None,
                                                 left: Box::new(Node::TableRef("tableb".into())),
                                                 right: Box::new(Node::None),
                                                 using: None,
-                                                expr: None,
+                                                filter: None,
                                                 alias: None,
                                         }),
-                                        r#where: None,
+                                        filter: None,
                                         group: vec![],
                                         order: vec![],
                                         limit: None,
                                     }),
                                     right: Box::new(Node::None),
                                     using: None,
-                                    expr: None,
+                                    filter: None,
                                     alias: None,
                                 }),
                                 using: Some(vec![
@@ -793,11 +792,11 @@ mod test {
                                         alias: None,
                                     },
                                 ]),
-                                expr: None,
+                                filter: None,
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -806,7 +805,7 @@ mod test {
                 Test {
                     input: "select * from tablea join (select * from tableb) on (1 = 1);",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -814,27 +813,27 @@ mod test {
                                 right: Box::new(Node::From {
                                     ty: JoinType::None,
                                     left: Box::new(Node::Select {
-                                        exprs: vec![Node::All],
+                                        projection: vec![Node::All],
                                         from: Box::new(Node::From {
                                                 ty: JoinType::None,
                                                 left: Box::new(Node::TableRef("tableb".into())),
                                                 right: Box::new(Node::None),
                                                 using: None,
-                                                expr: None,
+                                                filter: None,
                                                 alias: None,
                                         }),
-                                        r#where: None,
+                                        filter: None,
                                         group: vec![],
                                         order: vec![],
                                         limit: None,
                                     }),
                                     right: Box::new(Node::None),
                                     using: None,
-                                    expr: None,
+                                    filter: None,
                                     alias: None,
                                 }),
                                 using: None,
-                                expr: Some(Box::new(Node::Expr(
+                                filter: Some(Box::new(Node::Expr(
                                     Op::Eq,
                                     vec![
                                         Node::IntegerLiteral(1),
@@ -844,7 +843,7 @@ mod test {
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -853,7 +852,7 @@ mod test {
                 Test {
                     input: "select * from tablea join tableb on (tablea.columna = tableb.columna);",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -863,11 +862,11 @@ mod test {
                                     left: Box::new(Node::TableRef("tableb".into())),
                                     right: Box::new(Node::None),
                                     using: None,
-                                    expr: None,
+                                    filter: None,
                                     alias: None,
                                 }),
                                 using: None,
-                                expr: Some(Box::new(Node::Expr(
+                                filter: Some(Box::new(Node::Expr(
                                     Op::Eq,
                                     vec![
                                         Node::ColumnRef {
@@ -885,7 +884,7 @@ mod test {
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -896,7 +895,7 @@ mod test {
                         join tableb on (tablea.columna = tableb.columna)
                         join tablec on (tablea.columna = tablec.columna);",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -909,11 +908,11 @@ mod test {
                                         left: Box::new(Node::TableRef("tablec".into())),
                                         right: Box::new(Node::None),
                                         using: None,
-                                        expr: None,
+                                        filter: None,
                                         alias: None,
                                     }),
                                     using: None,
-                                    expr: Some(Box::new(Node::Expr(
+                                    filter: Some(Box::new(Node::Expr(
                                         Op::Eq,
                                         vec![
                                             Node::ColumnRef {
@@ -931,7 +930,7 @@ mod test {
                                     alias: None,
                                 }),
                                 using: None,
-                                expr: Some(Box::new(Node::Expr(
+                                filter: Some(Box::new(Node::Expr(
                                     Op::Eq,
                                     vec![
                                         Node::ColumnRef {
@@ -949,7 +948,7 @@ mod test {
                                 alias: None,
                             }
                         ),
-                        r#where: None,
+                        filter: None,
                         group: vec![],
                         order: vec![],
                         limit: None,
@@ -958,16 +957,16 @@ mod test {
                 Test {
                     input: "select * from tablea where columna is not null;",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(Node::From {
                                 ty: JoinType::None,
                                 left: Box::new(Node::TableRef("tablea".into())),
                                 right: Box::new(Node::None),
                                 using: None,
-                                expr: None,
+                                filter: None,
                                 alias: None,
                         }),
-                        r#where: Some(Box::new(Node::Expr(
+                        filter: Some(Box::new(Node::Expr(
                             Op::Negation,
                             vec![
                                 Node::ColumnRef {
@@ -986,16 +985,16 @@ mod test {
                 Test {
                     input: "select * from tablea where columna is not null group by columna, columnb order by columnb;",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(Node::From {
                                 ty: JoinType::None,
                                 left: Box::new(Node::TableRef("tablea".into())),
                                 right: Box::new(Node::None),
                                 using: None,
-                                expr: None,
+                                filter: None,
                                 alias: None,
                         }),
-                        r#where: Some(Box::new(Node::Expr(
+                        filter: Some(Box::new(Node::Expr(
                             Op::Negation,
                             vec![
                                 Node::ColumnRef {
@@ -1030,7 +1029,7 @@ mod test {
                         order by columnb
                         limit 100;",
                     want: Ok(Node::Select {
-                        exprs: vec![Node::All],
+                        projection: vec![Node::All],
                         from: Box::new(
                             Node::From {
                                 ty: JoinType::Inner,
@@ -1040,7 +1039,7 @@ mod test {
                                     left: Box::new(Node::TableRef("tableb".into())),
                                     right: Box::new(Node::None),
                                     using: None,
-                                    expr: None,
+                                    filter: None,
                                     alias: None,
                                 }),
                                 using: Some(vec![
@@ -1050,11 +1049,11 @@ mod test {
                                         alias: None,
                                     },
                                 ]),
-                                expr: None,
+                                filter: None,
                                 alias: None,
                             }
                         ),
-                        r#where: Some(Box::new(Node::Expr(
+                        filter: Some(Box::new(Node::Expr(
                             Op::Conjunction,
                             vec![
                                 Node::Expr(
@@ -1352,7 +1351,7 @@ mod test {
                 input: "delete from tablea",
                 want: Ok(Node::Delete {
                     table: "tablea".into(),
-                    r#where: None,
+                    filter: None,
                     limit: None,
                 }),
             },
@@ -1360,7 +1359,7 @@ mod test {
                 input: "delete from tablea where 1 = 1",
                 want: Ok(Node::Delete {
                     table: "tablea".into(),
-                    r#where: Some(Box::new(Node::Expr(
+                    filter: Some(Box::new(Node::Expr(
                         Op::Eq,
                         vec![Node::IntegerLiteral(1), Node::IntegerLiteral(1)],
                     ))),
@@ -1371,7 +1370,7 @@ mod test {
                 input: "delete from tablea where 1 = 1 limit 1000",
                 want: Ok(Node::Delete {
                     table: "tablea".into(),
-                    r#where: Some(Box::new(Node::Expr(
+                    filter: Some(Box::new(Node::Expr(
                         Op::Eq,
                         vec![Node::IntegerLiteral(1), Node::IntegerLiteral(1)],
                     ))),
@@ -1399,7 +1398,7 @@ mod test {
                         column: "columna".into(),
                         value: Box::new(Node::IntegerLiteral(10)),
                     }],
-                    r#where: None,
+                    filter: None,
                 }),
             },
             Test {
@@ -1416,7 +1415,7 @@ mod test {
                             value: Box::new(Node::StringLiteral("test".into())),
                         },
                     ],
-                    r#where: Some(Box::new(Node::Expr(
+                    filter: Some(Box::new(Node::Expr(
                         Op::Eq,
                         vec![Node::IntegerLiteral(1), Node::IntegerLiteral(1)],
                     ))),

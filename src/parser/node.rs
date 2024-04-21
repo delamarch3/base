@@ -93,9 +93,9 @@ pub enum JoinType {
 #[derive(Debug, PartialEq)]
 pub enum Node {
     Select {
-        exprs: Vec<Node>,
-        from: Box<Node>,            // TableRef|Select
-        r#where: Option<Box<Node>>, // Expr
+        projection: Vec<Node>,
+        from: Box<Node>,           // TableRef|Select
+        filter: Option<Box<Node>>, // Expr
         group: Vec<Node>,
         order: Vec<Node>,
         limit: Option<Box<Node>>,
@@ -114,14 +114,14 @@ pub enum Node {
 
     Delete {
         table: String,
-        r#where: Option<Box<Node>>, // Expr
+        filter: Option<Box<Node>>, // Expr
         limit: Option<Box<Node>>,
     },
 
     Update {
         table: String,
         assignments: Vec<Node>,
-        r#where: Option<Box<Node>>,
+        filter: Option<Box<Node>>,
     },
 
     Assignment {
@@ -147,10 +147,10 @@ pub enum Node {
 
     From {
         ty: JoinType,
-        left: Box<Node>,          // TableRef|Select
-        right: Box<Node>,         // TableRef|Select
-        using: Option<Vec<Node>>, // ColumnRef
-        expr: Option<Box<Node>>,  // Expr
+        left: Box<Node>,           // TableRef|Select
+        right: Box<Node>,          // TableRef|Select
+        using: Option<Vec<Node>>,  // ColumnRef
+        filter: Option<Box<Node>>, // Expr
         alias: Option<String>,
     },
 
