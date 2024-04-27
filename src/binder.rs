@@ -1,4 +1,4 @@
-use crate::{catalog::Catalog, parser::node::Node as ParseNode};
+use crate::{catalog::Catalog, parser::Node as ParseNode};
 
 enum BoundStatement {}
 
