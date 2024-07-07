@@ -51,12 +51,7 @@ impl From<&PageBuf> for Node {
             rem -= 1;
         }
 
-        Self {
-            page_start,
-            next_page_id,
-            deleted_tuples_len,
-            slots,
-        }
+        Self { page_start, next_page_id, deleted_tuples_len, slots }
     }
 }
 
@@ -119,11 +114,7 @@ impl Node {
     pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple_data)?;
         let slot_id = self.len();
-        self.slots.push(Slot {
-            offset: offset as u32,
-            len: tuple_data.len() as u32,
-            meta: *meta,
-        });
+        self.slots.push(Slot { offset: offset as u32, len: tuple_data.len() as u32, meta: *meta });
 
         unsafe {
             // TODO: This writes to the page buffer but doesn't set the dirty flag
@@ -142,10 +133,7 @@ impl Node {
         }
 
         let Slot { offset, len, meta } = self.slots[slot_id as usize];
-        let mut tuple = Tuple {
-            rid: *r_id,
-            data: BytesMut::zeroed(len as usize),
-        };
+        let mut tuple = Tuple { rid: *r_id, data: BytesMut::zeroed(len as usize) };
 
         unsafe {
             let tuple_ptr = self.page_start.add(offset as usize);
@@ -225,16 +213,10 @@ mod test {
 
         let meta = TupleMeta { deleted: false };
 
-        let r_id_a = RId {
-            page_id: 0,
-            slot_id: 0,
-        };
+        let r_id_a = RId { page_id: 0, slot_id: 0 };
         let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
 
-        let r_id_b = RId {
-            page_id: 0,
-            slot_id: 1,
-        };
+        let r_id_b = RId { page_id: 0, slot_id: 1 };
         let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
 
         table.insert(&tuple_a, &meta);
@@ -242,19 +224,7 @@ mod test {
 
         let (_, have_a) = table.get(&r_id_a).unwrap();
         let (_, have_b) = table.get(&r_id_b).unwrap();
-        assert_eq!(
-            Tuple {
-                data: tuple_a,
-                rid: r_id_a
-            },
-            have_a
-        );
-        assert_eq!(
-            Tuple {
-                data: tuple_b,
-                rid: r_id_b
-            },
-            have_b
-        )
+        assert_eq!(Tuple { data: tuple_a, rid: r_id_a }, have_a);
+        assert_eq!(Tuple { data: tuple_b, rid: r_id_b }, have_b)
     }
 }

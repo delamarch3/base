@@ -42,9 +42,6 @@ where
 
 impl<A, B> From<(A, B)> for Pair<A, B> {
     fn from(value: (A, B)) -> Self {
-        Self {
-            a: value.0,
-            b: value.1,
-        }
+        Self { a: value.0, b: value.1 }
     }
 }

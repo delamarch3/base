@@ -48,11 +48,7 @@ pub struct PageInner {
 
 impl Default for PageInner {
     fn default() -> Self {
-        Self {
-            id: -1,
-            dirty: false,
-            data: [0; PAGE_SIZE],
-        }
+        Self { id: -1, dirty: false, data: [0; PAGE_SIZE] }
     }
 }
 

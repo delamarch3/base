@@ -19,10 +19,7 @@ pub struct TableMeta {
 
 impl Default for TableMeta {
     fn default() -> Self {
-        Self {
-            first_page_id: -1,
-            last_page_id: -1,
-        }
+        Self { first_page_id: -1, last_page_id: -1 }
     }
 }
 
@@ -35,10 +32,7 @@ pub struct List<D: Disk = FileSystem> {
 impl<D: Disk> List<D> {
     pub fn new(
         pc: SharedPageCache<D>,
-        TableMeta {
-            mut first_page_id,
-            mut last_page_id,
-        }: TableMeta,
+        TableMeta { mut first_page_id, mut last_page_id }: TableMeta,
     ) -> crate::Result<List<D>> {
         assert!(
             (first_page_id == -1 && last_page_id == -1)
@@ -51,11 +45,7 @@ impl<D: Disk> List<D> {
             last_page_id = page.id;
         }
 
-        Ok(Self {
-            pc,
-            first_page_id,
-            last_page_id: Mutex::new(last_page_id),
-        })
+        Ok(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) })
     }
 
     pub fn default(pc: SharedPageCache<D>) -> crate::Result<List<D>> {
@@ -64,11 +54,7 @@ impl<D: Disk> List<D> {
         let last_page_id = page.id;
         drop(page);
 
-        Ok(Self {
-            pc,
-            first_page_id,
-            last_page_id: Mutex::new(last_page_id),
-        })
+        Ok(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) })
     }
 
     fn last_page_id(&self) -> PageId {
@@ -87,14 +73,8 @@ impl<D: Disk> List<D> {
 
         Ok(Iter {
             list: self,
-            r_id: RId {
-                page_id: self.first_page_id,
-                slot_id: 0,
-            },
-            end: RId {
-                page_id: last_page_id,
-                slot_id: node.len(),
-            },
+            r_id: RId { page_id: self.first_page_id, slot_id: 0 },
+            end: RId { page_id: last_page_id, slot_id: node.len() },
         })
     }
 
@@ -106,10 +86,7 @@ impl<D: Disk> List<D> {
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
             writep!(page_w, &PageBuf::from(&node));
-            return Ok(Some(RId {
-                page_id: *last_page_id,
-                slot_id,
-            }));
+            return Ok(Some(RId { page_id: *last_page_id, slot_id }));
         }
 
         if node.len() == 0 {
@@ -130,10 +107,7 @@ impl<D: Disk> List<D> {
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
                 writep!(npage_w, &PageBuf::from(&node));
-                Ok(Some(RId {
-                    page_id: *last_page_id,
-                    slot_id,
-                }))
+                Ok(Some(RId { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),
         }
@@ -196,10 +170,7 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
         } else if node.next_page_id == 0 {
             return None;
         } else {
-            self.r_id = RId {
-                page_id: node.next_page_id,
-                slot_id: 0,
-            }
+            self.r_id = RId { page_id: node.next_page_id, slot_id: 0 }
         }
 
         Some(result)
@@ -241,10 +212,7 @@ mod test {
 
         let list = List::new(
             pc,
-            TableMeta {
-                first_page_id: list.first_page_id,
-                last_page_id: list.last_page_id(),
-            },
+            TableMeta { first_page_id: list.first_page_id, last_page_id: list.last_page_id() },
         )?;
 
         let (_, have_a) = list.get(r_id_a)?.unwrap();
@@ -266,13 +234,7 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
 
         let first_page_id = pc.new_page()?.id;
-        let list = List::new(
-            pc.clone(),
-            TableMeta {
-                first_page_id,
-                last_page_id: first_page_id,
-            },
-        )?;
+        let list = List::new(pc.clone(), TableMeta { first_page_id, last_page_id: first_page_id })?;
 
         const WANT_LEN: usize = 100;
         let meta = TupleMeta { deleted: false };
@@ -283,10 +245,8 @@ mod test {
             tuples.push(tuple);
         }
 
-        let have = list
-            .iter()?
-            .enumerate()
-            .collect::<Vec<(usize, crate::Result<(TupleMeta, Tuple)>)>>();
+        let have =
+            list.iter()?.enumerate().collect::<Vec<(usize, crate::Result<(TupleMeta, Tuple)>)>>();
 
         assert_eq!(have.len(), WANT_LEN);
 

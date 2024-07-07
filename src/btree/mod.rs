@@ -30,21 +30,11 @@ where
     D: Disk,
 {
     pub fn new(pc: SharedPageCache<D>, schema: &'s Schema) -> Self {
-        Self {
-            root: -1,
-            pc,
-            schema,
-            _data: PhantomData,
-        }
+        Self { root: -1, pc, schema, _data: PhantomData }
     }
 
     pub fn new_with_root(pc: SharedPageCache<D>, root: PageId, schema: &'s Schema) -> Self {
-        Self {
-            root,
-            pc,
-            schema,
-            _data: PhantomData,
-        }
+        Self { root, pc, schema, _data: PhantomData }
     }
 
     pub fn root(&self) -> PageId {
@@ -477,11 +467,7 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
         let mut btree = BTree::new(pc.clone(), &schema);
 
         // Insert and get
@@ -558,11 +544,7 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
         let pc2 = pc.clone();
 
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
         let mut btree = BTree::new(pc, &schema);
 
         let range = -50..50;
@@ -618,19 +600,9 @@ mod test {
             },
         ];
 
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
-        for TestCase {
-            name,
-            range,
-            from,
-            to,
-        } in tcs
-        {
+        for TestCase { name, range, from, to } in tcs {
             let mut btree = BTree::new(pc.clone(), &schema);
 
             let mut inserts = inserts!(range, i32);

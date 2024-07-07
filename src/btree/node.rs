@@ -78,17 +78,9 @@ where
             id: PageId,
         }
 
-        if (Temp {
-            t: self.t,
-            is_root: self.is_root,
-            next: self.next,
-            id: self.id,
-        }) != (Temp {
-            t: other.t,
-            is_root: other.is_root,
-            next: other.next,
-            id: other.id,
-        }) {
+        if (Temp { t: self.t, is_root: self.is_root, next: self.next, id: self.id })
+            != (Temp { t: other.t, is_root: other.is_root, next: other.next, id: other.id })
+        {
             return false;
         }
 
@@ -155,14 +147,7 @@ where
     V: Storable,
 {
     pub fn new(id: PageId, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
-        Self {
-            t,
-            is_root,
-            next: -1,
-            id,
-            values: Vec::new(),
-            schema,
-        }
+        Self { t, is_root, next: -1, id, values: Vec::new(), schema }
     }
 
     pub fn from(buf: &PageBuf, schema: &'s Schema) -> Self {
@@ -182,14 +167,7 @@ where
             left = &left[slot_size..];
         }
 
-        Self {
-            t,
-            is_root,
-            next,
-            id,
-            values,
-            schema,
-        }
+        Self { t, is_root, next, id, values, schema }
     }
 
     /// Split out half of self's values into a new node.
@@ -198,14 +176,8 @@ where
         let rest = self.values.split_off(self.values.len() / 2);
         self.is_root = false;
 
-        let mut new = Node {
-            t: self.t,
-            is_root: false,
-            next: -1,
-            id,
-            values: rest,
-            schema: self.schema,
-        };
+        let mut new =
+            Node { t: self.t, is_root: false, next: -1, id, values: rest, schema: self.schema };
 
         if self.t == NodeType::Leaf {
             new.next = self.next;
@@ -363,11 +335,7 @@ mod test {
 
     #[test]
     fn test_from() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let node = Node {
             t: NodeType::Leaf,
@@ -398,11 +366,7 @@ mod test {
 
     #[test]
     fn test_split() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let mut node = Node {
             t: NodeType::Leaf,
@@ -465,11 +429,7 @@ mod test {
 
     #[test]
     fn test_get_separators_leaf() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let node = Node {
             t: NodeType::Leaf,
@@ -502,20 +462,14 @@ mod test {
             schema: &schema,
         };
 
-        let Some(slots) = node.get_separators(Some(other)) else {
-            panic!("expected separators")
-        };
+        let Some(slots) = node.get_separators(Some(other)) else { panic!("expected separators") };
         let expected = (Slot(51.into(), Either::Pointer(0)), Slot(111.into(), Either::Pointer(1)));
         assert!(slots == expected);
     }
 
     #[test]
     fn test_get_separators_internal() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -548,20 +502,14 @@ mod test {
             schema: &schema,
         };
 
-        let Some(slots) = node.get_separators(Some(other)) else {
-            panic!("expected separators")
-        };
+        let Some(slots) = node.get_separators(Some(other)) else { panic!("expected separators") };
         let expected = (Slot(50.into(), Either::Pointer(0)), Slot(110.into(), Either::Pointer(1)));
         assert!(slots == expected);
     }
 
     #[test]
     fn test_find_child() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -605,11 +553,7 @@ mod test {
 
     #[test]
     fn test_values() {
-        let schema = Schema::new(vec![Column {
-            name: "".into(),
-            ty: Type::Int,
-            offset: 0,
-        }]);
+        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
 
         let mut node: Node<i32> = Node {
             t: NodeType::Internal,

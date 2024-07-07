@@ -53,18 +53,11 @@ impl<const N: usize> From<[(&str, Type); N]> for Schema {
 
         let mut offset = 0;
         for (name, ty) in value {
-            columns.push(Column {
-                name: name.into(),
-                ty,
-                offset,
-            });
+            columns.push(Column { name: name.into(), ty, offset });
             offset += ty.size();
         }
 
-        Self {
-            size: offset,
-            columns,
-        }
+        Self { size: offset, columns }
     }
 }
 
@@ -77,18 +70,12 @@ pub struct Schema {
 impl Schema {
     pub fn new(columns: Vec<Column>) -> Self {
         // TODO: ensure column names are unique
-        Self {
-            size: columns.iter().fold(0, |acc, c| acc + c.size()),
-            columns,
-        }
+        Self { size: columns.iter().fold(0, |acc, c| acc + c.size()), columns }
     }
 
     // TODO: might not be needed
     pub fn empty() -> Self {
-        Self {
-            size: 0,
-            columns: Vec::new(),
-        }
+        Self { size: 0, columns: Vec::new() }
     }
 
     pub fn columns(&self) -> &Vec<Column> {
@@ -112,16 +99,10 @@ impl Schema {
     pub fn compact(&self) -> Self {
         let mut ret = self.clone();
         let mut offset = 0;
-        ret.columns.iter_mut().for_each(
-            |Column {
-                 ty,
-                 offset: col_offset,
-                 ..
-             }| {
-                *col_offset = offset;
-                offset += ty.size()
-            },
-        );
+        ret.columns.iter_mut().for_each(|Column { ty, offset: col_offset, .. }| {
+            *col_offset = offset;
+            offset += ty.size()
+        });
 
         ret
     }
@@ -203,12 +184,8 @@ impl<D: Disk> Catalog<D> {
         }
 
         let oid = self.next_table_oid.fetch_add(1, Relaxed);
-        let info = TableInfo {
-            name: name.into(),
-            schema,
-            oid,
-            table: Table::default(self.pc.clone())?,
-        };
+        let info =
+            TableInfo { name: name.into(), schema, oid, table: Table::default(self.pc.clone())? };
 
         self.table_names.insert(name.into(), oid);
         self.index_names.insert(name.into(), HashMap::new());
@@ -277,13 +254,7 @@ impl<D: Disk> Catalog<D> {
 
         self.indexes.insert(
             oid,
-            IndexInfo {
-                name: index_name.into(),
-                schema: index_schema,
-                oid,
-                index_ty,
-                root,
-            },
+            IndexInfo { name: index_name.into(), schema: index_schema, oid, index_ty, root },
         );
         indexed_table.insert(index_name.into(), oid);
 
@@ -291,8 +262,7 @@ impl<D: Disk> Catalog<D> {
     }
 
     pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<&IndexInfo> {
-        self.indexes
-            .get(self.index_names.get(table_name)?.get(index_name)?)
+        self.indexes.get(self.index_names.get(table_name)?.get(index_name)?)
     }
 
     pub fn get_index_by_oid(&self, oid: OId) -> Option<&IndexInfo> {
@@ -335,12 +305,8 @@ mod test {
 
         let tcs = [
             Test {
-                schema: [
-                    ("col_a", Type::Int),
-                    ("col_b", Type::Varchar),
-                    ("col_c", Type::BigInt),
-                ]
-                .into(),
+                schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)]
+                    .into(),
                 key: &["col_a", "col_c"],
                 tuples: vec![
                     TupleBuilder::new()
@@ -363,10 +329,7 @@ mod test {
                                 .build(),
                             ..Default::default()
                         },
-                        RId {
-                            page_id: 0,
-                            slot_id: 0,
-                        },
+                        RId { page_id: 0, slot_id: 0 },
                     ),
                     (
                         Tuple {
@@ -376,20 +339,13 @@ mod test {
                                 .build(),
                             ..Default::default()
                         },
-                        RId {
-                            page_id: 0,
-                            slot_id: 1,
-                        },
+                        RId { page_id: 0, slot_id: 1 },
                     ),
                 ],
             },
             Test {
-                schema: [
-                    ("col_a", Type::Int),
-                    ("col_b", Type::BigInt),
-                    ("col_c", Type::Varchar),
-                ]
-                .into(),
+                schema: [("col_a", Type::Int), ("col_b", Type::BigInt), ("col_c", Type::Varchar)]
+                    .into(),
                 key: &["col_a", "col_c"],
                 tuples: vec![
                     TupleBuilder::new()
@@ -412,10 +368,7 @@ mod test {
                                 .build(),
                             ..Default::default()
                         },
-                        RId {
-                            page_id: 2,
-                            slot_id: 0,
-                        },
+                        RId { page_id: 2, slot_id: 0 },
                     ),
                     (
                         Tuple {
@@ -425,10 +378,7 @@ mod test {
                                 .build(),
                             ..Default::default()
                         },
-                        RId {
-                            page_id: 2,
-                            slot_id: 1,
-                        },
+                        RId { page_id: 2, slot_id: 1 },
                     ),
                 ],
             },
@@ -436,18 +386,10 @@ mod test {
 
         const TABLE_A: &str = "table_a";
         const INDEX_A: &str = "index_a";
-        for Test {
-            schema,
-            key,
-            tuples,
-            want,
-        } in tcs
-        {
+        for Test { schema, key, tuples, want } in tcs {
             let mut catalog = Catalog::new(pc.clone());
             catalog.create_table(TABLE_A, schema.clone())?;
-            let info = catalog
-                .get_table_by_name(TABLE_A)
-                .expect("table_a should exist");
+            let info = catalog.get_table_by_name(TABLE_A).expect("table_a should exist");
 
             for tuple in tuples {
                 info.table
@@ -458,9 +400,7 @@ mod test {
             let index_schema = schema.filter(key).compact();
 
             catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
-            let index = catalog
-                .get_index(TABLE_A, INDEX_A)
-                .expect("index_a should exist");
+            let index = catalog.get_index(TABLE_A, INDEX_A).expect("index_a should exist");
             let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema);
             let have = index.scan()?;
 

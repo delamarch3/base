@@ -56,11 +56,7 @@ where
             *pair = Some(Pair::new(key, value));
         }
 
-        Self {
-            occupied,
-            readable,
-            pairs,
-        }
+        Self { occupied, readable, pairs }
     }
 }
 
