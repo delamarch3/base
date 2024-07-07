@@ -28,11 +28,7 @@ impl From<&PageBuf> for Directory {
         let mut bucket_page_ids = [0; PAGE_IDS_SIZE_U8];
         bucket_page_ids[..].copy_from_slice(&buf[PAGE_IDS]);
 
-        Self {
-            global_depth,
-            local_depths,
-            page_ids: bucket_page_ids,
-        }
+        Self { global_depth, local_depths, page_ids: bucket_page_ids }
     }
 }
 

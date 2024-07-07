@@ -176,11 +176,7 @@ impl std::fmt::Display for Node {
                 }
                 write!(f, ")")
             }
-            Node::ColumnRef {
-                table,
-                column,
-                alias,
-            } => {
+            Node::ColumnRef { table, column, alias } => {
                 if table.is_some() {
                     write!(f, "{}.", table.as_ref().unwrap())?;
                 }
@@ -345,14 +341,7 @@ pub fn select(l: &mut Lexer) -> Result<Node> {
         };
     }
 
-    Ok(Node::Select {
-        projection,
-        from,
-        filter,
-        group,
-        order,
-        limit,
-    })
+    Ok(Node::Select { projection, from, filter, group, order, limit })
 }
 
 pub fn insert(l: &mut Lexer) -> Result<Node> {
@@ -372,11 +361,7 @@ pub fn insert(l: &mut Lexer) -> Result<Node> {
 
     let inserts = list(parens(list(literal)))(l)?;
 
-    Ok(Node::Insert {
-        columns,
-        table,
-        inserts,
-    })
+    Ok(Node::Insert { columns, table, inserts })
 }
 
 pub fn delete(l: &mut Lexer) -> Result<Node> {
@@ -397,11 +382,7 @@ pub fn delete(l: &mut Lexer) -> Result<Node> {
         limit = Some(Box::new(limit_expr(l)?));
     }
 
-    Ok(Node::Delete {
-        table,
-        filter,
-        limit,
-    })
+    Ok(Node::Delete { table, filter, limit })
 }
 
 pub fn update(l: &mut Lexer) -> Result<Node> {
@@ -421,11 +402,7 @@ pub fn update(l: &mut Lexer) -> Result<Node> {
         filter = Some(Box::new(where_expr(l)?));
     }
 
-    Ok(Node::Update {
-        table,
-        assignments,
-        filter,
-    })
+    Ok(Node::Update { table, assignments, filter })
 }
 
 fn assignment(l: &mut Lexer) -> Result<Node> {
@@ -531,17 +508,13 @@ fn literal(l: &mut Lexer) -> Result<Node> {
 
 fn column_ref(l: &mut Lexer) -> Result<Node> {
     match l.next() {
-        Token::TableOrColumnReference(column) => Ok(Node::ColumnRef {
-            table: None,
-            column,
-            alias: None,
-        }),
+        Token::TableOrColumnReference(column) => {
+            Ok(Node::ColumnRef { table: None, column, alias: None })
+        }
 
-        Token::TableAndColumnReference(table, column) => Ok(Node::ColumnRef {
-            table: Some(table),
-            column,
-            alias: None,
-        }),
+        Token::TableAndColumnReference(table, column) => {
+            Ok(Node::ColumnRef { table: Some(table), column, alias: None })
+        }
 
         t => Err(Unexpected(t)),
     }
@@ -590,14 +563,7 @@ fn join_tables(l: &mut Lexer, left: &mut Box<Node>) -> Result<()> {
     };
 
     match left.as_mut() {
-        Node::From {
-            ty,
-            right,
-            using,
-            filter: expr,
-            alias,
-            ..
-        } => {
+        Node::From { ty, right, using, filter: expr, alias, .. } => {
             *ty = JoinType::Inner;
             *right = Box::new(Node::From {
                 ty: JoinType::None,
@@ -683,16 +649,12 @@ fn expr(l: &mut Lexer) -> Result<Node> {
             State::Between => between(l)?,
             State::In => Node::In(parens(list(literal))(l)?),
             State::None => match l.next() {
-                Token::TableAndColumnReference(table, column) => Node::ColumnRef {
-                    table: Some(table),
-                    column,
-                    alias: None,
-                },
-                Token::TableOrColumnReference(column) => Node::ColumnRef {
-                    table: None,
-                    column,
-                    alias: None,
-                },
+                Token::TableAndColumnReference(table, column) => {
+                    Node::ColumnRef { table: Some(table), column, alias: None }
+                }
+                Token::TableOrColumnReference(column) => {
+                    Node::ColumnRef { table: None, column, alias: None }
+                }
                 Token::StringLiteral(s) => Node::StringLiteral(s),
                 Token::IntegerLiteral(i) => Node::IntegerLiteral(i),
                 Token::Null => Node::Null,
@@ -810,38 +772,17 @@ mod test {
         }
 
         let tcs = [
-            Test {
-                input: "12 = 12",
-                want: "(= 12 12)",
-            },
-            Test {
-                input: "12 < 14 AND 14 > 12",
-                want: "(AND (< 12 14) (> 14 12))",
-            },
+            Test { input: "12 = 12", want: "(= 12 12)" },
+            Test { input: "12 < 14 AND 14 > 12", want: "(AND (< 12 14) (> 14 12))" },
             Test {
                 input: "12 < 14 AND 14 > 12 OR name != \"bob\"",
                 want: "(OR (AND (< 12 14) (> 14 12)) (!= name \"bob\"))",
             },
-            Test {
-                input: "NULL",
-                want: "NULL",
-            },
-            Test {
-                input: "columna BETWEEN 100 AND 200",
-                want: "(BETWEEN columna (100 200))",
-            },
-            Test {
-                input: "columna IN (100, 200, 300)",
-                want: "(IN columna [100 200 300])",
-            },
-            Test {
-                input: "columna IS NULL",
-                want: "(IS columna NULL)",
-            },
-            Test {
-                input: "columna IS NOT NULL",
-                want: "(NOT columna NULL)",
-            },
+            Test { input: "NULL", want: "NULL" },
+            Test { input: "columna BETWEEN 100 AND 200", want: "(BETWEEN columna (100 200))" },
+            Test { input: "columna IN (100, 200, 300)", want: "(IN columna [100 200 300])" },
+            Test { input: "columna IS NULL", want: "(IS columna NULL)" },
+            Test { input: "columna IS NOT NULL", want: "(NOT columna NULL)" },
             Test {
                 input: "columna NOT BETWEEN 100 AND 200",
                 want: "(NOT BETWEEN columna (100 200))",
@@ -854,10 +795,7 @@ mod test {
                 input: "columna NOT BETWEEN 100 AND 200 AND 1 < 2",
                 want: "(AND (NOT BETWEEN columna (100 200)) (< 1 2))",
             },
-            Test {
-                input: "columna NOT IN (1, 2, 3, 4)",
-                want: "(NOT IN columna [1 2 3 4])",
-            },
+            Test { input: "columna NOT IN (1, 2, 3, 4)", want: "(NOT IN columna [1 2 3 4])" },
             Test {
                 input: "columna NOT IN (1, 2, 3, 4) AND columna = columnb OR columna IN (6, 7, 8)",
                 want:
@@ -1540,10 +1478,7 @@ mod test {
                     )",
                 want: Ok(Node::Create {
                     table: "tablea".into(),
-                    columns: vec![Node::ColumnDef {
-                        column: "columna".into(),
-                        ty: Type::Int,
-                    }],
+                    columns: vec![Node::ColumnDef { column: "columna".into(), ty: Type::Int }],
                 }),
             },
             Test {
@@ -1554,14 +1489,8 @@ mod test {
                 want: Ok(Node::Create {
                     table: "tablea".into(),
                     columns: vec![
-                        Node::ColumnDef {
-                            column: "columna".into(),
-                            ty: Type::Int,
-                        },
-                        Node::ColumnDef {
-                            column: "columnb".into(),
-                            ty: Type::Int,
-                        },
+                        Node::ColumnDef { column: "columna".into(), ty: Type::Int },
+                        Node::ColumnDef { column: "columnb".into(), ty: Type::Int },
                     ],
                 }),
             },
@@ -1574,18 +1503,12 @@ mod test {
                 want: Ok(Node::Create {
                     table: "tablea".into(),
                     columns: vec![
-                        Node::ColumnDef {
-                            column: "columna".into(),
-                            ty: Type::Int,
-                        },
+                        Node::ColumnDef { column: "columna".into(), ty: Type::Int },
                         Node::ColumnDef {
                             column: "columnb".into(),
                             ty: Type::Varchar(Box::new(Node::IntegerLiteral(255))),
                         },
-                        Node::ColumnDef {
-                            column: "columnc".into(),
-                            ty: Type::Int,
-                        },
+                        Node::ColumnDef { column: "columnc".into(), ty: Type::Int },
                     ],
                 }),
             },
@@ -1604,11 +1527,7 @@ mod test {
         let tcs = [
             Test {
                 input: "delete from tablea",
-                want: Ok(Node::Delete {
-                    table: "tablea".into(),
-                    filter: None,
-                    limit: None,
-                }),
+                want: Ok(Node::Delete { table: "tablea".into(), filter: None, limit: None }),
             },
             Test {
                 input: "delete from tablea where 1 = 1",

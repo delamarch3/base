@@ -27,11 +27,7 @@ where
     D: Disk,
 {
     pub fn new(dir_page_id: PageId, pc: SharedPageCache<D>) -> Self {
-        Self {
-            dir_page_id,
-            pc,
-            _data: PhantomData,
-        }
+        Self { dir_page_id, pc, _data: PhantomData }
     }
 
     pub fn insert(&self, k: &K, v: &V) -> crate::Result<bool> {

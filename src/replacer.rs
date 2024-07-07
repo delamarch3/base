@@ -14,11 +14,7 @@ struct LRUKNode {
 
 impl LRUKNode {
     pub fn new(i: usize, ts: u64) -> Self {
-        Self {
-            i,
-            history: vec![ts],
-            pin: 0,
-        }
+        Self { i, history: vec![ts], pin: 0 }
     }
 
     pub fn get_k_distance(&self, k: usize) -> Option<u64> {
@@ -48,10 +44,7 @@ pub enum AccessType {
 
 impl LRUKReplacer {
     pub fn new(k: usize) -> Self {
-        Self {
-            k,
-            ..Default::default()
-        }
+        Self { k, ..Default::default() }
     }
 
     pub fn evict(&mut self) -> Option<FrameId> {
@@ -137,9 +130,7 @@ pub struct LRU {
 
 impl LRU {
     pub fn new(k: usize) -> Arc<Self> {
-        Arc::new(Self {
-            inner: Mutex::new(LRUKReplacer::new(k)),
-        })
+        Arc::new(Self { inner: Mutex::new(LRUKReplacer::new(k)) })
     }
 
     pub fn lock(&self) -> MutexGuard<'_, LRUKReplacer> {

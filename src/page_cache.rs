@@ -28,10 +28,7 @@ impl<const SIZE: usize> Default for FreeList<SIZE> {
     fn default() -> Self {
         let free: UnsafeCell<[FrameId; SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
 
-        Self {
-            free,
-            tail: AtomicUsize::new(SIZE),
-        }
+        Self { free, tail: AtomicUsize::new(SIZE) }
     }
 }
 
@@ -94,12 +91,7 @@ impl Drop for Pin<'_> {
 
 impl<'a> Pin<'a> {
     pub fn new(page: &'a Page, i: FrameId, id: PageId, replacer: Arc<LRU>) -> Self {
-        Self {
-            page,
-            i,
-            id,
-            replacer,
-        }
+        Self { page, i, id, replacer }
     }
 
     pub fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
@@ -139,14 +131,7 @@ impl<D: Disk> PageCache<D> {
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
 
-        Arc::new(Self {
-            pages,
-            page_table,
-            free,
-            disk,
-            next_page_id,
-            replacer,
-        })
+        Arc::new(Self { pages, page_table, free, disk, next_page_id, replacer })
     }
 
     fn allocate_page(&self) -> PageId {
@@ -193,10 +178,7 @@ impl<D: Disk> PageCache<D> {
         page_table.remove(&page_w.id);
         page_table.insert(page_id, i);
 
-        let data = self
-            .disk
-            .read_page(page_id)
-            .map_err(|e| PageCacheError::Disk(e.kind()))?;
+        let data = self.disk.read_page(page_id).map_err(|e| PageCacheError::Disk(e.kind()))?;
         page_w.reset();
         page_w.id = page_id;
         page_w.data = data;

@@ -485,26 +485,10 @@ mod test {
         }
 
         let tcs = [
-            Test {
-                input: "",
-                peek: 2,
-                want: Token::Eof,
-            },
-            Test {
-                input: "select",
-                peek: 2,
-                want: Token::Eof,
-            },
-            Test {
-                input: "select *",
-                peek: 2,
-                want: Token::All,
-            },
-            Test {
-                input: "select * from tablea where",
-                peek: 5,
-                want: Token::Where,
-            },
+            Test { input: "", peek: 2, want: Token::Eof },
+            Test { input: "select", peek: 2, want: Token::Eof },
+            Test { input: "select *", peek: 2, want: Token::All },
+            Test { input: "select * from tablea where", peek: 5, want: Token::Where },
         ];
 
         for Test { input, peek, want } in tcs {
@@ -521,34 +505,13 @@ mod test {
         }
 
         let tcs = [
-            TestCase {
-                input: "",
-                want: "",
-            },
-            TestCase {
-                input: "select",
-                want: "select",
-            },
-            TestCase {
-                input: "select, ",
-                want: "select",
-            },
-            TestCase {
-                input: ", update",
-                want: ",",
-            },
-            TestCase {
-                input: ",",
-                want: ",",
-            },
-            TestCase {
-                input: "(table",
-                want: "(",
-            },
-            TestCase {
-                input: "table)",
-                want: "table",
-            },
+            TestCase { input: "", want: "" },
+            TestCase { input: "select", want: "select" },
+            TestCase { input: "select, ", want: "select" },
+            TestCase { input: ", update", want: "," },
+            TestCase { input: ",", want: "," },
+            TestCase { input: "(table", want: "(" },
+            TestCase { input: "table)", want: "table" },
         ];
 
         for TestCase { input, want } in tcs {
