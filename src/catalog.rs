@@ -147,7 +147,7 @@ pub struct TableInfo<D: Disk = FileSystem> {
     name: String,
     schema: Schema,
     oid: OId,
-    table: Table<D>,
+    pub table: Table<D>,
 }
 
 pub struct IndexMeta {

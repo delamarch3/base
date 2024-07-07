@@ -4,6 +4,7 @@ pub mod btree;
 pub mod catalog;
 pub mod disk;
 pub mod hash_table;
+pub mod logical_plan;
 pub mod page;
 pub mod page_cache;
 pub mod pair;
