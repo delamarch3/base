@@ -37,6 +37,10 @@ struct Planner<'c> {
     catalog: &'c Catalog,
 }
 
+// TODO: misunderstanding of logical plan. The physical plan is what actually executes and is
+// derived from the optimised logical plan. A logical plan is derived from the AST and describes
+// how a query is executed at a high level. Build a quick and dumb logical plan from the AST and
+// then use optimisations to transform it. This is the plan that is shown in EXPLAIN.
 trait PlanNode {
     fn exec(&self, tuples: Vec<Tuple>) -> Result<Vec<Tuple>>;
 }
