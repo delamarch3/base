@@ -1,4 +1,3 @@
-pub mod binder;
 pub mod bitmap;
 pub mod btree;
 pub mod catalog;
