@@ -1,14 +1,10 @@
-use std::{
-    cmp::Ordering::{self, *},
-    mem::size_of,
-};
-
-use bytes::{BufMut, BytesMut};
-
-use crate::{
-    catalog::{Column, Schema, Type},
-    page::PageID,
-    storable::Storable,
+use {
+    crate::catalog::{Column, Schema, Type},
+    bytes::{BufMut, BytesMut},
+    std::{
+        cmp::Ordering::{self, *},
+        mem::size_of,
+    },
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -18,6 +14,18 @@ pub enum Value {
     Int(i32),
     BigInt(i64),
     Varchar(String),
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::TinyInt(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::BigInt(v) => write!(f, "{}", v),
+            Value::Varchar(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 impl Value {
@@ -65,18 +73,6 @@ impl Value {
                 let str = std::str::from_utf8(data).expect("todo");
                 Value::Varchar(str.into())
             }
-        }
-    }
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::TinyInt(v) => write!(f, "{}", v),
-            Value::Bool(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::BigInt(v) => write!(f, "{}", v),
-            Value::Varchar(v) => write!(f, "{}", v),
         }
     }
 }

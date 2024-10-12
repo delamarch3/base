@@ -1,4 +1,4 @@
-use crate::catalog::Schema;
+use crate::{catalog::Schema, table::tuple::Value};
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
@@ -31,16 +31,73 @@ pub fn format_logical_plan(plan: &Box<dyn LogicalPlan>) -> String {
     format_logical_plan(plan, 0)
 }
 
-// TODO
+// TODO: it's probably ok to use Expr from the parser once that's ready
 pub enum Expr {
-    IsNull(String),
+    Ident(String),
+    Value(Value),
+    IsNull(Box<Expr>),
+    IsNotNull(Box<Expr>),
+    InList { expr: Box<Expr>, list: Vec<Expr>, negated: bool },
+    Between { expr: Box<Expr>, negated: bool, low: Box<Expr>, high: Box<Expr> },
+    BinaryOp { left: Box<Expr>, op: Op, right: Box<Expr> },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum Op {
+    Eq,
+    Neq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+}
+
+impl std::fmt::Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Eq => write!(f, "="),
+            Op::Neq => write!(f, "!="),
+            Op::Lt => write!(f, "<"),
+            Op::Le => write!(f, "<="),
+            Op::Gt => write!(f, ">"),
+            Op::Ge => write!(f, ">="),
+            Op::And => write!(f, "AND"),
+            Op::Or => write!(f, "OR"),
+        }
+    }
 }
 
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TODO")?;
-
-        Ok(())
+        match self {
+            Expr::Ident(ident) => write!(f, "{ident}"),
+            Expr::Value(value) => write!(f, "{value}"),
+            Expr::IsNull(expr) => write!(f, "{expr} IS NULL"),
+            Expr::IsNotNull(expr) => write!(f, "{expr} IS NOT NULL"),
+            Expr::InList { expr, list, negated: false } => {
+                write!(f, "{expr} IN [")?;
+                for expr in list {
+                    write!(f, "{expr},")?;
+                }
+                write!(f, "]")
+            }
+            Expr::InList { expr, list, negated: true } => {
+                write!(f, "{expr} NOT IN [")?;
+                for expr in list {
+                    write!(f, "{expr},")?;
+                }
+                write!(f, "]")
+            }
+            Expr::Between { expr, negated: false, low, high } => {
+                write!(f, "{expr} BETWEEN {low} AND {high}")
+            }
+            Expr::Between { expr, negated: true, low, high } => {
+                write!(f, "{expr} NOT BETWEEN {low} AND {high}")
+            }
+            Expr::BinaryOp { left, op, right } => write!(f, "{left} {op} {right}"),
+        }
     }
 }
 
@@ -51,12 +108,16 @@ pub struct Scan {
 
 impl std::fmt::Display for Scan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Scan: table={}, projection=", self.table)?;
-        for column in self.schema.columns() {
-            write!(f, "{},", column.name)?;
-        }
+        use std::fmt::Write;
 
-        Ok(())
+        write!(f, "Scan: table={}, projection=", self.table)?;
+        let mut exprs = String::new();
+        for column in self.schema.columns() {
+            write!(exprs, "{},", column.name)?;
+        }
+        exprs.pop();
+
+        write!(f, "{}", exprs)
     }
 }
 
@@ -113,12 +174,16 @@ pub struct Projection {
 
 impl std::fmt::Display for Projection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Projection: ")?;
-        for column in self.schema.columns() {
-            write!(f, "{},", column.name)?;
-        }
+        use std::fmt::Write;
 
-        Ok(())
+        write!(f, "Projection: ")?;
+        let mut exprs = String::new();
+        for column in self.schema.columns() {
+            write!(exprs, "{},", column.name)?;
+        }
+        exprs.pop();
+
+        write!(f, "{}", exprs)
     }
 }
 
@@ -142,23 +207,31 @@ impl Projection {
 #[cfg(test)]
 mod test {
     use {
-        super::{format_logical_plan, Expr, Filter, LogicalPlan, Projection, Scan},
-        crate::catalog::Type,
+        super::{format_logical_plan, Expr, Filter, LogicalPlan, Op, Projection, Scan},
+        crate::{catalog::Type, table::tuple::Value},
     };
 
     #[test]
     fn test_format_logical_plan() {
-        let schema =
-            [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)].into();
+        let schema = [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)].into();
         let scan = Scan::new("t1".into(), schema);
-        let filter = Filter::new(Expr::IsNull("col_a".into()), Box::new(scan));
-        let projection = Projection::new(&["col_a", "col_b"], Box::new(filter));
+        let filter_expr = Expr::BinaryOp {
+            left: Box::new(Expr::IsNull(Box::new(Expr::Ident("c1".into())))),
+            op: Op::And,
+            right: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::Value(Value::Int(5))),
+                op: Op::Lt,
+                right: Box::new(Expr::Ident("c2".into())),
+            }),
+        };
+        let filter = Filter::new(filter_expr, Box::new(scan));
+        let projection = Projection::new(&["c1", "c2"], Box::new(filter));
 
         let have = format_logical_plan(&(Box::new(projection) as Box<dyn LogicalPlan>));
         let want = "\
-Projection: col_a,col_b,
-	Filter: expr=TODO
-		Scan: table=t1, projection=col_a,col_b,col_c,
+Projection: c1,c2
+	Filter: expr=c1 IS NULL AND 5 < c2
+		Scan: table=t1, projection=c1,c2,c3
 ";
 
         assert_eq!(want, have)
