@@ -21,12 +21,15 @@ pub enum Type {
 }
 
 impl Type {
+    /// Returns the size of any value of the type at tuple level
+    /// Since varchar is variable length, we only store the offset and
+    /// the size at the tuple level (2 bytes each)
     pub fn size(&self) -> usize {
         match self {
             Type::TinyInt | Type::Bool => 1,
             Type::Int => 4,
             Type::BigInt => 8,
-            Type::Varchar => 4, // [offset(2) , size(2)]
+            Type::Varchar => 4,
         }
     }
 }
@@ -39,7 +42,7 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn size(&self) -> usize {
+    pub fn value_size(&self) -> usize {
         self.ty.size()
     }
 }
@@ -54,43 +57,38 @@ impl<const N: usize> From<[(&str, Type); N]> for Schema {
             offset += ty.size();
         }
 
-        Self { size: offset, columns }
+        Self { tuple_size: offset, columns }
     }
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug, Default)]
 pub struct Schema {
     columns: Vec<Column>,
-    size: usize,
+    tuple_size: usize,
 }
 
 impl Schema {
     pub fn new(columns: Vec<Column>) -> Self {
         // TODO: ensure column names are unique
-        Self { size: columns.iter().fold(0, |acc, c| acc + c.size()), columns }
-    }
-
-    // TODO: might not be needed
-    pub fn empty() -> Self {
-        Self { size: 0, columns: Vec::new() }
+        Self { tuple_size: columns.iter().fold(0, |acc, c| acc + c.value_size()), columns }
     }
 
     pub fn columns(&self) -> &Vec<Column> {
         &self.columns
     }
 
-    pub fn filter(&self, cols: &[&str]) -> Self {
-        let mut size = 0;
+    pub fn filter(&self, columns: &[&str]) -> Self {
+        let mut tuple_size = 0;
         let columns = self
             .iter()
-            .filter(|Column { name, .. }| cols.contains(&name.as_str()))
+            .filter(|Column { name, .. }| columns.contains(&name.as_str()))
             .map(|col| {
-                size += col.ty.size();
+                tuple_size += col.ty.size();
                 col.clone()
             })
             .collect();
 
-        Self { columns, size }
+        Self { columns, tuple_size }
     }
 
     pub fn compact(&self) -> Self {
@@ -103,11 +101,9 @@ impl Schema {
 
         ret
     }
-}
 
-impl Schema {
-    pub fn size(&self) -> usize {
-        self.size
+    pub fn tuple_size(&self) -> usize {
+        self.tuple_size
     }
 
     pub fn len(&self) -> usize {

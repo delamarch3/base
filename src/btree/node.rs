@@ -236,7 +236,7 @@ where
     pub fn almost_full(&self) -> bool {
         // TODO: Needs to take into account varchar
         // schema.size() = key, either size = value size + flag
-        self.values.len() * (self.schema.size() + Either::<V>::SIZE)
+        self.values.len() * (self.schema.tuple_size() + Either::<V>::SIZE)
             >= (PAGE_SIZE - NODE_VALUES_START) / 4
     }
 

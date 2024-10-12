@@ -39,8 +39,8 @@ impl Value {
                 &data[offset..offset + size]
             }
             _ => {
-                assert!(column.offset + column.size() <= data.len());
-                &data[column.offset..column.offset + column.size()]
+                assert!(column.offset + column.value_size() <= data.len());
+                &data[column.offset..column.offset + column.value_size()]
             }
         };
 
