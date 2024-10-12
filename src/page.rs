@@ -15,7 +15,7 @@ macro_rules! writep {
 
 pub const PAGE_SIZE: usize = 4 * 1024;
 
-pub type PageId = i32;
+pub type PageID = i32;
 pub type PageBuf = [u8; PAGE_SIZE];
 pub type PageReadGuard<'a> = RwLockReadGuard<'a, PageInner>;
 pub type PageWriteGuard<'a> = RwLockWriteGuard<'a, PageInner>;
@@ -41,7 +41,7 @@ impl Page {
 }
 
 pub struct PageInner {
-    pub id: PageId,
+    pub id: PageID,
     pub dirty: bool,
     pub data: PageBuf,
 }

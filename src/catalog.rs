@@ -6,12 +6,9 @@ use std::{
 use crate::{
     btree::BTree,
     disk::{Disk, FileSystem},
-    page::PageId,
+    page::PageID,
     page_cache::SharedPageCache,
-    table::{
-        list::List as Table,
-        tuple::{RId, Tuple, TupleData},
-    },
+    table::{list::List as Table, node::RID, tuple::TupleData},
 };
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -122,12 +119,12 @@ impl Schema {
     }
 }
 
-pub type OId = u32;
+pub type OID = u32;
 
 pub struct TableInfo<D: Disk = FileSystem> {
     name: String,
     schema: Schema,
-    oid: OId,
+    oid: OID,
     table: Table<D>,
 }
 
@@ -146,18 +143,18 @@ pub enum IndexType {
 pub struct IndexInfo {
     name: String,
     schema: Schema,
-    oid: OId,
+    oid: OID,
     index_ty: IndexType,
-    root: PageId,
+    root: PageID,
 }
 
 pub struct Catalog<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
-    tables: HashMap<OId, TableInfo<D>>,
-    table_names: HashMap<String, OId>,
+    tables: HashMap<OID, TableInfo<D>>,
+    table_names: HashMap<String, OID>,
     next_table_oid: AtomicU32,
-    indexes: HashMap<OId, IndexInfo>,
-    index_names: HashMap<String, HashMap<String, OId>>, // table -> index -> oid
+    indexes: HashMap<OID, IndexInfo>,
+    index_names: HashMap<String, HashMap<String, OID>>, // table -> index -> oid
     next_index_oid: AtomicU32,
 }
 
@@ -194,7 +191,7 @@ impl<D: Disk> Catalog<D> {
         Ok(self.tables.get(&oid))
     }
 
-    pub fn get_table_by_oid(&self, oid: OId) -> Option<&TableInfo<D>> {
+    pub fn get_table_by_oid(&self, oid: OID) -> Option<&TableInfo<D>> {
         self.tables.get(&oid)
     }
 
@@ -236,11 +233,11 @@ impl<D: Disk> Catalog<D> {
         match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
-                let mut btree = BTree::<RId, _>::new(self.pc.clone(), &index_schema);
+                let mut btree = BTree::<RID, _>::new(self.pc.clone(), &index_schema);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
-                    let (_, Tuple { rid, data: TupleData(data) }) = result.expect("todo");
+                    let (_, TupleData(data), rid) = result.expect("todo");
                     let tuple = TupleData::from(&data, &tuple_schema);
                     btree.insert(&tuple, &rid).expect("todo");
                 }
@@ -265,7 +262,7 @@ impl<D: Disk> Catalog<D> {
         self.indexes.get(self.index_names.get(table_name)?.get(index_name)?)
     }
 
-    pub fn get_index_by_oid(&self, oid: OId) -> Option<&IndexInfo> {
+    pub fn get_index_by_oid(&self, oid: OID) -> Option<&IndexInfo> {
         self.indexes.get(&oid)
     }
 
@@ -285,7 +282,10 @@ mod test {
         page::PAGE_SIZE,
         page_cache::PageCache,
         replacer::LRU,
-        table::tuple::{RId, TupleBuilder, TupleData, TupleMeta, Value},
+        table::{
+            node::{TupleMeta, RID},
+            tuple::{TupleBuilder, TupleData, Value},
+        },
     };
 
     #[test]
@@ -300,7 +300,7 @@ mod test {
             schema: Schema,
             key: &'static [&'static str],
             tuples: Vec<BytesMut>,
-            want: Vec<(TupleData, RId)>,
+            want: Vec<(TupleData, RID)>,
         }
 
         let tcs = [
@@ -328,7 +328,7 @@ mod test {
                                 .add(&Value::BigInt(20))
                                 .build(),
                         ),
-                        RId { page_id: 0, slot_id: 0 },
+                        RID { page_id: 0, slot_id: 0 },
                     ),
                     (
                         TupleData(
@@ -337,7 +337,7 @@ mod test {
                                 .add(&Value::BigInt(30))
                                 .build(),
                         ),
-                        RId { page_id: 0, slot_id: 1 },
+                        RID { page_id: 0, slot_id: 1 },
                     ),
                 ],
             },
@@ -365,7 +365,7 @@ mod test {
                                 .add(&Value::Varchar("row_a".into()))
                                 .build(),
                         ),
-                        RId { page_id: 2, slot_id: 0 },
+                        RID { page_id: 2, slot_id: 0 },
                     ),
                     (
                         TupleData(
@@ -374,7 +374,7 @@ mod test {
                                 .add(&Value::Varchar("row_b".into()))
                                 .build(),
                         ),
-                        RId { page_id: 2, slot_id: 1 },
+                        RID { page_id: 2, slot_id: 1 },
                     ),
                 ],
             },
@@ -397,7 +397,7 @@ mod test {
 
             catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
             let index = catalog.get_index(TABLE_A, INDEX_A).expect("index_a should exist");
-            let index: BTree<RId, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema);
+            let index: BTree<RID, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema);
             let have = index.scan()?;
 
             assert_eq!(want, have);

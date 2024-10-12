@@ -6,7 +6,7 @@ use crate::{
     btree::slot::Either,
     catalog::Schema,
     get_ptr,
-    page::{PageBuf, PageId, PAGE_SIZE},
+    page::{PageBuf, PageID, PAGE_SIZE},
     storable::Storable,
     table::tuple::{Comparand, TupleData},
 };
@@ -54,13 +54,13 @@ const NODE_NEXT: Range<usize> = 6..10;
 const NODE_ID: Range<usize> = 10..14;
 const NODE_VALUES_START: usize = 14;
 
-// | NodeType (1) | Root (1) | Len (4) | Max (4) | Next (4) | PageId (4) | Values
+// | NodeType (1) | Root (1) | Len (4) | Max (4) | Next (4) | PageID (4) | Values
 #[derive(Clone, Debug)]
 pub struct Node<'s, V> {
     pub t: NodeType,
     pub is_root: bool,
-    pub next: PageId,
-    pub id: PageId,
+    pub next: PageID,
+    pub id: PageID,
     values: Vec<Slot<V>>,
     schema: &'s Schema,
 }
@@ -74,8 +74,8 @@ where
         struct Temp {
             t: NodeType,
             is_root: bool,
-            next: PageId,
-            id: PageId,
+            next: PageID,
+            id: PageID,
         }
 
         if (Temp { t: self.t, is_root: self.is_root, next: self.next, id: self.id })
@@ -146,7 +146,7 @@ impl<'s, V> Node<'s, V>
 where
     V: Storable,
 {
-    pub fn new(id: PageId, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
+    pub fn new(id: PageID, t: NodeType, is_root: bool, schema: &'s Schema) -> Self {
         Self { t, is_root, next: -1, id, values: Vec::new(), schema }
     }
 
@@ -154,8 +154,8 @@ where
         let t = NodeType::from(buf[NODE_TYPE]);
         let is_root = buf[NODE_IS_ROOT] > 0;
         let len = u32::from_be_bytes(buf[NODE_LEN].try_into().unwrap());
-        let next = PageId::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
-        let id = PageId::from_be_bytes(buf[NODE_ID].try_into().unwrap());
+        let next = PageID::from_be_bytes(buf[NODE_NEXT].try_into().unwrap());
+        let id = PageID::from_be_bytes(buf[NODE_ID].try_into().unwrap());
 
         let mut values = Vec::new();
         let mut left = &buf[NODE_VALUES_START..];
@@ -171,7 +171,7 @@ where
     }
 
     /// Split out half of self's values into a new node.
-    pub fn split(&mut self, id: PageId) -> Node<'s, V> {
+    pub fn split(&mut self, id: PageID) -> Node<'s, V> {
         // All values in the greater half end up in `rest`
         let rest = self.values.split_off(self.values.len() / 2);
         self.is_root = false;
@@ -200,7 +200,7 @@ where
     }
 
     /// Returns `None` if node is a leaf or if no keys were matched and the next key is invalid
-    pub fn find_child(&self, key: &TupleData) -> Option<PageId> {
+    pub fn find_child(&self, key: &TupleData) -> Option<PageID> {
         if self.t == NodeType::Leaf {
             return None;
         }
@@ -220,7 +220,7 @@ where
     }
 
     #[inline]
-    pub fn first_ptr(&self) -> Option<PageId> {
+    pub fn first_ptr(&self) -> Option<PageID> {
         self.values.first().map(|s| match s.1 {
             Either::Value(_) => unreachable!(),
             Either::Pointer(ptr) => ptr,

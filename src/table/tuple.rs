@@ -1,16 +1,13 @@
-// TODO: `Tuple`, `TupleInfoBuf` and any other structs specific to table access should be relocated
-
 use std::{
     cmp::Ordering::{self, *},
     mem::size_of,
-    ops::Range,
 };
 
 use bytes::{BufMut, BytesMut};
 
 use crate::{
     catalog::{Column, Schema, Type},
-    page::PageId,
+    page::PageID,
     storable::Storable,
 };
 
@@ -84,49 +81,8 @@ impl std::fmt::Display for Value {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
-pub struct RId {
-    pub page_id: PageId,
-    pub slot_id: u32,
-}
-
-// TODO: get rid of `Storable`
-impl Storable for RId {
-    const SIZE: usize = 8;
-
-    type ByteArray = [u8; Self::SIZE];
-
-    fn into_bytes(self) -> Self::ByteArray {
-        let mut ret = [0; 8];
-        ret[0..4].copy_from_slice(&self.page_id.into_bytes());
-        ret[4..8].copy_from_slice(&self.slot_id.into_bytes());
-
-        ret
-    }
-
-    // TODO: this is reading the wrong bytes
-    fn from_bytes(bytes: &[u8]) -> Self {
-        let page_id = i32::from_be_bytes(bytes[0..4].try_into().unwrap());
-        let slot_id = u32::from_be_bytes(bytes[4..8].try_into().unwrap());
-
-        Self { page_id, slot_id }
-    }
-
-    fn write_to(&self, dst: &mut [u8], pos: usize) {
-        dst[pos..pos + Self::SIZE].copy_from_slice(&self.into_bytes());
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TupleData(pub BytesMut);
-
-// TODO: could data just be Vec<Value>, using schema to deserialise? evaluate once other components
-// built
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Tuple {
-    pub rid: RId,
-    pub data: TupleData,
-}
 
 impl TupleData {
     // TODO: rewrite to use TupleBuilder
@@ -229,58 +185,6 @@ impl TupleData {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct TupleMeta {
-    pub deleted: bool,
-}
-
-impl From<&[u8]> for TupleMeta {
-    fn from(value: &[u8]) -> Self {
-        let deleted = u8::from_be_bytes(value[0..1].try_into().unwrap()) > 1;
-
-        Self { deleted }
-    }
-}
-
-pub const OFFSET: Range<usize> = 0..4;
-pub const LEN: Range<usize> = 4..8;
-pub const META: Range<usize> = 8..Slot::SIZE;
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct Slot {
-    pub offset: u32,
-    pub len: u32,
-    pub meta: TupleMeta,
-}
-
-impl From<&[u8]> for Slot {
-    fn from(buf: &[u8]) -> Self {
-        let offset = u32::from_be_bytes(buf[OFFSET].try_into().unwrap());
-        let len = u32::from_be_bytes(buf[LEN].try_into().unwrap());
-        let meta = TupleMeta::from(&buf[META]);
-
-        Self { offset, len, meta }
-    }
-}
-
-impl Slot {
-    pub const SIZE: usize = 9;
-}
-
-pub type TupleInfoBuf = [u8; Slot::SIZE];
-impl From<&Slot> for TupleInfoBuf {
-    fn from(value: &Slot) -> Self {
-        let mut ret = [0; Slot::SIZE];
-
-        ret[OFFSET].copy_from_slice(&value.offset.to_be_bytes());
-        ret[LEN].copy_from_slice(&value.len.to_be_bytes());
-        ret[META].copy_from_slice(&[value.meta.deleted as u8]);
-
-        ret
-    }
-}
-
-// pub struct Comparand<'a, 'b, T>(pub &'a Schema, pub &'b T);
 pub struct Comparand<'a, T>(pub &'a Schema, pub T);
 
 impl<'a, 'b> PartialEq for Comparand<'a, &'b TupleData> {

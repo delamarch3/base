@@ -3,11 +3,11 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use crate::page_cache::FrameId;
+use crate::page_cache::FrameID;
 
 #[derive(Debug)]
 struct LRUKNode {
-    i: FrameId,
+    i: FrameID,
     history: Vec<u64>,
     pin: u64,
 }
@@ -32,7 +32,7 @@ impl LRUKNode {
 
 #[derive(Default, Debug)]
 pub struct LRUKReplacer {
-    nodes: HashMap<FrameId, LRUKNode>,
+    nodes: HashMap<FrameID, LRUKNode>,
     current_ts: u64,
     k: usize,
 }
@@ -47,8 +47,8 @@ impl LRUKReplacer {
         Self { k, ..Default::default() }
     }
 
-    pub fn evict(&mut self) -> Option<FrameId> {
-        let mut max: (FrameId, u64) = (0, 0);
+    pub fn evict(&mut self) -> Option<FrameID> {
+        let mut max: (FrameID, u64) = (0, 0);
         let mut single_access: Vec<&LRUKNode> = Vec::new();
         for (id, node) in &self.nodes {
             if node.pin != 0 {
@@ -84,7 +84,7 @@ impl LRUKReplacer {
         Some(earliest.0)
     }
 
-    pub fn record_access(&mut self, i: FrameId, _access_type: AccessType) {
+    pub fn record_access(&mut self, i: FrameID, _access_type: AccessType) {
         match self.nodes.entry(i) {
             Entry::Occupied(mut node) => {
                 node.get_mut().history.push(self.current_ts);
@@ -97,19 +97,19 @@ impl LRUKReplacer {
         }
     }
 
-    pub fn pin(&mut self, i: FrameId) {
+    pub fn pin(&mut self, i: FrameID) {
         if let Some(node) = self.nodes.get_mut(&i) {
             node.pin += 1;
         }
     }
 
-    pub fn unpin(&mut self, i: FrameId) {
+    pub fn unpin(&mut self, i: FrameID) {
         if let Some(node) = self.nodes.get_mut(&i) {
             node.pin -= 1;
         }
     }
 
-    pub fn remove(&mut self, i: FrameId) {
+    pub fn remove(&mut self, i: FrameID) {
         match self.nodes.entry(i) {
             Entry::Occupied(node) => {
                 let pins = node.get().pin;
@@ -137,27 +137,27 @@ impl LRU {
         self.inner.lock().expect("todo")
     }
 
-    pub fn evict(&self) -> Option<FrameId> {
+    pub fn evict(&self) -> Option<FrameID> {
         let mut replacer = self.inner.lock().expect("todo");
         replacer.evict()
     }
 
-    pub fn record_access(&self, i: FrameId, a: AccessType) {
+    pub fn record_access(&self, i: FrameID, a: AccessType) {
         let mut replacer = self.inner.lock().expect("todo");
         replacer.record_access(i, a)
     }
 
-    pub fn pin(&self, i: FrameId) {
+    pub fn pin(&self, i: FrameID) {
         let mut replacer = self.inner.lock().expect("todo");
         replacer.pin(i)
     }
 
-    pub fn unpin(&self, i: FrameId) {
+    pub fn unpin(&self, i: FrameID) {
         let mut replacer = self.inner.lock().expect("todo");
         replacer.unpin(i)
     }
 
-    pub fn remove(&self, i: FrameId) {
+    pub fn remove(&self, i: FrameID) {
         let mut replacer = self.inner.lock().expect("todo");
         replacer.remove(i)
     }

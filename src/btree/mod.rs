@@ -10,7 +10,7 @@ use crate::{
     },
     catalog::Schema,
     disk::{Disk, FileSystem},
-    page::{PageBuf, PageId, PageReadGuard, PageWriteGuard},
+    page::{PageBuf, PageID, PageReadGuard, PageWriteGuard},
     page_cache::SharedPageCache,
     storable::Storable,
     table::tuple::{Comparand, TupleData},
@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub struct BTree<'s, V, D: Disk = FileSystem> {
-    root: PageId,
+    root: PageID,
     pc: SharedPageCache<D>,
     schema: &'s Schema,
     _data: PhantomData<V>,
@@ -33,11 +33,11 @@ where
         Self { root: -1, pc, schema, _data: PhantomData }
     }
 
-    pub fn new_with_root(pc: SharedPageCache<D>, root: PageId, schema: &'s Schema) -> Self {
+    pub fn new_with_root(pc: SharedPageCache<D>, root: PageID, schema: &'s Schema) -> Self {
         Self { root, pc, schema, _data: PhantomData }
     }
 
-    pub fn root(&self) -> PageId {
+    pub fn root(&self) -> PageID {
         self.root
     }
 
@@ -294,7 +294,7 @@ where
         self._range(Some(page), r, acc, from, to)
     }
 
-    fn get_ptr(&self, key: &TupleData, ptr: PageId) -> crate::Result<Option<PageId>> {
+    fn get_ptr(&self, key: &TupleData, ptr: PageID) -> crate::Result<Option<PageID>> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
@@ -317,7 +317,7 @@ where
         self._get(key, self.root)
     }
 
-    fn _get(&self, key: &TupleData, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
+    fn _get(&self, key: &TupleData, ptr: PageID) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
         let node = Node::from(&r.data, &self.schema);
@@ -337,7 +337,7 @@ where
         self._delete(key, self.root)
     }
 
-    fn _delete(&self, key: &TupleData, ptr: PageId) -> crate::Result<bool> {
+    fn _delete(&self, key: &TupleData, ptr: PageID) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
         let mut node: Node<V> = Node::from(&w.data, &self.schema);
@@ -366,7 +366,7 @@ where
     }
 
     #[cfg(test)]
-    fn _print(&self, ptr: PageId) {
+    fn _print(&self, ptr: PageID) {
         let page = self.pc.fetch_page(ptr).unwrap();
         let r = page.read();
         let node: Node<V> = Node::from(&r.data, &self.schema);
@@ -388,7 +388,7 @@ where
     }
 
     #[cfg(test)]
-    fn first(&self, ptr: PageId) -> crate::Result<PageId> {
+    fn first(&self, ptr: PageID) -> crate::Result<PageID> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;

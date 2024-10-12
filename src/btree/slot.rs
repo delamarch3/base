@@ -2,12 +2,12 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 
-use crate::{page::PageId, storable::Storable, table::tuple::TupleData};
+use crate::{page::PageID, storable::Storable, table::tuple::TupleData};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Either<V> {
     Value(V),
-    Pointer(PageId),
+    Pointer(PageID),
 }
 
 #[macro_export]

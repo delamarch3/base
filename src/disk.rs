@@ -3,11 +3,11 @@ use std::{cell::UnsafeCell, io, os::fd::AsRawFd, path::Path};
 use nix::sys::uio;
 use std::fs::{File, OpenOptions};
 
-use crate::page::{PageBuf, PageId, PAGE_SIZE};
+use crate::page::{PageBuf, PageID, PAGE_SIZE};
 
 pub trait Disk {
-    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf>;
-    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()>;
+    fn read_page(&self, page_id: PageID) -> io::Result<PageBuf>;
+    fn write_page(&self, page_id: PageID, data: &PageBuf) -> io::Result<()>;
 }
 
 pub struct FileSystem {
@@ -15,7 +15,7 @@ pub struct FileSystem {
 }
 
 impl Disk for FileSystem {
-    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
+    fn read_page(&self, page_id: PageID) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
         let mut buf = [0; PAGE_SIZE];
@@ -24,7 +24,7 @@ impl Disk for FileSystem {
         Ok(buf)
     }
 
-    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()> {
+    fn write_page(&self, page_id: PageID, data: &PageBuf) -> io::Result<()> {
         let offset = PAGE_SIZE as i64 * i64::from(page_id);
         let fd = self.file.as_raw_fd();
 
@@ -51,7 +51,7 @@ unsafe impl Send for Memory {}
 unsafe impl Sync for Memory {}
 
 impl Disk for Memory {
-    fn read_page(&self, page_id: PageId) -> io::Result<PageBuf> {
+    fn read_page(&self, page_id: PageID) -> io::Result<PageBuf> {
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
 
@@ -62,7 +62,7 @@ impl Disk for Memory {
         Ok(ret)
     }
 
-    fn write_page(&self, page_id: PageId, data: &PageBuf) -> io::Result<()> {
+    fn write_page(&self, page_id: PageID, data: &PageBuf) -> io::Result<()> {
         let offset = PAGE_SIZE * page_id as usize;
         assert!(offset <= self.size - PAGE_SIZE);
 

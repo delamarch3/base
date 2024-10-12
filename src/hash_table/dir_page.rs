@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::page::{PageBuf, PageId, PAGE_SIZE};
+use crate::page::{PageBuf, PageID, PAGE_SIZE};
 
 pub const PAGE_IDS_SIZE_U32: usize = 512;
 pub const PAGE_IDS_SIZE_U8: usize = 512 * 4;
@@ -51,11 +51,11 @@ impl From<Directory> for PageBuf {
 }
 
 impl Directory {
-    pub fn get(&self, i: usize) -> PageId {
+    pub fn get(&self, i: usize) -> PageID {
         i32::from_be_bytes(self.page_ids[i * 4..(i * 4) + 4].try_into().unwrap())
     }
 
-    pub fn insert(&mut self, i: usize, id: PageId) {
+    pub fn insert(&mut self, i: usize, id: PageID) {
         self.page_ids[i * 4..(i * 4) + 4].copy_from_slice(&i32::to_be_bytes(id));
     }
 

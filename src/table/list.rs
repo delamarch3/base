@@ -1,10 +1,13 @@
 use {
     crate::{
         disk::{Disk, FileSystem},
-        page::{PageBuf, PageId},
+        page::{PageBuf, PageID},
         page_cache::{Result, SharedPageCache},
         table::node::Node,
-        table::tuple::{RId, Tuple, TupleData, TupleMeta},
+        table::{
+            node::{TupleMeta, RID},
+            tuple::TupleData,
+        },
         writep,
     },
     std::sync::Mutex,
@@ -12,8 +15,8 @@ use {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TableMeta {
-    first_page_id: PageId,
-    last_page_id: PageId,
+    first_page_id: PageID,
+    last_page_id: PageID,
 }
 
 impl Default for TableMeta {
@@ -24,8 +27,8 @@ impl Default for TableMeta {
 
 pub struct List<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
-    first_page_id: PageId,
-    last_page_id: Mutex<PageId>,
+    first_page_id: PageID,
+    last_page_id: Mutex<PageID>,
 }
 
 impl<D: Disk> List<D> {
@@ -56,11 +59,11 @@ impl<D: Disk> List<D> {
         Ok(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) })
     }
 
-    fn last_page_id(&self) -> PageId {
+    fn last_page_id(&self) -> PageID {
         *self.last_page_id.lock().expect("todo")
     }
 
-    fn last_page_id_mut(&self) -> std::sync::MutexGuard<'_, PageId> {
+    fn last_page_id_mut(&self) -> std::sync::MutexGuard<'_, PageID> {
         self.last_page_id.lock().expect("todo")
     }
 
@@ -72,12 +75,12 @@ impl<D: Disk> List<D> {
 
         Ok(Iter {
             list: self,
-            r_id: RId { page_id: self.first_page_id, slot_id: 0 },
-            end: RId { page_id: last_page_id, slot_id: node.len() },
+            rid: RID { page_id: self.first_page_id, slot_id: 0 },
+            end: RID { page_id: last_page_id, slot_id: node.len() },
         })
     }
 
-    pub fn insert(&self, tuple_data: &TupleData, meta: &TupleMeta) -> Result<Option<RId>> {
+    pub fn insert(&self, tuple_data: &TupleData, meta: &TupleMeta) -> Result<Option<RID>> {
         let mut last_page_id = self.last_page_id_mut();
         let page = self.pc.fetch_page(*last_page_id)?;
         let mut page_w = page.write();
@@ -85,7 +88,7 @@ impl<D: Disk> List<D> {
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
             writep!(page_w, &PageBuf::from(&node));
-            return Ok(Some(RId { page_id: *last_page_id, slot_id }));
+            return Ok(Some(RID { page_id: *last_page_id, slot_id }));
         }
 
         if node.len() == 0 {
@@ -106,23 +109,18 @@ impl<D: Disk> List<D> {
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
                 writep!(npage_w, &PageBuf::from(&node));
-                Ok(Some(RId { page_id: *last_page_id, slot_id }))
+                Ok(Some(RID { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),
         }
     }
 
-    pub fn get(&self, r_id: RId) -> Result<Option<(TupleMeta, Tuple)>> {
-        let page = self.pc.fetch_page(r_id.page_id)?;
+    pub fn get(&self, rid: RID) -> Result<Option<(TupleMeta, TupleData)>> {
+        let page = self.pc.fetch_page(rid.page_id)?;
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
-        let mut tuple = node.get(&r_id);
-        if let Some((_, tuple)) = &mut tuple {
-            tuple.rid = r_id;
-        }
-
-        Ok(tuple)
+        Ok(node.get(&rid))
     }
 
     pub fn update(&mut self, _meta: &TupleMeta) -> Result<()> {
@@ -133,43 +131,43 @@ impl<D: Disk> List<D> {
 // Iter should hold a read lock and deserialised page?
 pub struct Iter<'a, D: Disk = FileSystem> {
     list: &'a List<D>,
-    r_id: RId,
-    end: RId,
+    rid: RID,
+    end: RID,
 }
 
 impl<'a, D: Disk> Iterator for Iter<'a, D> {
-    type Item = Result<(TupleMeta, Tuple)>;
+    type Item = Result<(TupleMeta, TupleData, RID)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.end == self.r_id {
+        if self.end == self.rid {
             return None;
         }
 
-        let result = match self.list.get(self.r_id) {
-            Ok(opt) => match opt {
-                Some(t) => Ok(t),
-                None => return None,
-            },
+        let result = match self.list.get(self.rid) {
+            Ok(opt) => {
+                let (meta, tuple) = opt?;
+                Ok((meta, tuple, self.rid))
+            }
             Err(e) => Err(e),
         };
 
-        let page = match self.list.pc.fetch_page(self.r_id.page_id) {
+        let page = match self.list.pc.fetch_page(self.rid.page_id) {
             Ok(p) => p,
             Err(e) => return Some(Err(e)),
         };
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
-        if self.r_id.page_id == self.end.page_id && self.r_id.slot_id == self.end.slot_id - 1 {
+        if self.rid.page_id == self.end.page_id && self.rid.slot_id == self.end.slot_id - 1 {
             // Last tuple, increment (so the next iteration returns None) and return result
-            self.r_id.slot_id += 1;
+            self.rid.slot_id += 1;
             return Some(result);
-        } else if self.r_id.slot_id + 1 < node.len() {
-            self.r_id.slot_id += 1;
+        } else if self.rid.slot_id + 1 < node.len() {
+            self.rid.slot_id += 1;
         } else if node.next_page_id == 0 {
             return None;
         } else {
-            self.r_id = RId { page_id: node.next_page_id, slot_id: 0 }
+            self.rid = RID { page_id: node.next_page_id, slot_id: 0 }
         }
 
         Some(result)
@@ -178,18 +176,20 @@ impl<'a, D: Disk> Iterator for Iter<'a, D> {
 
 #[cfg(test)]
 mod test {
-    use bytes::BytesMut;
-
-    use crate::{
-        disk::Memory,
-        page::PAGE_SIZE,
-        page_cache::PageCache,
-        replacer::LRU,
-        table::list::List,
-        table::{
-            list::TableMeta,
-            tuple::{Tuple, TupleData, TupleMeta},
+    use {
+        crate::{
+            disk::Memory,
+            page::PAGE_SIZE,
+            page_cache::PageCache,
+            replacer::LRU,
+            table::list::List,
+            table::{
+                list::TableMeta,
+                node::{TupleMeta, RID},
+                tuple::TupleData,
+            },
         },
+        bytes::BytesMut,
     };
 
     #[test]
@@ -203,24 +203,24 @@ mod test {
 
         let list = List::default(pc.clone())?;
         let meta = TupleMeta { deleted: false };
-        let tuple_a =
+        let want_a =
             TupleData(BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]));
-        let tuple_b =
+        let want_b =
             TupleData(BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]));
 
-        let r_id_a = list.insert(&tuple_a, &meta)?.unwrap();
-        let r_id_b = list.insert(&tuple_b, &meta)?.unwrap();
+        let rid_a = list.insert(&want_a, &meta)?.unwrap();
+        let rid_b = list.insert(&want_b, &meta)?.unwrap();
 
         let list = List::new(
             pc,
             TableMeta { first_page_id: list.first_page_id, last_page_id: list.last_page_id() },
         )?;
 
-        let (_, have_a) = list.get(r_id_a)?.unwrap();
-        let (_, have_b) = list.get(r_id_b)?.unwrap();
+        let (_, have_a) = list.get(rid_a)?.unwrap();
+        let (_, have_b) = list.get(rid_b)?.unwrap();
 
-        assert_eq!(tuple_a, have_a.data);
-        assert_eq!(tuple_b, have_b.data);
+        assert_eq!(want_a, have_a);
+        assert_eq!(want_b, have_b);
 
         Ok(())
     }
@@ -248,15 +248,17 @@ mod test {
             tuples.push(tuple);
         }
 
-        let have =
-            list.iter()?.enumerate().collect::<Vec<(usize, crate::Result<(TupleMeta, Tuple)>)>>();
+        let have = list
+            .iter()?
+            .enumerate()
+            .collect::<Vec<(usize, crate::Result<(TupleMeta, TupleData, RID)>)>>();
 
         assert_eq!(have.len(), WANT_LEN);
 
         for (i, result) in have {
-            let (_, tuple) = result?;
+            let (_, tuple, _) = result?;
 
-            assert_eq!(tuples[i], tuple.data)
+            assert_eq!(tuples[i], tuple)
         }
 
         Ok(())

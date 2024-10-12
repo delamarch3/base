@@ -8,14 +8,14 @@ use crate::{
     disk::{Disk, FileSystem},
     hash_table::bucket_page::Bucket,
     hash_table::dir_page::{self, Directory},
-    page::{PageBuf, PageId},
+    page::{PageBuf, PageID},
     page_cache::SharedPageCache,
     storable::Storable,
     writep,
 };
 
 pub struct ExtendibleHashTable<K, V, D: Disk = FileSystem> {
-    dir_page_id: PageId,
+    dir_page_id: PageID,
     pc: SharedPageCache<D>,
     _data: PhantomData<(K, V)>,
 }
@@ -26,7 +26,7 @@ where
     V: Storable + Copy + Eq,
     D: Disk,
 {
-    pub fn new(dir_page_id: PageId, pc: SharedPageCache<D>) -> Self {
+    pub fn new(dir_page_id: PageID, pc: SharedPageCache<D>) -> Self {
         Self { dir_page_id, pc, _data: PhantomData }
     }
 

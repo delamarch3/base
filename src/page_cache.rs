@@ -9,16 +9,16 @@ use std::{
 
 use crate::{
     disk::{Disk, FileSystem},
-    page::{Page, PageId, PageInner},
+    page::{Page, PageID, PageInner},
     replacer::{AccessType, LRU},
 };
 
 pub const CACHE_SIZE: usize = 64;
 
-pub type FrameId = usize;
+pub type FrameID = usize;
 
 pub struct FreeList<const SIZE: usize> {
-    free: UnsafeCell<[FrameId; SIZE]>,
+    free: UnsafeCell<[FrameID; SIZE]>,
     tail: AtomicUsize,
 }
 
@@ -26,14 +26,14 @@ unsafe impl<const SIZE: usize> Sync for FreeList<SIZE> {}
 
 impl<const SIZE: usize> Default for FreeList<SIZE> {
     fn default() -> Self {
-        let free: UnsafeCell<[FrameId; SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
+        let free: UnsafeCell<[FrameID; SIZE]> = UnsafeCell::new(std::array::from_fn(|i| i));
 
         Self { free, tail: AtomicUsize::new(SIZE) }
     }
 }
 
 impl<const SIZE: usize> FreeList<SIZE> {
-    pub fn pop(&self) -> Option<FrameId> {
+    pub fn pop(&self) -> Option<FrameID> {
         let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
@@ -51,7 +51,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
         unsafe { Some((*self.free.get())[new_tail]) }
     }
 
-    pub fn push(&self, frame_id: FrameId) {
+    pub fn push(&self, frame_id: FrameID) {
         let mut tail = self.tail.load(Relaxed);
         let mut new_tail;
         loop {
@@ -78,8 +78,8 @@ impl<const SIZE: usize> FreeList<SIZE> {
 
 pub struct Pin<'a> {
     pub page: &'a Page,
-    pub id: PageId,
-    i: FrameId,
+    pub id: PageID,
+    i: FrameID,
     replacer: Arc<LRU>,
 }
 
@@ -90,7 +90,7 @@ impl Drop for Pin<'_> {
 }
 
 impl<'a> Pin<'a> {
-    pub fn new(page: &'a Page, i: FrameId, id: PageId, replacer: Arc<LRU>) -> Self {
+    pub fn new(page: &'a Page, i: FrameID, id: PageID, replacer: Arc<LRU>) -> Self {
         Self { page, i, id, replacer }
     }
 
@@ -116,7 +116,7 @@ pub type Result<T> = std::result::Result<T, PageCacheError>;
 
 pub struct PageCache<D: Disk = FileSystem> {
     pages: Box<[Page; CACHE_SIZE]>,
-    page_table: RwLock<HashMap<PageId, FrameId>>,
+    page_table: RwLock<HashMap<PageID, FrameID>>,
     free: FreeList<CACHE_SIZE>,
     disk: D,
     next_page_id: AtomicI32,
@@ -125,7 +125,7 @@ pub struct PageCache<D: Disk = FileSystem> {
 pub type SharedPageCache<D> = Arc<PageCache<D>>;
 
 impl<D: Disk> PageCache<D> {
-    pub fn new(disk: D, replacer: Arc<LRU>, next_page_id: PageId) -> Arc<Self> {
+    pub fn new(disk: D, replacer: Arc<LRU>, next_page_id: PageID) -> Arc<Self> {
         let pages = Box::new(std::array::from_fn(|_| Page::default()));
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
@@ -134,7 +134,7 @@ impl<D: Disk> PageCache<D> {
         Arc::new(Self { pages, page_table, free, disk, next_page_id, replacer })
     }
 
-    fn allocate_page(&self) -> PageId {
+    fn allocate_page(&self) -> PageID {
         self.next_page_id.fetch_add(1, Relaxed)
     }
 
@@ -144,7 +144,7 @@ impl<D: Disk> PageCache<D> {
         self.try_get_page(page_id)
     }
 
-    pub fn fetch_page<'a>(&self, page_id: PageId) -> Result<Pin> {
+    pub fn fetch_page<'a>(&self, page_id: PageID) -> Result<Pin> {
         if let Some(i) = self.page_table.read().expect("todo").get(&page_id) {
             let mut replacer = self.replacer.lock();
             replacer.record_access(*i, AccessType::Get);
@@ -156,7 +156,7 @@ impl<D: Disk> PageCache<D> {
         self.try_get_page(page_id)
     }
 
-    fn try_get_page(&self, page_id: PageId) -> Result<Pin> {
+    fn try_get_page(&self, page_id: PageID) -> Result<Pin> {
         let i = match self.free.pop() {
             Some(i) => i,
             None => self.replacer.evict().ok_or(PageCacheError::OutOfMemory)?, // All pages are pinned
@@ -186,7 +186,7 @@ impl<D: Disk> PageCache<D> {
         Ok(Pin::new(&self.pages[i], i, page_id, self.replacer.clone()))
     }
 
-    pub fn remove_page(&self, page_id: PageId) {
+    pub fn remove_page(&self, page_id: PageID) {
         use std::collections::hash_map::Entry;
         let i = match self.page_table.write().expect("todo").entry(page_id) {
             Entry::Occupied(entry) => {
@@ -201,7 +201,7 @@ impl<D: Disk> PageCache<D> {
         self.free.push(i);
     }
 
-    pub fn flush_page(&self, page_id: PageId) -> Result<()> {
+    pub fn flush_page(&self, page_id: PageID) -> Result<()> {
         let page_table = self.page_table.read().expect("todo");
         let Some(i) = page_table.get(&page_id) else {
             return Ok(());
