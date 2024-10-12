@@ -8,7 +8,7 @@ use crate::{
     get_ptr,
     page::{PageBuf, PageId, PAGE_SIZE},
     storable::Storable,
-    table::tuple::{Comparand, Tuple},
+    table::tuple::{Comparand, TupleData},
 };
 
 use super::slot::Slot;
@@ -160,7 +160,7 @@ where
         let mut values = Vec::new();
         let mut left = &buf[NODE_VALUES_START..];
         for _ in 0..len {
-            let tuple = Tuple::from(left, schema);
+            let tuple = TupleData::from(left, schema);
             let slot_size = tuple.size() + Either::<V>::SIZE;
             let either = Either::from(&left[tuple.size()..slot_size]);
             values.push(Slot(tuple, either));
@@ -200,7 +200,7 @@ where
     }
 
     /// Returns `None` if node is a leaf or if no keys were matched and the next key is invalid
-    pub fn find_child(&self, key: &Tuple) -> Option<PageId> {
+    pub fn find_child(&self, key: &TupleData) -> Option<PageId> {
         if self.t == NodeType::Leaf {
             return None;
         }
@@ -228,7 +228,7 @@ where
     }
 
     #[inline]
-    pub fn last_key(&self) -> Option<&Tuple> {
+    pub fn last_key(&self) -> Option<&TupleData> {
         self.values.last().map(|s| &s.0)
     }
 
@@ -294,13 +294,13 @@ where
         self.values.into_iter()
     }
 
-    pub fn get(&self, key: &Tuple) -> Option<&Slot<V>> {
+    pub fn get(&self, key: &TupleData) -> Option<&Slot<V>> {
         self.values
             .iter()
             .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, &key))
     }
 
-    pub fn remove(&mut self, key: &Tuple) -> bool {
+    pub fn remove(&mut self, key: &TupleData) -> bool {
         if let Some(i) = self
             .values
             .iter()

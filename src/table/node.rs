@@ -4,7 +4,7 @@ use bytes::BytesMut;
 
 use crate::{
     page::{PageBuf, PageId, PAGE_SIZE},
-    table::tuple::{RId, Slot, Tuple, TupleInfoBuf, TupleMeta},
+    table::tuple::{RId, Slot, Tuple, TupleData, TupleInfoBuf, TupleMeta},
 };
 
 /*
@@ -94,13 +94,13 @@ impl Node {
         self.slots.len() as u32
     }
 
-    pub fn next_tuple_offset(&self, tuple_data: &BytesMut) -> Option<usize> {
+    pub fn next_tuple_offset(&self, tuple_data: &TupleData) -> Option<usize> {
         let offset = match self.slots.last() {
             Some(slot) => slot.offset as usize,
             None => PAGE_SIZE,
         };
 
-        let tuple_offset = offset - tuple_data.len();
+        let tuple_offset = offset - tuple_data.size();
 
         // Ensure tuple isn't written over header/slots
         let size = Self::HEADER_SIZE + Slot::SIZE * (self.len() as usize + 1);
@@ -111,16 +111,16 @@ impl Node {
         Some(tuple_offset)
     }
 
-    pub fn insert(&mut self, tuple_data: &BytesMut, meta: &TupleMeta) -> Option<u32> {
+    pub fn insert(&mut self, tuple_data: &TupleData, meta: &TupleMeta) -> Option<u32> {
         let offset = self.next_tuple_offset(tuple_data)?;
         let slot_id = self.len();
-        self.slots.push(Slot { offset: offset as u32, len: tuple_data.len() as u32, meta: *meta });
+        self.slots.push(Slot { offset: offset as u32, len: tuple_data.size() as u32, meta: *meta });
 
         unsafe {
             // TODO: This writes to the page buffer but doesn't set the dirty flag
             let tuples_ptr = self.page_start.add(offset);
             let tuples = std::slice::from_raw_parts_mut(tuples_ptr, PAGE_SIZE - offset);
-            tuples[..tuple_data.len()].copy_from_slice(&tuple_data);
+            tuples[..tuple_data.size()].copy_from_slice(&tuple_data.0);
         }
 
         Some(slot_id)
@@ -133,12 +133,12 @@ impl Node {
         }
 
         let Slot { offset, len, meta } = self.slots[slot_id as usize];
-        let mut tuple = Tuple { rid: *r_id, data: BytesMut::zeroed(len as usize) };
+        let mut tuple = Tuple { rid: *r_id, data: TupleData(BytesMut::zeroed(len as usize)) };
 
         unsafe {
             let tuple_ptr = self.page_start.add(offset as usize);
             let tuple_data = std::slice::from_raw_parts(tuple_ptr, len as usize);
-            tuple.data[..].copy_from_slice(tuple_data);
+            tuple.data.0[..].copy_from_slice(tuple_data);
         }
 
         Some((meta, tuple))
@@ -151,7 +151,7 @@ mod test {
 
     use crate::{
         page::{PageBuf, PAGE_SIZE},
-        table::node::{Node, RId, Slot, Tuple, TupleMeta},
+        table::node::{Node, RId, Slot, Tuple, TupleData, TupleMeta},
     };
 
     #[test]
@@ -213,18 +213,20 @@ mod test {
 
         let meta = TupleMeta { deleted: false };
 
-        let r_id_a = RId { page_id: 0, slot_id: 0 };
-        let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
+        let rid_a = RId { page_id: 0, slot_id: 0 };
+        let tuple_a =
+            TupleData(BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]));
 
-        let r_id_b = RId { page_id: 0, slot_id: 1 };
-        let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
+        let rid_b = RId { page_id: 0, slot_id: 1 };
+        let tuple_b =
+            TupleData(BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]));
 
         table.insert(&tuple_a, &meta);
         table.insert(&tuple_b, &meta);
 
-        let (_, have_a) = table.get(&r_id_a).unwrap();
-        let (_, have_b) = table.get(&r_id_b).unwrap();
-        assert_eq!(Tuple { data: tuple_a, rid: r_id_a }, have_a);
-        assert_eq!(Tuple { data: tuple_b, rid: r_id_b }, have_b)
+        let (_, have_a) = table.get(&rid_a).unwrap();
+        let (_, have_b) = table.get(&rid_b).unwrap();
+        assert_eq!(Tuple { data: tuple_a, rid: rid_a }, have_a);
+        assert_eq!(Tuple { data: tuple_b, rid: rid_b }, have_b)
     }
 }

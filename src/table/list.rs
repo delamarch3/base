@@ -1,14 +1,13 @@
-use std::sync::Mutex;
-
-use bytes::BytesMut;
-
-use crate::{
-    disk::{Disk, FileSystem},
-    page::{PageBuf, PageId},
-    page_cache::{Result, SharedPageCache},
-    table::node::Node,
-    table::tuple::{RId, Tuple, TupleMeta},
-    writep,
+use {
+    crate::{
+        disk::{Disk, FileSystem},
+        page::{PageBuf, PageId},
+        page_cache::{Result, SharedPageCache},
+        table::node::Node,
+        table::tuple::{RId, Tuple, TupleData, TupleMeta},
+        writep,
+    },
+    std::sync::Mutex,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +77,7 @@ impl<D: Disk> List<D> {
         })
     }
 
-    pub fn insert(&self, tuple_data: &BytesMut, meta: &TupleMeta) -> Result<Option<RId>> {
+    pub fn insert(&self, tuple_data: &TupleData, meta: &TupleMeta) -> Result<Option<RId>> {
         let mut last_page_id = self.last_page_id_mut();
         let page = self.pc.fetch_page(*last_page_id)?;
         let mut page_w = page.write();
@@ -189,7 +188,7 @@ mod test {
         table::list::List,
         table::{
             list::TableMeta,
-            tuple::{Tuple, TupleMeta},
+            tuple::{Tuple, TupleData, TupleMeta},
         },
     };
 
@@ -204,8 +203,10 @@ mod test {
 
         let list = List::default(pc.clone())?;
         let meta = TupleMeta { deleted: false };
-        let tuple_a = BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]);
-        let tuple_b = BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]);
+        let tuple_a =
+            TupleData(BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]));
+        let tuple_b =
+            TupleData(BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]));
 
         let r_id_a = list.insert(&tuple_a, &meta)?.unwrap();
         let r_id_b = list.insert(&tuple_b, &meta)?.unwrap();
@@ -240,7 +241,9 @@ mod test {
         let meta = TupleMeta { deleted: false };
         let mut tuples = Vec::new();
         for i in 0..WANT_LEN {
-            let tuple = BytesMut::from(&std::array::from_fn::<u8, 150, _>(|j| (j * i) as u8)[..]);
+            let tuple = TupleData(BytesMut::from(
+                &std::array::from_fn::<u8, 150, _>(|j| (j * i) as u8)[..],
+            ));
             list.insert(&tuple, &meta)?;
             tuples.push(tuple);
         }

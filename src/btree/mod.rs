@@ -13,7 +13,7 @@ use crate::{
     page::{PageBuf, PageId, PageReadGuard, PageWriteGuard},
     page_cache::SharedPageCache,
     storable::Storable,
-    table::tuple::{Comparand, Tuple},
+    table::tuple::{Comparand, TupleData},
     writep,
 };
 
@@ -43,7 +43,7 @@ where
 
     // TODO: One thread could split the root whilst another holds a pin to the root. Should double
     // check is_root
-    pub fn insert(&mut self, key: &Tuple, value: &V) -> crate::Result<()> {
+    pub fn insert(&mut self, key: &TupleData, value: &V) -> crate::Result<()> {
         let pin;
         let rpage = match self.root {
             -1 => {
@@ -80,7 +80,7 @@ where
         &'a self,
         mut prev_page: Option<&'a PageWriteGuard<'a>>,
         mut page: PageWriteGuard<'a>,
-        key: &Tuple,
+        key: &TupleData,
         value: &V,
     ) -> crate::Result<Option<(Slot<V>, Slot<V>)>> {
         let mut node: Node<V> = Node::from(&page.data, &self.schema);
@@ -186,7 +186,7 @@ where
     }
 
     // TODO: return just the values instead? Less cloning
-    pub fn scan(&self) -> crate::Result<Vec<(Tuple, V)>> {
+    pub fn scan(&self) -> crate::Result<Vec<(TupleData, V)>> {
         let mut ret = Vec::new();
         if self.root == -1 {
             return Ok(ret);
@@ -204,7 +204,7 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(Tuple, V)>,
+        acc: &'a mut Vec<(TupleData, V)>,
     ) -> crate::Result<()> {
         let node: Node<V> = Node::from(&page.data, &self.schema);
 
@@ -239,7 +239,7 @@ where
         self._scan(Some(page), r, acc)
     }
 
-    pub fn range(&self, from: &Tuple, to: &Tuple) -> crate::Result<Vec<(Tuple, V)>> {
+    pub fn range(&self, from: &TupleData, to: &TupleData) -> crate::Result<Vec<(TupleData, V)>> {
         let mut ret = Vec::new();
 
         let cur = match self.get_ptr(&from, self.root)? {
@@ -259,9 +259,9 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(Tuple, V)>,
-        from: &Tuple,
-        to: &Tuple,
+        acc: &'a mut Vec<(TupleData, V)>,
+        from: &TupleData,
+        to: &TupleData,
     ) -> crate::Result<()> {
         let node = Node::from(&page.data, &self.schema);
         let next = node.next;
@@ -294,7 +294,7 @@ where
         self._range(Some(page), r, acc, from, to)
     }
 
-    fn get_ptr(&self, key: &Tuple, ptr: PageId) -> crate::Result<Option<PageId>> {
+    fn get_ptr(&self, key: &TupleData, ptr: PageId) -> crate::Result<Option<PageId>> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
@@ -309,7 +309,7 @@ where
     }
 
     // TODO: return just the value instead? Less cloning
-    pub fn get(&self, key: &Tuple) -> crate::Result<Option<Slot<V>>> {
+    pub fn get(&self, key: &TupleData) -> crate::Result<Option<Slot<V>>> {
         if self.root == -1 {
             return Ok(None);
         }
@@ -317,7 +317,7 @@ where
         self._get(key, self.root)
     }
 
-    fn _get(&self, key: &Tuple, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
+    fn _get(&self, key: &TupleData, ptr: PageId) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
         let node = Node::from(&r.data, &self.schema);
@@ -329,7 +329,7 @@ where
         }
     }
 
-    pub fn delete(&self, key: &Tuple) -> crate::Result<bool> {
+    pub fn delete(&self, key: &TupleData) -> crate::Result<bool> {
         if self.root == -1 {
             return Ok(false);
         }
@@ -337,7 +337,7 @@ where
         self._delete(key, self.root)
     }
 
-    fn _delete(&self, key: &Tuple, ptr: PageId) -> crate::Result<bool> {
+    fn _delete(&self, key: &TupleData, ptr: PageId) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
         let mut node: Node<V> = Node::from(&w.data, &self.schema);
@@ -496,7 +496,7 @@ mod test {
 
         for (k, _) in first_half {
             match btree.get(k)? {
-                Some(_) => panic!("Unexpected deleted key: {:x?}", k.data),
+                Some(_) => panic!("Unexpected deleted key: {:x?}", k.0),
                 None => {}
             };
         }
@@ -505,7 +505,7 @@ mod test {
         for (k, v) in second_half {
             let test = match btree.get(k)? {
                 Some(t) => t,
-                None => panic!("Could not find {:x?}:{v} in the second half", k.data),
+                None => panic!("Could not find {:x?}:{v} in the second half", k.0),
             };
 
             let have = match test.1 {
@@ -573,8 +573,8 @@ mod test {
         struct TestCase {
             name: &'static str,
             range: std::ops::Range<i32>,
-            from: Tuple,
-            to: Tuple,
+            from: TupleData,
+            to: TupleData,
         }
 
         const MEMORY: usize = PAGE_SIZE * 16;
@@ -626,7 +626,7 @@ mod test {
                     Comparand(&schema, k) >= Comparand(&schema, &from)
                         && Comparand(&schema, k) <= Comparand(&schema, &to)
                 })
-                .collect::<Vec<(Tuple, i32)>>();
+                .collect::<Vec<(TupleData, i32)>>();
 
             let have = btree.range(&from, &to)?;
             assert!(
