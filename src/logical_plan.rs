@@ -10,8 +10,8 @@ pub trait LogicalPlan: std::fmt::Display {
     fn inputs(&self) -> LogicalPlanInputs;
 }
 
-pub fn format_logical_plan(plan: &Box<dyn LogicalPlan>) -> String {
-    fn format_logical_plan(plan: &Box<dyn LogicalPlan>, indent: u16) -> String {
+pub fn format_logical_plan(plan: &dyn LogicalPlan) -> String {
+    fn format_logical_plan(plan: &dyn LogicalPlan, indent: u16) -> String {
         let mut output = String::new();
         (0..indent).for_each(|_| output.push('\t'));
         output.push_str(&plan.to_string());
@@ -19,10 +19,10 @@ pub fn format_logical_plan(plan: &Box<dyn LogicalPlan>) -> String {
 
         let (lhs, rhs) = plan.inputs();
         if let Some(plan) = lhs {
-            output.push_str(&format_logical_plan(&plan, indent + 1));
+            output.push_str(&format_logical_plan(plan.as_ref(), indent + 1));
         }
         if let Some(plan) = rhs {
-            output.push_str(&format_logical_plan(&plan, indent + 1));
+            output.push_str(&format_logical_plan(plan.as_ref(), indent + 1));
         }
 
         output
@@ -207,7 +207,7 @@ impl Projection {
 #[cfg(test)]
 mod test {
     use {
-        super::{format_logical_plan, Expr, Filter, LogicalPlan, Op, Projection, Scan},
+        super::{format_logical_plan, Expr, Filter, Op, Projection, Scan},
         crate::{catalog::Type, table::tuple::Value},
     };
 
@@ -227,7 +227,7 @@ mod test {
         let filter = Filter::new(filter_expr, Box::new(scan));
         let projection = Projection::new(&["c1", "c2"], Box::new(filter));
 
-        let have = format_logical_plan(&(Box::new(projection) as Box<dyn LogicalPlan>));
+        let have = format_logical_plan(&projection);
         let want = "\
 Projection: c1,c2
 	Filter: expr=c1 IS NULL AND 5 < c2
