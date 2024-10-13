@@ -94,7 +94,7 @@ impl TupleData {
 
         // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
         // This assumes the tuple begins at the zeroth byte
-        for Column { name: _, ty, offset } in schema.columns() {
+        for Column { name: _, ty, offset } in &schema.columns {
             let start = tuple.len();
             tuple.put(&data[*offset..*offset + ty.size()]);
 
@@ -143,7 +143,7 @@ impl TupleData {
         assert!(schema.len() > 0);
 
         // Increment the first column
-        let value = self.get_value(&schema.columns()[0]);
+        let value = self.get_value(&schema.columns[0]);
 
         let value = match value {
             Value::TinyInt(v) => Value::TinyInt(v + 1),
@@ -165,7 +165,7 @@ impl TupleData {
         };
 
         let mut builder = TupleBuilder::new().add(&value);
-        for column in &schema.columns()[1..] {
+        for column in &schema.columns[1..] {
             builder = builder.add(&self.get_value(column));
         }
 

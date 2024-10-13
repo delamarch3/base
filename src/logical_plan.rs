@@ -31,6 +31,21 @@ pub fn format_logical_plan(plan: &dyn LogicalPlan) -> String {
     format_logical_plan(plan, 0)
 }
 
+fn write_list<T: std::fmt::Display, I: Iterator<Item = T>>(
+    f: &mut std::fmt::Formatter<'_>,
+    iter: &mut I,
+    seperator: &'static str,
+) -> std::fmt::Result {
+    let mut tmp = "";
+    while let Some(item) = iter.next() {
+        write!(f, "{tmp}")?;
+        tmp = seperator;
+        write!(f, "{item}")?;
+    }
+
+    Ok(())
+}
+
 // TODO: it's probably ok to use Expr from the parser once that's ready
 pub enum Expr {
     Ident(String),
@@ -78,22 +93,12 @@ impl std::fmt::Display for Expr {
             Expr::IsNotNull(expr) => write!(f, "{expr} IS NOT NULL"),
             Expr::InList { expr, list, negated: false } => {
                 write!(f, "{expr} IN [")?;
-                let mut seperator = "";
-                for expr in list {
-                    write!(f, "{seperator}")?;
-                    seperator = ",";
-                    write!(f, "{expr}")?;
-                }
+                write_list(f, &mut list.iter(), ",")?;
                 write!(f, "]")
             }
             Expr::InList { expr, list, negated: true } => {
                 write!(f, "{expr} NOT IN [")?;
-                let mut seperator = "";
-                for expr in list {
-                    write!(f, "{seperator}")?;
-                    seperator = ",";
-                    write!(f, "{expr}")?;
-                }
+                write_list(f, &mut list.iter(), ",")?;
                 write!(f, "]")
             }
             Expr::Between { expr, negated: false, low, high } => {
@@ -115,13 +120,7 @@ pub struct Scan {
 impl std::fmt::Display for Scan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Scan: table={}, projection=", self.table,)?;
-
-        let mut seperator = "";
-        for column in self.schema.columns() {
-            write!(f, "{seperator}")?;
-            seperator = ",";
-            write!(f, "{}", column.name)?;
-        }
+        write_list(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
 
         Ok(())
     }
@@ -181,12 +180,7 @@ pub struct Projection {
 impl std::fmt::Display for Projection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Projection: ")?;
-        let mut seperator = "";
-        for column in self.schema.columns() {
-            write!(f, "{seperator}")?;
-            seperator = ",";
-            write!(f, "{}", column.name)?;
-        }
+        write_list(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
 
         Ok(())
     }
@@ -209,18 +203,76 @@ impl Projection {
     }
 }
 
+pub enum JoinType {
+    BlockNestedLoopJoin,
+    HashJoin,
+    MergeJoin,
+}
+
+impl std::fmt::Display for JoinType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JoinType::BlockNestedLoopJoin => write!(f, "BlockNestedLoopJoin"),
+            JoinType::HashJoin => write!(f, "HashJoin"),
+            JoinType::MergeJoin => write!(f, "MergeJoin"),
+        }
+    }
+}
+
+pub struct Join {
+    join_type: JoinType,
+    tables: [Expr; 2],
+    predicate: Expr,
+    schema: Schema,
+    lhs: Box<dyn LogicalPlan>,
+    rhs: Box<dyn LogicalPlan>,
+}
+
+impl std::fmt::Display for Join {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: tables={},{} expr={}",
+            self.join_type, self.tables[0], self.tables[1], self.predicate
+        )
+    }
+}
+
+impl LogicalPlan for Join {
+    fn schema(&self) -> &Schema {
+        &self.schema
+    }
+
+    fn inputs(&self) -> LogicalPlanInputs {
+        (Some(&self.lhs), Some(&self.rhs))
+    }
+}
+
+impl Join {
+    pub fn new(
+        join_type: JoinType,
+        tables: [Expr; 2],
+        predicate: Expr,
+        lhs: Box<dyn LogicalPlan>,
+        rhs: Box<dyn LogicalPlan>,
+    ) -> Self {
+        let schema = lhs.schema().extend(rhs.schema());
+        Self { join_type, tables, predicate, schema, lhs, rhs }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use {
-        super::{format_logical_plan, Expr, Filter, Op, Projection, Scan},
+        super::{format_logical_plan, Expr, Filter, Join, JoinType, Op, Projection, Scan},
         crate::{catalog::Type, table::tuple::Value},
     };
 
     #[test]
     fn test_format_logical_plan() {
-        let schema = [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)].into();
-        let scan = Scan::new("t1".into(), schema);
-        let filter_expr = Expr::BinaryOp {
+        let schema_a = [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)].into();
+        let scan_a = Scan::new("t1".into(), schema_a);
+        let filter_expr_a = Expr::BinaryOp {
             left: Box::new(Expr::IsNull(Box::new(Expr::Ident("c1".into())))),
             op: Op::And,
             right: Box::new(Expr::BinaryOp {
@@ -229,14 +281,34 @@ mod test {
                 right: Box::new(Expr::Ident("c2".into())),
             }),
         };
-        let filter = Filter::new(filter_expr, Box::new(scan));
-        let projection = Projection::new(&["c1", "c2"], Box::new(filter));
+        let filter_a = Filter::new(filter_expr_a, Box::new(scan_a));
+
+        let schema_b = [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)].into();
+        let scan_b = Scan::new("t2".into(), schema_b);
+        let filter_expr_b = Expr::IsNotNull(Box::new(Expr::Ident("c5".into())));
+        let filter_b = Filter::new(filter_expr_b, Box::new(scan_b));
+
+        let join = Join::new(
+            JoinType::BlockNestedLoopJoin,
+            [Expr::Ident("t1".into()), Expr::Ident("t2".into())],
+            Expr::BinaryOp {
+                left: Box::new(Expr::Ident("t1.c3".into())),
+                op: Op::Eq,
+                right: Box::new(Expr::Ident("t2.c3".into())),
+            },
+            Box::new(filter_a),
+            Box::new(filter_b),
+        );
+        let projection = Projection::new(&["c1", "c2"], Box::new(join));
 
         let have = format_logical_plan(&projection);
         let want = "\
 Projection: c1,c2
-	Filter: expr=c1 IS NULL AND 5 < c2
-		Scan: table=t1, projection=c1,c2,c3
+	BlockNestedLoopJoin: tables=t1,t2 expr=t1.c3 = t2.c3
+		Filter: expr=c1 IS NULL AND 5 < c2
+			Scan: table=t1, projection=c1,c2,c3
+		Filter: expr=c5 IS NOT NULL
+			Scan: table=t2, projection=c3,c4,c5
 ";
 
         assert_eq!(want, have)

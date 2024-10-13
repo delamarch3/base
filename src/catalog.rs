@@ -63,7 +63,7 @@ impl<const N: usize> From<[(&str, Type); N]> for Schema {
 
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct Schema {
-    columns: Vec<Column>,
+    pub columns: Vec<Column>,
     tuple_size: usize,
 }
 
@@ -71,10 +71,6 @@ impl Schema {
     pub fn new(columns: Vec<Column>) -> Self {
         // TODO: ensure column names are unique
         Self { tuple_size: columns.iter().fold(0, |acc, c| acc + c.value_size()), columns }
-    }
-
-    pub fn columns(&self) -> &Vec<Column> {
-        &self.columns
     }
 
     pub fn filter(&self, columns: &[&str]) -> Self {
@@ -100,6 +96,14 @@ impl Schema {
         });
 
         ret
+    }
+
+    pub fn extend(&self, other: &Schema) -> Schema {
+        let mut schema = self.clone();
+        schema.columns.extend(other.columns.iter().map(|column| column.clone()));
+        schema.tuple_size += other.tuple_size;
+
+        schema
     }
 
     pub fn tuple_size(&self) -> usize {
