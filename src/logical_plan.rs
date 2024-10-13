@@ -78,15 +78,21 @@ impl std::fmt::Display for Expr {
             Expr::IsNotNull(expr) => write!(f, "{expr} IS NOT NULL"),
             Expr::InList { expr, list, negated: false } => {
                 write!(f, "{expr} IN [")?;
+                let mut seperator = "";
                 for expr in list {
-                    write!(f, "{expr},")?;
+                    write!(f, "{seperator}")?;
+                    seperator = ",";
+                    write!(f, "{expr}")?;
                 }
                 write!(f, "]")
             }
             Expr::InList { expr, list, negated: true } => {
                 write!(f, "{expr} NOT IN [")?;
+                let mut seperator = "";
                 for expr in list {
-                    write!(f, "{expr},")?;
+                    write!(f, "{seperator}")?;
+                    seperator = ",";
+                    write!(f, "{expr}")?;
                 }
                 write!(f, "]")
             }
@@ -108,16 +114,16 @@ pub struct Scan {
 
 impl std::fmt::Display for Scan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Write;
+        write!(f, "Scan: table={}, projection=", self.table,)?;
 
-        write!(f, "Scan: table={}, projection=", self.table)?;
-        let mut exprs = String::new();
+        let mut seperator = "";
         for column in self.schema.columns() {
-            write!(exprs, "{},", column.name)?;
+            write!(f, "{seperator}")?;
+            seperator = ",";
+            write!(f, "{}", column.name)?;
         }
-        exprs.pop();
 
-        write!(f, "{}", exprs)
+        Ok(())
     }
 }
 
@@ -174,16 +180,15 @@ pub struct Projection {
 
 impl std::fmt::Display for Projection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Write;
-
         write!(f, "Projection: ")?;
-        let mut exprs = String::new();
+        let mut seperator = "";
         for column in self.schema.columns() {
-            write!(exprs, "{},", column.name)?;
+            write!(f, "{seperator}")?;
+            seperator = ",";
+            write!(f, "{}", column.name)?;
         }
-        exprs.pop();
 
-        write!(f, "{}", exprs)
+        Ok(())
     }
 }
 
