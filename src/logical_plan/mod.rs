@@ -1,5 +1,17 @@
 use crate::{catalog::Schema, table::tuple::Value};
 
+mod filter;
+mod join;
+mod projection;
+mod scan;
+
+pub use {
+    filter::Filter,
+    join::{Join, JoinAlgorithm},
+    projection::Projection,
+    scan::Scan,
+};
+
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
 pub type LogicalPlanInputs<'a> =
@@ -112,159 +124,10 @@ impl std::fmt::Display for Expr {
     }
 }
 
-pub struct Scan {
-    table: String,
-    schema: Schema,
-}
-
-impl std::fmt::Display for Scan {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Scan: table={}, projection=", self.table,)?;
-        write_list(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
-
-        Ok(())
-    }
-}
-
-impl LogicalPlan for Scan {
-    fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (None, None)
-    }
-}
-
-impl Scan {
-    pub fn new(table: String, schema: Schema) -> Self {
-        Self { table, schema }
-    }
-}
-
-pub struct Filter {
-    expr: Expr,
-    input: Box<dyn LogicalPlan>,
-}
-
-impl std::fmt::Display for Filter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Filter: expr={}", self.expr)?;
-
-        Ok(())
-    }
-}
-
-impl LogicalPlan for Filter {
-    fn schema(&self) -> &Schema {
-        self.input.schema()
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
-    }
-}
-
-impl Filter {
-    pub fn new(expr: Expr, input: Box<dyn LogicalPlan>) -> Self {
-        Self { expr, input }
-    }
-}
-
-// TODO: keeping this simple for now but should be able to support expressions too
-pub struct Projection {
-    schema: Schema,
-    input: Box<dyn LogicalPlan>,
-}
-
-impl std::fmt::Display for Projection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Projection: ")?;
-        write_list(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
-
-        Ok(())
-    }
-}
-
-impl LogicalPlan for Projection {
-    fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
-    }
-}
-
-impl Projection {
-    pub fn new(exprs: &[&str], input: Box<dyn LogicalPlan>) -> Self {
-        let schema = input.schema().filter(exprs);
-        Self { schema, input }
-    }
-}
-
-pub enum JoinType {
-    BlockNestedLoopJoin,
-    HashJoin,
-    MergeJoin,
-}
-
-impl std::fmt::Display for JoinType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JoinType::BlockNestedLoopJoin => write!(f, "BlockNestedLoopJoin"),
-            JoinType::HashJoin => write!(f, "HashJoin"),
-            JoinType::MergeJoin => write!(f, "MergeJoin"),
-        }
-    }
-}
-
-pub struct Join {
-    join_type: JoinType,
-    tables: [Expr; 2],
-    predicate: Expr,
-    schema: Schema,
-    lhs: Box<dyn LogicalPlan>,
-    rhs: Box<dyn LogicalPlan>,
-}
-
-impl std::fmt::Display for Join {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: tables={},{} expr={}",
-            self.join_type, self.tables[0], self.tables[1], self.predicate
-        )
-    }
-}
-
-impl LogicalPlan for Join {
-    fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.lhs), Some(&self.rhs))
-    }
-}
-
-impl Join {
-    pub fn new(
-        join_type: JoinType,
-        tables: [Expr; 2],
-        predicate: Expr,
-        lhs: Box<dyn LogicalPlan>,
-        rhs: Box<dyn LogicalPlan>,
-    ) -> Self {
-        let schema = lhs.schema().extend(rhs.schema());
-        Self { join_type, tables, predicate, schema, lhs, rhs }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use {
-        super::{format_logical_plan, Expr, Filter, Join, JoinType, Op, Projection, Scan},
+        super::{format_logical_plan, Expr, Filter, Join, JoinAlgorithm, Op, Projection, Scan},
         crate::{catalog::Type, table::tuple::Value},
     };
 
@@ -289,7 +152,7 @@ mod test {
         let filter_b = Filter::new(filter_expr_b, Box::new(scan_b));
 
         let join = Join::new(
-            JoinType::BlockNestedLoopJoin,
+            JoinAlgorithm::BlockNestedLoopJoin,
             [Expr::Ident("t1".into()), Expr::Ident("t2".into())],
             Expr::BinaryOp {
                 left: Box::new(Expr::Ident("t1.c3".into())),
