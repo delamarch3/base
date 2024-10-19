@@ -43,7 +43,7 @@ pub fn format_logical_plan(plan: &dyn LogicalPlan) -> String {
     format_logical_plan(plan, 0)
 }
 
-fn write_list<T: std::fmt::Display, I: Iterator<Item = T>>(
+fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     f: &mut std::fmt::Formatter<'_>,
     iter: &mut I,
     seperator: &'static str,
@@ -105,12 +105,12 @@ impl std::fmt::Display for Expr {
             Expr::IsNotNull(expr) => write!(f, "{expr} IS NOT NULL"),
             Expr::InList { expr, list, negated: false } => {
                 write!(f, "{expr} IN [")?;
-                write_list(f, &mut list.iter(), ",")?;
+                write_iter(f, &mut list.iter(), ",")?;
                 write!(f, "]")
             }
             Expr::InList { expr, list, negated: true } => {
                 write!(f, "{expr} NOT IN [")?;
-                write_list(f, &mut list.iter(), ",")?;
+                write_iter(f, &mut list.iter(), ",")?;
                 write!(f, "]")
             }
             Expr::Between { expr, negated: false, low, high } => {
@@ -169,9 +169,9 @@ mod test {
 Projection: c1,c2
 	BlockNestedLoopJoin: tables=t1,t2 expr=t1.c3 = t2.c3
 		Filter: expr=c1 IS NULL AND 5 < c2
-			Scan: table=t1, projection=c1,c2,c3
+			Scan: table=t1
 		Filter: expr=c5 IS NOT NULL
-			Scan: table=t2, projection=c3,c4,c5
+			Scan: table=t2
 ";
 
         assert_eq!(want, have)

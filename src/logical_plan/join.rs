@@ -56,7 +56,7 @@ impl Join {
         lhs: Box<dyn LogicalPlan>,
         rhs: Box<dyn LogicalPlan>,
     ) -> Self {
-        let schema = lhs.schema().extend(rhs.schema());
+        let schema = lhs.schema().join(rhs.schema());
         Self { join_type, tables, predicate, schema, lhs, rhs }
     }
 }

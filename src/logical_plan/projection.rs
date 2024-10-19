@@ -1,5 +1,5 @@
 use {
-    super::{write_list, LogicalPlan, LogicalPlanInputs},
+    super::{write_iter, LogicalPlan, LogicalPlanInputs},
     crate::catalog::Schema,
 };
 
@@ -12,7 +12,7 @@ pub struct Projection {
 impl std::fmt::Display for Projection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Projection: ")?;
-        write_list(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
+        write_iter(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
 
         Ok(())
     }

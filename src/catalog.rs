@@ -69,10 +69,10 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(columns: Vec<Column>) -> Self {
-        // TODO: ensure column names are unique
         Self { tuple_size: columns.iter().fold(0, |acc, c| acc + c.value_size()), columns }
     }
 
+    /// Returns a new `Schema` which has been filtered to include the specified columns
     pub fn filter(&self, columns: &[&str]) -> Self {
         let mut tuple_size = 0;
         let columns = self
@@ -87,18 +87,22 @@ impl Schema {
         Self { columns, tuple_size }
     }
 
+    /// Returns a new `Schema` where the offsets have been adjusted so that each column is packed
+    /// together
     pub fn compact(&self) -> Self {
-        let mut ret = self.clone();
-        let mut offset = 0;
-        ret.columns.iter_mut().for_each(|Column { ty, offset: col_offset, .. }| {
-            *col_offset = offset;
-            offset += ty.size()
-        });
+        let mut schema = self.clone();
+        let mut current = 0;
 
-        ret
+        for Column { ty, offset, .. } in &mut schema.columns {
+            *offset = current;
+            current += ty.size();
+        }
+
+        schema
     }
 
-    pub fn extend(&self, other: &Schema) -> Schema {
+    /// Returns a new `Schema` where another `Schema` is appended
+    pub fn join(&self, other: &Schema) -> Self {
         let mut schema = self.clone();
         schema.columns.extend(other.columns.iter().map(|column| column.clone()));
         schema.tuple_size += other.tuple_size;
