@@ -4,7 +4,7 @@ use {
 };
 
 pub enum JoinAlgorithm {
-    BlockNestedLoopJoin,
+    NestedLoopJoin,
     HashJoin,
     MergeJoin,
 }
@@ -12,7 +12,7 @@ pub enum JoinAlgorithm {
 impl std::fmt::Display for JoinAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JoinAlgorithm::BlockNestedLoopJoin => write!(f, "BlockNestedLoopJoin"),
+            JoinAlgorithm::NestedLoopJoin => write!(f, "BlockNestedLoopJoin"),
             JoinAlgorithm::HashJoin => write!(f, "HashJoin"),
             JoinAlgorithm::MergeJoin => write!(f, "MergeJoin"),
         }
@@ -20,8 +20,7 @@ impl std::fmt::Display for JoinAlgorithm {
 }
 
 pub struct Join {
-    join_type: JoinAlgorithm,
-    tables: [Expr; 2],
+    algo: JoinAlgorithm,
     predicate: Expr,
     schema: Schema,
     lhs: Box<dyn LogicalPlan>,
@@ -30,11 +29,7 @@ pub struct Join {
 
 impl std::fmt::Display for Join {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: tables={},{} expr={}",
-            self.join_type, self.tables[0], self.tables[1], self.predicate
-        )
+        write!(f, "{}: expr=[{}]", self.algo, self.predicate)
     }
 }
 
@@ -50,13 +45,12 @@ impl LogicalPlan for Join {
 
 impl Join {
     pub fn new(
-        join_type: JoinAlgorithm,
-        tables: [Expr; 2],
+        algo: JoinAlgorithm,
         predicate: Expr,
         lhs: Box<dyn LogicalPlan>,
         rhs: Box<dyn LogicalPlan>,
     ) -> Self {
         let schema = lhs.schema().join(rhs.schema());
-        Self { join_type, tables, predicate, schema, lhs, rhs }
+        Self { algo, predicate, schema, lhs, rhs }
     }
 }

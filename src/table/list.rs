@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use {
     crate::{
         disk::{Disk, FileSystem},
@@ -24,6 +26,8 @@ impl Default for TableMeta {
         Self { first_page_id: -1, last_page_id: -1 }
     }
 }
+
+pub type SharedList<D> = Arc<List<D>>;
 
 pub struct List<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,

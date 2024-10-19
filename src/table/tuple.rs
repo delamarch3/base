@@ -23,7 +23,7 @@ impl std::fmt::Display for Value {
             Value::Bool(v) => write!(f, "{}", v),
             Value::Int(v) => write!(f, "{}", v),
             Value::BigInt(v) => write!(f, "{}", v),
-            Value::Varchar(v) => write!(f, "{}", v),
+            Value::Varchar(v) => write!(f, "\"{}\"", v),
         }
     }
 }

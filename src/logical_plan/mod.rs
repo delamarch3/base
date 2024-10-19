@@ -1,12 +1,18 @@
-use crate::{catalog::Schema, table::tuple::Value};
+use crate::{
+    catalog::{IndexInfo, Schema, TableInfo},
+    disk::Disk,
+    table::tuple::Value,
+};
 
 mod filter;
+mod index_scan;
 mod join;
 mod projection;
 mod scan;
 
 pub use {
     filter::Filter,
+    index_scan::IndexScan,
     join::{Join, JoinAlgorithm},
     projection::Projection,
     scan::Scan,
@@ -61,7 +67,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
 // TODO: it's probably ok to use Expr from the parser once that's ready
 pub enum Expr {
     Ident(String),
-    Value(Value),
+    Value(Value), // TODO: keep the parser values, translate to schema values later
     IsNull(Box<Expr>),
     IsNotNull(Box<Expr>),
     InList { expr: Box<Expr>, list: Vec<Expr>, negated: bool },
@@ -124,41 +130,212 @@ impl std::fmt::Display for Expr {
     }
 }
 
+pub fn ident(ident: &str) -> Expr {
+    Expr::Ident(ident.into())
+}
+
+pub fn int(int: i32) -> Expr {
+    Expr::Value(Value::Int(int))
+}
+
+pub fn string(string: &str) -> Expr {
+    Expr::Value(Value::Varchar(string.into()))
+}
+
+impl Expr {
+    pub fn is_null(self) -> Self {
+        Expr::IsNull(Box::new(self))
+    }
+
+    pub fn is_not_null(self) -> Self {
+        Expr::IsNotNull(Box::new(self))
+    }
+
+    pub fn in_list(self, list: Vec<Expr>) -> Self {
+        Expr::InList { expr: Box::new(self), list, negated: false }
+    }
+
+    pub fn not_in_list(self, list: Vec<Expr>) -> Self {
+        Expr::InList { expr: Box::new(self), list, negated: true }
+    }
+
+    pub fn between(self, low: Expr, high: Expr) -> Self {
+        Expr::Between {
+            expr: Box::new(self),
+            negated: false,
+            low: Box::new(low),
+            high: Box::new(high),
+        }
+    }
+
+    pub fn not_between(self, low: Expr, high: Expr) -> Self {
+        Expr::Between {
+            expr: Box::new(self),
+            negated: true,
+            low: Box::new(low),
+            high: Box::new(high),
+        }
+    }
+
+    pub fn eq(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Eq, right: Box::new(rhs) }
+    }
+
+    pub fn neq(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Neq, right: Box::new(rhs) }
+    }
+
+    pub fn lt(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Lt, right: Box::new(rhs) }
+    }
+
+    pub fn le(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Le, right: Box::new(rhs) }
+    }
+
+    pub fn gt(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Gt, right: Box::new(rhs) }
+    }
+
+    pub fn ge(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Ge, right: Box::new(rhs) }
+    }
+
+    pub fn and(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::And, right: Box::new(rhs) }
+    }
+
+    pub fn or(self, rhs: Expr) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Or, right: Box::new(rhs) }
+    }
+}
+
+pub struct Builder {
+    root: Box<dyn LogicalPlan>,
+}
+
+impl Builder {
+    pub fn scan<D: Disk + 'static>(table_info: TableInfo<D>) -> Self {
+        Self { root: Box::new(Scan::new(table_info)) }
+    }
+
+    pub fn index_scan(index_info: IndexInfo) -> Self {
+        Self { root: Box::new(IndexScan::new(index_info)) }
+    }
+
+    pub fn project(self, exprs: &[&str]) -> Self {
+        let input = self.root;
+        let projection = Projection::new(exprs, input);
+
+        Self { root: Box::new(projection) }
+    }
+
+    pub fn filter(self, expr: Expr) -> Self {
+        let input = self.root;
+        let filter = Filter::new(expr, input);
+
+        Self { root: Box::new(filter) }
+    }
+
+    pub fn join(self, rhs: Builder, predicate: Expr) -> Self {
+        let lhs = self.root;
+        let join = Join::new(JoinAlgorithm::NestedLoopJoin, predicate, lhs, rhs.root);
+
+        Self { root: Box::new(join) }
+    }
+
+    pub fn build(self) -> Box<dyn LogicalPlan> {
+        self.root
+    }
+}
+
 #[cfg(test)]
 mod test {
     use {
-        super::{format_logical_plan, Expr, Filter, Join, JoinAlgorithm, Op, Projection, Scan},
-        crate::{catalog::Type, table::tuple::Value},
+        super::*,
+        crate::{
+            catalog::{Catalog, Type},
+            disk::Memory,
+            logical_plan::{format_logical_plan, ident, int, string},
+            page::PAGE_SIZE,
+            page_cache::PageCache,
+            replacer::LRU,
+        },
     };
 
     #[test]
+    fn test_builder() {
+        const MEMORY: usize = PAGE_SIZE * 8;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRU::new(K);
+        let pc = PageCache::new(disk, replacer, 0);
+
+        let mut catalog = Catalog::new(pc);
+        let t1 = catalog
+            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
+            .expect("could not create table")
+            .expect("there is no table")
+            .clone();
+        let t2 = catalog
+            .create_table("t2", [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)])
+            .expect("could not create table")
+            .expect("there is no table")
+            .clone();
+
+        let plan = Builder::scan(t1)
+            .filter(ident("c1").is_not_null())
+            .join(
+                Builder::scan(t2).filter(int(1).eq(int(1).and(string("1").eq(string("1"))))),
+                ident("t1.c3").eq(ident("t2.c3")),
+            )
+            .project(&["c1"])
+            .build();
+
+        let have = format_logical_plan(&*plan);
+        let want = "\
+Projection: c1
+	BlockNestedLoopJoin: expr=[t1.c3 = t2.c3]
+		Filter: expr=[c1 IS NOT NULL]
+			Scan: table=t1 oid=0
+		Filter: expr=[1 = 1 AND \"1\" = \"1\"]
+			Scan: table=t2 oid=1
+";
+
+        assert_eq!(want, have)
+    }
+
+    #[test]
     fn test_format_logical_plan() {
-        let schema_a = [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)].into();
-        let scan_a = Scan::new("t1".into(), schema_a);
-        let filter_expr_a = Expr::BinaryOp {
-            left: Box::new(Expr::IsNull(Box::new(Expr::Ident("c1".into())))),
-            op: Op::And,
-            right: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Value(Value::Int(5))),
-                op: Op::Lt,
-                right: Box::new(Expr::Ident("c2".into())),
-            }),
-        };
+        const MEMORY: usize = PAGE_SIZE * 8;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRU::new(K);
+        let pc = PageCache::new(disk, replacer, 0);
+
+        let mut catalog = Catalog::new(pc);
+        let t1 = catalog
+            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
+            .expect("could not create table")
+            .expect("there is no table")
+            .clone();
+        let t2 = catalog
+            .create_table("t2", [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)])
+            .expect("could not create table")
+            .expect("there is no table")
+            .clone();
+
+        let scan_a = Scan::new(t1);
+        let filter_expr_a = ident("c1").is_null().and(int(5).lt(ident("c2")));
         let filter_a = Filter::new(filter_expr_a, Box::new(scan_a));
 
-        let schema_b = [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)].into();
-        let scan_b = Scan::new("t2".into(), schema_b);
-        let filter_expr_b = Expr::IsNotNull(Box::new(Expr::Ident("c5".into())));
+        let scan_b = Scan::new(t2);
+        let filter_expr_b = ident("c5").is_not_null();
         let filter_b = Filter::new(filter_expr_b, Box::new(scan_b));
 
         let join = Join::new(
-            JoinAlgorithm::BlockNestedLoopJoin,
-            [Expr::Ident("t1".into()), Expr::Ident("t2".into())],
-            Expr::BinaryOp {
-                left: Box::new(Expr::Ident("t1.c3".into())),
-                op: Op::Eq,
-                right: Box::new(Expr::Ident("t2.c3".into())),
-            },
+            JoinAlgorithm::NestedLoopJoin,
+            ident("t1.c3").eq(ident("t2.c3")),
             Box::new(filter_a),
             Box::new(filter_b),
         );
@@ -167,11 +344,11 @@ mod test {
         let have = format_logical_plan(&projection);
         let want = "\
 Projection: c1,c2
-	BlockNestedLoopJoin: tables=t1,t2 expr=t1.c3 = t2.c3
-		Filter: expr=c1 IS NULL AND 5 < c2
-			Scan: table=t1
-		Filter: expr=c5 IS NOT NULL
-			Scan: table=t2
+	BlockNestedLoopJoin: expr=[t1.c3 = t2.c3]
+		Filter: expr=[c1 IS NULL AND 5 < c2]
+			Scan: table=t1 oid=0
+		Filter: expr=[c5 IS NOT NULL]
+			Scan: table=t2 oid=1
 ";
 
         assert_eq!(want, have)

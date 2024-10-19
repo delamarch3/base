@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicU32, Ordering::Relaxed},
+    sync::{
+        atomic::{AtomicU32, Ordering::Relaxed},
+        Arc,
+    },
 };
 
 use crate::{
@@ -8,7 +11,11 @@ use crate::{
     disk::{Disk, FileSystem},
     page::PageID,
     page_cache::SharedPageCache,
-    table::{list::List as Table, node::RID, tuple::TupleData},
+    table::{
+        list::{List as TableInner, SharedList as Table},
+        node::RID,
+        tuple::TupleData,
+    },
 };
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -126,10 +133,24 @@ impl Schema {
 pub type OID = u32;
 
 pub struct TableInfo<D: Disk = FileSystem> {
-    name: String,
-    schema: Schema,
-    oid: OID,
-    table: Table<D>,
+    pub name: String,
+    pub schema: Schema,
+    pub oid: OID,
+    pub table: Table<D>,
+}
+
+impl<D> Clone for TableInfo<D>
+where
+    D: Disk,
+{
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            schema: self.schema.clone(),
+            oid: self.oid,
+            table: self.table.clone(),
+        }
+    }
 }
 
 pub struct IndexMeta {
@@ -144,16 +165,26 @@ pub enum IndexType {
     BTree,
 }
 
+impl std::fmt::Display for IndexType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndexType::HashTable => write!(f, "HashTable"),
+            IndexType::BTree => write!(f, "BTree"),
+        }
+    }
+}
+
 pub struct IndexInfo {
-    name: String,
-    schema: Schema,
-    oid: OID,
-    index_ty: IndexType,
-    root: PageID,
+    pub name: String,
+    pub schema: Schema,
+    pub oid: OID,
+    pub index_ty: IndexType,
+    pub root_page_id: PageID,
 }
 
 pub struct Catalog<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
+    // TODO: considering putting TableInfo (and IndexInfo) inside Arc
     tables: HashMap<OID, TableInfo<D>>,
     table_names: HashMap<String, OID>,
     next_table_oid: AtomicU32,
@@ -178,15 +209,19 @@ impl<D: Disk> Catalog<D> {
     pub fn create_table(
         &mut self,
         name: &str,
-        schema: Schema,
+        schema: impl Into<Schema>,
     ) -> crate::Result<Option<&TableInfo<D>>> {
         if self.table_names.contains_key(name) {
             return Ok(None);
         }
 
         let oid = self.next_table_oid.fetch_add(1, Relaxed);
-        let info =
-            TableInfo { name: name.into(), schema, oid, table: Table::default(self.pc.clone())? };
+        let info = TableInfo {
+            name: name.into(),
+            schema: schema.into(),
+            oid,
+            table: Arc::new(TableInner::default(self.pc.clone())?),
+        };
 
         self.table_names.insert(name.into(), oid);
         self.index_names.insert(name.into(), HashMap::new());
@@ -255,7 +290,13 @@ impl<D: Disk> Catalog<D> {
 
         self.indexes.insert(
             oid,
-            IndexInfo { name: index_name.into(), schema: index_schema, oid, index_ty, root },
+            IndexInfo {
+                name: index_name.into(),
+                schema: index_schema,
+                oid,
+                index_ty,
+                root_page_id: root,
+            },
         );
         indexed_table.insert(index_name.into(), oid);
 
@@ -401,7 +442,8 @@ mod test {
 
             catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &["col_a", "col_c"]);
             let index = catalog.get_index(TABLE_A, INDEX_A).expect("index_a should exist");
-            let index: BTree<RID, _> = BTree::new_with_root(pc.clone(), index.root, &index_schema);
+            let index: BTree<RID, _> =
+                BTree::new_with_root(pc.clone(), index.root_page_id, &index_schema);
             let have = index.scan()?;
 
             assert_eq!(want, have);
