@@ -6,6 +6,7 @@ use crate::{
 
 mod aggregate;
 mod filter;
+mod group;
 mod index_scan;
 mod join;
 mod projection;
@@ -14,6 +15,7 @@ mod scan;
 pub use {
     aggregate::Aggregate,
     filter::Filter,
+    group::Group,
     index_scan::IndexScan,
     join::{Join, JoinAlgorithm},
     projection::Projection,
@@ -66,7 +68,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
-enum FunctionName {
+pub enum FunctionName {
     Min,
     Max,
     Sum,
@@ -86,7 +88,7 @@ impl std::fmt::Display for FunctionName {
     }
 }
 
-struct Function {
+pub struct Function {
     name: FunctionName,
     args: Vec<Expr>,
     distinct: bool,
@@ -182,6 +184,26 @@ pub fn int(int: i32) -> Expr {
 
 pub fn string(string: &str) -> Expr {
     Expr::Value(Value::Varchar(string.into()))
+}
+
+pub fn min(expr: Expr) -> Function {
+    Function { name: FunctionName::Min, args: vec![expr], distinct: false }
+}
+
+pub fn max(expr: Expr) -> Function {
+    Function { name: FunctionName::Max, args: vec![expr], distinct: false }
+}
+
+pub fn sum(expr: Expr) -> Function {
+    Function { name: FunctionName::Sum, args: vec![expr], distinct: false }
+}
+
+pub fn avg(expr: Expr) -> Function {
+    Function { name: FunctionName::Avg, args: vec![expr], distinct: false }
+}
+
+pub fn count(expr: Expr) -> Function {
+    Function { name: FunctionName::Count, args: vec![expr], distinct: false }
 }
 
 impl Expr {
@@ -284,6 +306,20 @@ impl Builder {
         let join = Join::new(JoinAlgorithm::NestedLoopJoin, predicate, lhs, rhs.root);
 
         Self { root: Box::new(join) }
+    }
+
+    pub fn group(self, keys: Vec<Expr>) -> Self {
+        let input = self.root;
+        let group = Group::new(keys, input);
+
+        Self { root: Box::new(group) }
+    }
+
+    pub fn aggregate(self, function: Function, keys: Vec<Expr>) -> Self {
+        let input = self.root;
+        let aggregate = Aggregate::new(function, keys, input);
+
+        Self { root: Box::new(aggregate) }
     }
 
     pub fn build(self) -> Box<dyn LogicalPlan> {
