@@ -11,10 +11,9 @@ pub struct Projection {
 
 impl std::fmt::Display for Projection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Projection: ")?;
+        write!(f, "Projection [")?;
         write_iter(f, &mut self.schema.columns.iter().map(|column| &column.name), ",")?;
-
-        Ok(())
+        write!(f, "]")
     }
 }
 

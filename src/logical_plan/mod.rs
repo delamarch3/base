@@ -4,6 +4,7 @@ use crate::{
     table::tuple::Value,
 };
 
+mod aggregate;
 mod filter;
 mod index_scan;
 mod join;
@@ -11,6 +12,7 @@ mod projection;
 mod scan;
 
 pub use {
+    aggregate::Aggregate,
     filter::Filter,
     index_scan::IndexScan,
     join::{Join, JoinAlgorithm},
@@ -64,6 +66,44 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
+enum FunctionName {
+    Min,
+    Max,
+    Sum,
+    Avg,
+    Count,
+}
+
+impl std::fmt::Display for FunctionName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionName::Min => write!(f, "MIN"),
+            FunctionName::Max => write!(f, "MAX"),
+            FunctionName::Sum => write!(f, "SUM"),
+            FunctionName::Avg => write!(f, "AVG"),
+            FunctionName::Count => write!(f, "COUNT"),
+        }
+    }
+}
+
+struct Function {
+    name: FunctionName,
+    args: Vec<Expr>,
+    distinct: bool,
+}
+
+impl std::fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Function { name, args, distinct } = self;
+        write!(f, "{name}(")?;
+        if *distinct {
+            write!(f, "DISTINCT ")?;
+        }
+        write_iter(f, &mut args.iter(), ",")?;
+        write!(f, ")")
+    }
+}
+
 // TODO: it's probably ok to use Expr from the parser once that's ready
 pub enum Expr {
     Ident(String),
@@ -73,6 +113,7 @@ pub enum Expr {
     InList { expr: Box<Expr>, list: Vec<Expr>, negated: bool },
     Between { expr: Box<Expr>, negated: bool, low: Box<Expr>, high: Box<Expr> },
     BinaryOp { left: Box<Expr>, op: Op, right: Box<Expr> },
+    Function(Function),
 }
 
 #[derive(PartialEq, Debug)]
@@ -126,6 +167,7 @@ impl std::fmt::Display for Expr {
                 write!(f, "{expr} NOT BETWEEN {low} AND {high}")
             }
             Expr::BinaryOp { left, op, right } => write!(f, "{left} {op} {right}"),
+            Expr::Function(function) => write!(f, "{function}"),
         }
     }
 }
@@ -294,12 +336,12 @@ mod test {
 
         let have = format_logical_plan(&*plan);
         let want = "\
-Projection: c1
-	BlockNestedLoopJoin: expr=[t1.c3 = t2.c3]
-		Filter: expr=[c1 IS NOT NULL]
-			Scan: table=t1 oid=0
-		Filter: expr=[1 = 1 AND \"1\" = \"1\"]
-			Scan: table=t2 oid=1
+Projection [c1]
+	BlockNestedLoopJoin [t1.c3 = t2.c3]
+		Filter [c1 IS NOT NULL]
+			Scan t1 0
+		Filter [1 = 1 AND \"1\" = \"1\"]
+			Scan t2 1
 ";
 
         assert_eq!(want, have)
@@ -343,12 +385,12 @@ Projection: c1
 
         let have = format_logical_plan(&projection);
         let want = "\
-Projection: c1,c2
-	BlockNestedLoopJoin: expr=[t1.c3 = t2.c3]
-		Filter: expr=[c1 IS NULL AND 5 < c2]
-			Scan: table=t1 oid=0
-		Filter: expr=[c5 IS NOT NULL]
-			Scan: table=t2 oid=1
+Projection [c1,c2]
+	BlockNestedLoopJoin [t1.c3 = t2.c3]
+		Filter [c1 IS NULL AND 5 < c2]
+			Scan t1 0
+		Filter [c5 IS NOT NULL]
+			Scan t2 1
 ";
 
         assert_eq!(want, have)

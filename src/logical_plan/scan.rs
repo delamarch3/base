@@ -19,7 +19,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let TableInfo { name, oid, .. } = &self.table_info;
-        write!(f, "Scan: table={} oid={}", name, oid)?;
+        write!(f, "Scan {} {}", name, oid)?;
 
         Ok(())
     }

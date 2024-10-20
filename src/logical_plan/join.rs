@@ -29,7 +29,7 @@ pub struct Join {
 
 impl std::fmt::Display for Join {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: expr=[{}]", self.algo, self.predicate)
+        write!(f, "{} [{}]", self.algo, self.predicate)
     }
 }
 

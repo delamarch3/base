@@ -1,33 +1,27 @@
 use {
-    super::{Expr, LogicalPlan, LogicalPlanInputs},
+    super::{Function, LogicalPlan, LogicalPlanInputs},
     crate::catalog::Schema,
 };
 
-pub struct Filter {
-    expr: Expr,
+pub struct Aggregate {
     input: Box<dyn LogicalPlan>,
+    function: Function,
 }
 
-impl std::fmt::Display for Filter {
+impl std::fmt::Display for Aggregate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Filter [{}]", self.expr)?;
+        write!(f, "Aggregate [{}]", self.function)?;
 
         Ok(())
     }
 }
 
-impl LogicalPlan for Filter {
+impl LogicalPlan for Aggregate {
     fn schema(&self) -> &Schema {
         self.input.schema()
     }
 
     fn inputs(&self) -> LogicalPlanInputs {
         (Some(&self.input), None)
-    }
-}
-
-impl Filter {
-    pub fn new(expr: Expr, input: Box<dyn LogicalPlan>) -> Self {
-        Self { expr, input }
     }
 }
