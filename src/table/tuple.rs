@@ -28,6 +28,18 @@ impl std::fmt::Display for Value {
     }
 }
 
+impl From<&Value> for Type {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::TinyInt(_) => Type::TinyInt,
+            Value::Bool(_) => Type::Bool,
+            Value::Int(_) => Type::Int,
+            Value::BigInt(_) => Type::BigInt,
+            Value::Varchar(_) => Type::Varchar,
+        }
+    }
+}
+
 impl Value {
     pub fn from(data: &[u8], column: &Column) -> Value {
         let data = match column.ty {

@@ -1,7 +1,6 @@
 use crate::{
     catalog::{IndexInfo, Schema, TableInfo},
     disk::Disk,
-    table::tuple::Value,
 };
 
 mod aggregate;
@@ -89,7 +88,7 @@ impl std::fmt::Display for FunctionName {
 }
 
 pub struct Function {
-    name: FunctionName,
+    pub name: FunctionName,
     args: Vec<Expr>,
     distinct: bool,
 }
@@ -106,6 +105,24 @@ impl std::fmt::Display for Function {
     }
 }
 
+pub enum Value {
+    Number(String),
+    String(String),
+    Bool(bool),
+    Null,
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(number) => write!(f, "{number}"),
+            Value::String(string) => write!(f, "\"{string}\""),
+            Value::Bool(bool) => write!(f, "{}", if *bool { "TRUE" } else { "FALSE" }),
+            Value::Null => write!(f, "NULL"),
+        }
+    }
+}
+
 // TODO: it's probably ok to use Expr from the parser once that's ready
 pub enum Expr {
     Ident(String),
@@ -118,7 +135,7 @@ pub enum Expr {
     Function(Function),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum Op {
     Eq,
     Neq,
@@ -178,12 +195,20 @@ pub fn ident(ident: &str) -> Expr {
     Expr::Ident(ident.into())
 }
 
-pub fn int(int: i32) -> Expr {
-    Expr::Value(Value::Int(int))
+pub fn number(int: &str) -> Expr {
+    Expr::Value(Value::Number(int.into()))
 }
 
 pub fn string(string: &str) -> Expr {
-    Expr::Value(Value::Varchar(string.into()))
+    Expr::Value(Value::String(string.into()))
+}
+
+pub fn bool(bool: bool) -> Expr {
+    Expr::Value(Value::Bool(bool))
+}
+
+pub fn null() -> Expr {
+    Expr::Value(Value::Null)
 }
 
 pub fn min(expr: Expr) -> Function {
@@ -334,7 +359,7 @@ mod test {
         crate::{
             catalog::{Catalog, Type},
             disk::Memory,
-            logical_plan::{format_logical_plan, ident, int, string},
+            logical_plan::{format_logical_plan, ident, number, string},
             page::PAGE_SIZE,
             page_cache::PageCache,
             replacer::LRU,
@@ -364,7 +389,8 @@ mod test {
         let plan = Builder::scan(t1)
             .filter(ident("c1").is_not_null())
             .join(
-                Builder::scan(t2).filter(int(1).eq(int(1).and(string("1").eq(string("1"))))),
+                Builder::scan(t2)
+                    .filter(number("1").eq(number("1").and(string("1").eq(string("1"))))),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
             .project(&["c1"])
@@ -404,7 +430,7 @@ Projection [c1]
             .clone();
 
         let scan_a = Scan::new(t1);
-        let filter_expr_a = ident("c1").is_null().and(int(5).lt(ident("c2")));
+        let filter_expr_a = ident("c1").is_null().and(number("5").lt(ident("c2")));
         let filter_a = Filter::new(filter_expr_a, Box::new(scan_a));
 
         let scan_b = Scan::new(t2);
