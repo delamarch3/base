@@ -458,7 +458,7 @@ mod test {
         t5,
         Schema::new(vec![
             Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
+            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 4 },
         ]),
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
@@ -469,7 +469,7 @@ mod test {
         t6,
         Schema::new(vec![
             Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
+            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 4 },
         ]),
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column").tiny_int(1).build(),
