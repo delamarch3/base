@@ -229,7 +229,8 @@ mod test {
     use {
         super::{eval, EvalError::*},
         crate::{
-            logical_plan::expr::{number, string},
+            catalog::Type,
+            logical_plan::expr::{ident, number, string},
             table::tuple::{Builder as TupleBuilder, Value},
         },
     };
@@ -238,7 +239,7 @@ mod test {
         ($name:tt, $expr:expr, $schema:expr, $tuple:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let have = eval(&$expr, &$schema, &$tuple);
+                let have = eval(&$expr, &$schema.into(), &$tuple);
                 assert_eq!($want, have);
             }
         };
@@ -255,4 +256,37 @@ mod test {
     test_eval!(t2, number("22").eq(number("23")), Ok(Value::Bool(false)));
     test_eval!(t3, number("22").lt(number("23")), Ok(Value::Bool(true)));
     test_eval!(t4, number("22").and(number("23")), Err(UnsupportedOperation));
+    test_eval!(t5, ident("c1"), Err(UnknownIdentifier));
+
+    test_eval!(
+        t6,
+        ident("c1"),
+        [("c1", Type::Int)],
+        TupleBuilder::new().add(&Value::Int(1)).build(),
+        Ok(Value::Int(1))
+    );
+
+    test_eval!(
+        t7,
+        ident("c1").eq(number("1")),
+        [("c1", Type::Int)],
+        TupleBuilder::new().add(&Value::Int(1)).build(),
+        Ok(Value::Bool(true))
+    );
+
+    test_eval!(
+        t8,
+        ident("c1").eq(string("1")),
+        [("c1", Type::Int)],
+        TupleBuilder::new().add(&Value::Int(1)).build(),
+        Err(UnsupportedOperation)
+    );
+
+    test_eval!(
+        t9,
+        ident("c1").eq(string("a")).and(ident("c2").between(number("20"), number("30"))),
+        [("c1", Type::Varchar), ("c2", Type::Int)],
+        TupleBuilder::new().add(&Value::Varchar("a".into())).add(&Value::Int(20)).build(),
+        Ok(Value::Bool(true))
+    );
 }
