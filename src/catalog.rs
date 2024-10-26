@@ -1,20 +1,21 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicU32, Ordering::Relaxed},
-        Arc,
+use {
+    crate::{
+        btree::BTree,
+        disk::{Disk, FileSystem},
+        page::PageID,
+        page_cache::SharedPageCache,
+        table::{
+            list::{List as TableInner, SharedList as Table},
+            node::RID,
+            tuple::{fit_tuple_with_schema, TupleData},
+        },
     },
-};
-
-use crate::{
-    btree::BTree,
-    disk::{Disk, FileSystem},
-    page::PageID,
-    page_cache::SharedPageCache,
-    table::{
-        list::{List as TableInner, SharedList as Table},
-        node::RID,
-        tuple::TupleData,
+    std::{
+        collections::HashMap,
+        sync::{
+            atomic::{AtomicU32, Ordering::Relaxed},
+            Arc,
+        },
     },
 };
 
@@ -277,7 +278,7 @@ impl<D: Disk> Catalog<D> {
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
                     let (_, TupleData(data), rid) = result.expect("todo");
-                    let tuple = TupleData::from(&data, &tuple_schema);
+                    let tuple = fit_tuple_with_schema(&data, &tuple_schema);
                     btree.insert(&tuple, &rid).expect("todo");
                 }
 
@@ -318,8 +319,6 @@ impl<D: Disk> Catalog<D> {
 
 #[cfg(test)]
 mod test {
-    use bytes::BytesMut;
-
     use crate::{
         btree::BTree,
         catalog::{Catalog, IndexType, Schema, Type},
@@ -344,7 +343,7 @@ mod test {
         struct Test {
             schema: Schema,
             key: &'static [&'static str],
-            tuples: Vec<BytesMut>,
+            tuples: Vec<TupleData>,
             want: Vec<(TupleData, RID)>,
         }
 
@@ -367,21 +366,11 @@ mod test {
                 ],
                 want: vec![
                     (
-                        TupleData(
-                            TupleBuilder::new()
-                                .add(&Value::Int(10))
-                                .add(&Value::BigInt(20))
-                                .build(),
-                        ),
+                        TupleBuilder::new().add(&Value::Int(10)).add(&Value::BigInt(20)).build(),
                         RID { page_id: 0, slot_id: 0 },
                     ),
                     (
-                        TupleData(
-                            TupleBuilder::new()
-                                .add(&Value::Int(20))
-                                .add(&Value::BigInt(30))
-                                .build(),
-                        ),
+                        TupleBuilder::new().add(&Value::Int(20)).add(&Value::BigInt(30)).build(),
                         RID { page_id: 0, slot_id: 1 },
                     ),
                 ],
@@ -404,21 +393,17 @@ mod test {
                 ],
                 want: vec![
                     (
-                        TupleData(
-                            TupleBuilder::new()
-                                .add(&Value::Int(20))
-                                .add(&Value::Varchar("row_a".into()))
-                                .build(),
-                        ),
+                        TupleBuilder::new()
+                            .add(&Value::Int(20))
+                            .add(&Value::Varchar("row_a".into()))
+                            .build(),
                         RID { page_id: 2, slot_id: 0 },
                     ),
                     (
-                        TupleData(
-                            TupleBuilder::new()
-                                .add(&Value::Int(20))
-                                .add(&Value::Varchar("row_b".into()))
-                                .build(),
-                        ),
+                        TupleBuilder::new()
+                            .add(&Value::Int(20))
+                            .add(&Value::Varchar("row_b".into()))
+                            .build(),
                         RID { page_id: 2, slot_id: 1 },
                     ),
                 ],
@@ -434,7 +419,7 @@ mod test {
 
             for tuple in tuples {
                 info.table
-                    .insert(&TupleData(tuple), &TupleMeta { deleted: false })?
+                    .insert(&tuple, &TupleMeta { deleted: false })?
                     .expect("there should be a rid");
             }
 

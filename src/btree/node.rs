@@ -1,17 +1,16 @@
-use std::ops::Range;
-
-use bytes::BytesMut;
-
-use crate::{
-    btree::slot::Either,
-    catalog::Schema,
-    get_ptr,
-    page::{PageBuf, PageID, PAGE_SIZE},
-    storable::Storable,
-    table::tuple::{Comparand, TupleData},
+use {
+    super::slot::Slot,
+    crate::{
+        btree::slot::Either,
+        catalog::Schema,
+        get_ptr,
+        page::{PageBuf, PageID, PAGE_SIZE},
+        storable::Storable,
+        table::tuple::{fit_tuple_with_schema, Comparand, TupleData},
+    },
+    bytes::BytesMut,
+    std::ops::Range,
 };
-
-use super::slot::Slot;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeType {
@@ -160,7 +159,7 @@ where
         let mut values = Vec::new();
         let mut left = &buf[NODE_VALUES_START..];
         for _ in 0..len {
-            let tuple = TupleData::from(left, schema);
+            let tuple = fit_tuple_with_schema(left, schema);
             let slot_size = tuple.size() + Either::<V>::SIZE;
             let either = Either::from(&left[tuple.size()..slot_size]);
             values.push(Slot(tuple, either));

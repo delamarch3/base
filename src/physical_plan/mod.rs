@@ -230,7 +230,7 @@ mod test {
         super::{eval, EvalError::*},
         crate::{
             logical_plan::expr::{number, string},
-            table::tuple::{TupleBuilder, TupleData, Value},
+            table::tuple::{TupleBuilder, Value},
         },
     };
 
@@ -245,7 +245,7 @@ mod test {
         ($name:tt, $expr:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let have = eval(&$expr, &[].into(), &TupleData(TupleBuilder::new().build()));
+                let have = eval(&$expr, &[].into(), &TupleBuilder::new().build());
                 assert_eq!($want, have);
             }
         };

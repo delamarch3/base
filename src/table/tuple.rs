@@ -93,55 +93,53 @@ impl Value {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TupleData(pub BytesMut);
 
-impl TupleData {
-    // TODO: rewrite to use TupleBuilder
-    /// Given a buffer representing a tuple and a schema, reduce the buffer to match the schema
-    pub fn from(data: &[u8], schema: &Schema) -> TupleData {
-        struct Variable<'a> {
-            data: &'a [u8],
-            offset_offset: usize,
-        }
-
-        let mut tuple = BytesMut::new();
-        let mut vars = Vec::new();
-
-        // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
-        // This assumes the tuple begins at the zeroth byte
-        for Column { name: _, ty, offset } in &schema.columns {
-            let start = tuple.len();
-            tuple.put(&data[*offset..*offset + ty.size()]);
-
-            match ty {
-                Type::Varchar => {
-                    let (var_offset, length) = (
-                        u16::from_be_bytes((&data[*offset..*offset + 2]).try_into().unwrap())
-                            as usize,
-                        u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
-                            as usize,
-                    );
-
-                    // Data to add on at the end of the tuple
-                    vars.push(Variable {
-                        data: &data[var_offset..var_offset + length],
-                        offset_offset: start,
-                    });
-                }
-                _ => {}
-            }
-        }
-
-        // Variable length section
-        for Variable { data, offset_offset } in vars {
-            // Write correct offset
-            let offset = tuple.len();
-            tuple[offset_offset..offset_offset + 2]
-                .copy_from_slice(&u16::to_be_bytes(offset as u16));
-            tuple.put(data);
-        }
-
-        Self(tuple)
+// TODO: rewrite to use TupleBuilder
+/// Given a buffer representing a tuple and a schema, reduce the buffer to match the schema
+pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> TupleData {
+    struct Variable<'a> {
+        data: &'a [u8],
+        offset_offset: usize,
     }
 
+    let mut tuple = BytesMut::new();
+    let mut vars = Vec::new();
+
+    // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
+    // This assumes the tuple begins at the zeroth byte
+    for Column { name: _, ty, offset } in &schema.columns {
+        let start = tuple.len();
+        tuple.put(&data[*offset..*offset + ty.size()]);
+
+        match ty {
+            Type::Varchar => {
+                let (var_offset, length) = (
+                    u16::from_be_bytes((&data[*offset..*offset + 2]).try_into().unwrap()) as usize,
+                    u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
+                        as usize,
+                );
+
+                // Data to add on at the end of the tuple
+                vars.push(Variable {
+                    data: &data[var_offset..var_offset + length],
+                    offset_offset: start,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // Variable length section
+    for Variable { data, offset_offset } in vars {
+        // Write correct offset
+        let offset = tuple.len();
+        tuple[offset_offset..offset_offset + 2].copy_from_slice(&u16::to_be_bytes(offset as u16));
+        tuple.put(data);
+    }
+
+    TupleData(tuple)
+}
+
+impl TupleData {
     /// Increments the value of the first value of the tuple
     pub fn increment(&mut self, schema: &Schema) {
         *self = self.next(schema);
@@ -182,7 +180,7 @@ impl TupleData {
             builder = builder.add(&self.get_value(column));
         }
 
-        Self(builder.build())
+        builder.build()
     }
 
     pub fn get_value(&self, column: &Column) -> Value {
@@ -191,6 +189,10 @@ impl TupleData {
 
     pub fn size(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -247,7 +249,7 @@ impl<'a> Ord for Comparand<'a, i32> {
 
 impl Into<TupleData> for i32 {
     fn into(self) -> TupleData {
-        TupleData(TupleBuilder::new().add(&Value::Int(self)).build())
+        TupleBuilder::new().add(&Value::Int(self)).build()
     }
 }
 
@@ -294,7 +296,7 @@ impl TupleBuilder {
         self
     }
 
-    pub fn build(mut self) -> BytesMut {
+    pub fn build(mut self) -> TupleData {
         for Variable { data, offset_offset } in self.variable {
             let offset = self.data.len();
 
@@ -306,26 +308,26 @@ impl TupleBuilder {
             self.data.put(data);
         }
 
-        self.data
+        TupleData(self.data)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use bytes::BytesMut;
-    use std::cmp::Ordering::{self, *};
-
-    use crate::{
-        catalog::{Column, Schema, Type},
-        table::tuple::{Comparand, TupleBuilder, TupleData, Value},
+    use {
+        crate::{
+            catalog::{Column, Schema, Type},
+            table::tuple::{fit_tuple_with_schema, Comparand, TupleBuilder, TupleData, Value},
+        },
+        std::cmp::Ordering::{self, *},
     };
 
     #[test]
     fn test_from() {
         struct Test {
             schema: Schema,
-            tuple: BytesMut,
-            want: BytesMut,
+            tuple: TupleData,
+            want: TupleData,
         }
 
         let tcs = [
@@ -397,7 +399,7 @@ mod test {
         ];
 
         for Test { schema, tuple, want } in tcs {
-            let TupleData(have) = TupleData::from(&tuple, &schema);
+            let have = fit_tuple_with_schema(&tuple.as_bytes(), &schema);
             assert_eq!(want, have);
         }
     }
@@ -406,8 +408,8 @@ mod test {
     fn test_comparator() {
         struct Test {
             schema: Schema,
-            lhs: BytesMut,
-            rhs: BytesMut,
+            lhs: TupleData,
+            rhs: TupleData,
             want: Ordering,
         }
 
@@ -514,8 +516,7 @@ mod test {
         ];
 
         for Test { schema, lhs, rhs, want } in tcs {
-            let have =
-                Comparand(&schema, &TupleData(lhs)).cmp(&Comparand(&schema, &TupleData(rhs)));
+            let have = Comparand(&schema, &lhs).cmp(&Comparand(&schema, &rhs));
             assert_eq!(want, have);
         }
     }
