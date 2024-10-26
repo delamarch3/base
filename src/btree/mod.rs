@@ -13,7 +13,7 @@ use crate::{
     page::{PageBuf, PageID, PageReadGuard, PageWriteGuard},
     page_cache::SharedPageCache,
     storable::Storable,
-    table::tuple::{Comparand, TupleData},
+    table::tuple::{Comparand, Data as TupleData},
     writep,
 };
 

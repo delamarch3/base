@@ -2,7 +2,7 @@ use crate::{
     catalog::{Column, Schema, Type},
     get_value,
     logical_plan::expr::{Expr, Function, FunctionName, Op, Value as Literal},
-    table::tuple::{TupleData, Value},
+    table::tuple::{Data as TupleData, Value},
 };
 
 #[derive(Debug, PartialEq)]
@@ -230,7 +230,7 @@ mod test {
         super::{eval, EvalError::*},
         crate::{
             logical_plan::expr::{number, string},
-            table::tuple::{TupleBuilder, Value},
+            table::tuple::{Builder as TupleBuilder, Value},
         },
     };
 

@@ -8,7 +8,7 @@ use {
         table::node::Node,
         table::{
             node::{TupleMeta, RID},
-            tuple::TupleData,
+            tuple::Data as TupleData,
         },
         writep,
     },
@@ -190,7 +190,7 @@ mod test {
             table::{
                 list::TableMeta,
                 node::{TupleMeta, RID},
-                tuple::TupleData,
+                tuple::Data as TupleData,
             },
         },
         bytes::BytesMut,

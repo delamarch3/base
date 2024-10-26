@@ -2,7 +2,7 @@ use {
     crate::{
         page::{PageBuf, PageID, PAGE_SIZE},
         storable::Storable,
-        table::tuple::TupleData,
+        table::tuple::Data as TupleData,
     },
     bytes::BytesMut,
     std::ops::Range,

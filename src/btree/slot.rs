@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use bytes::BytesMut;
 
-use crate::{page::PageID, storable::Storable, table::tuple::TupleData};
+use crate::{page::PageID, storable::Storable, table::tuple::Data as TupleData};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Either<V> {

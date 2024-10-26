@@ -6,7 +6,7 @@ use {
         get_ptr,
         page::{PageBuf, PageID, PAGE_SIZE},
         storable::Storable,
-        table::tuple::{fit_tuple_with_schema, Comparand, TupleData},
+        table::tuple::{fit_tuple_with_schema, Comparand, Data as TupleData},
     },
     bytes::BytesMut,
     std::ops::Range,

@@ -91,11 +91,11 @@ impl Value {
 
 // TODO: support NULL - include a null bitmap with each tuple if columns can be nullable
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TupleData(pub BytesMut);
+pub struct Data(pub BytesMut);
 
 // TODO: rewrite to use TupleBuilder
 /// Given a buffer representing a tuple and a schema, reduce the buffer to match the schema
-pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> TupleData {
+pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
     struct Variable<'a> {
         data: &'a [u8],
         offset_offset: usize,
@@ -136,10 +136,10 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> TupleData {
         tuple.put(data);
     }
 
-    TupleData(tuple)
+    Data(tuple)
 }
 
-impl TupleData {
+impl Data {
     /// Increments the value of the first value of the tuple
     pub fn increment(&mut self, schema: &Schema) {
         *self = self.next(schema);
@@ -175,7 +175,7 @@ impl TupleData {
             }
         };
 
-        let mut builder = TupleBuilder::new().add(&value);
+        let mut builder = Builder::new().add(&value);
         for column in &schema.columns[1..] {
             builder = builder.add(&self.get_value(column));
         }
@@ -198,20 +198,20 @@ impl TupleData {
 
 pub struct Comparand<'a, T>(pub &'a Schema, pub T);
 
-impl<'a, 'b> PartialEq for Comparand<'a, &'b TupleData> {
+impl<'a, 'b> PartialEq for Comparand<'a, &'b Data> {
     fn eq(&self, other: &Self) -> bool {
         self.1.eq(&other.1)
     }
 }
-impl<'a, 'b> Eq for Comparand<'a, &'b TupleData> {}
+impl<'a, 'b> Eq for Comparand<'a, &'b Data> {}
 
-impl<'a, 'b> PartialOrd for Comparand<'a, &'b TupleData> {
+impl<'a, 'b> PartialOrd for Comparand<'a, &'b Data> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a, 'b> Ord for Comparand<'a, &'b TupleData> {
+impl<'a, 'b> Ord for Comparand<'a, &'b Data> {
     fn cmp(&self, other: &Self) -> Ordering {
         for (_, col) in self.0.iter().enumerate() {
             let lhs = Value::from(&self.1 .0, col);
@@ -247,9 +247,9 @@ impl<'a> Ord for Comparand<'a, i32> {
     }
 }
 
-impl Into<TupleData> for i32 {
-    fn into(self) -> TupleData {
-        TupleBuilder::new().add(&Value::Int(self)).build()
+impl Into<Data> for i32 {
+    fn into(self) -> Data {
+        Builder::new().add(&Value::Int(self)).build()
     }
 }
 
@@ -259,12 +259,12 @@ struct Variable {
 }
 
 #[derive(Default)]
-pub struct TupleBuilder {
+pub struct Builder {
     data: BytesMut,
     variable: Vec<Variable>,
 }
 
-impl TupleBuilder {
+impl Builder {
     pub fn new() -> Self {
         Self { data: BytesMut::new(), ..Default::default() }
     }
@@ -296,7 +296,7 @@ impl TupleBuilder {
         self
     }
 
-    pub fn build(mut self) -> TupleData {
+    pub fn build(mut self) -> Data {
         for Variable { data, offset_offset } in self.variable {
             let offset = self.data.len();
 
@@ -308,7 +308,7 @@ impl TupleBuilder {
             self.data.put(data);
         }
 
-        TupleData(self.data)
+        Data(self.data)
     }
 }
 
@@ -317,7 +317,7 @@ mod test {
     use {
         crate::{
             catalog::{Column, Schema, Type},
-            table::tuple::{fit_tuple_with_schema, Comparand, TupleBuilder, TupleData, Value},
+            table::tuple::{fit_tuple_with_schema, Builder, Comparand, Data, Value},
         },
         std::cmp::Ordering::{self, *},
     };
@@ -326,18 +326,18 @@ mod test {
     fn test_from() {
         struct Test {
             schema: Schema,
-            tuple: TupleData,
-            want: TupleData,
+            tuple: Data,
+            want: Data,
         }
 
         let tcs = [
             Test {
                 schema: [("col_b", Type::Varchar), ("col_c", Type::Int)].into(),
-                tuple: TupleBuilder::new()
+                tuple: Builder::new()
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::Int(20))
                     .build(),
-                want: TupleBuilder::new()
+                want: Builder::new()
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::Int(20))
                     .build(),
@@ -345,12 +345,12 @@ mod test {
             Test {
                 schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)]
                     .into(),
-                tuple: TupleBuilder::new()
+                tuple: Builder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
                     .build(),
-                want: TupleBuilder::new()
+                want: Builder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
@@ -361,12 +361,12 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Varchar, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
                 ]),
-                tuple: TupleBuilder::new()
+                tuple: Builder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
                     .build(),
-                want: TupleBuilder::new()
+                want: Builder::new()
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
                     .build(),
@@ -377,24 +377,24 @@ mod test {
                     ty: Type::Varchar,
                     offset: 4,
                 }]),
-                tuple: TupleBuilder::new()
+                tuple: Builder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
                     .build(),
-                want: TupleBuilder::new().add(&Value::Varchar("row_a".into())).build(),
+                want: Builder::new().add(&Value::Varchar("row_a".into())).build(),
             },
             Test {
                 schema: Schema::new(vec![
                     Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
                 ]),
-                tuple: TupleBuilder::new()
+                tuple: Builder::new()
                     .add(&Value::Int(10))
                     .add(&Value::Varchar("row_a".into()))
                     .add(&Value::BigInt(20))
                     .build(),
-                want: TupleBuilder::new().add(&Value::Int(10)).add(&Value::BigInt(20)).build(),
+                want: Builder::new().add(&Value::Int(10)).add(&Value::BigInt(20)).build(),
             },
         ];
 
@@ -408,8 +408,8 @@ mod test {
     fn test_comparator() {
         struct Test {
             schema: Schema,
-            lhs: TupleData,
-            rhs: TupleData,
+            lhs: Data,
+            rhs: Data,
             want: Ordering,
         }
 
@@ -420,12 +420,12 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(false))
                     .add(&Value::BigInt(100))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(false))
                     .add(&Value::BigInt(100))
@@ -438,12 +438,12 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(true))
                     .add(&Value::BigInt(100))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(false))
                     .add(&Value::BigInt(100))
@@ -456,12 +456,12 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(false))
                     .add(&Value::BigInt(90))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::Int(4))
                     .add(&Value::Bool(false))
                     .add(&Value::BigInt(100))
@@ -473,11 +473,11 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::TinyInt, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::Varchar, offset: 1 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::TinyInt(1))
                     .add(&Value::Varchar("Column".into()))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::TinyInt(1))
                     .add(&Value::Varchar("Column".into()))
                     .build(),
@@ -488,11 +488,11 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::Varchar("Column A".into()))
                     .add(&Value::TinyInt(1))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::Varchar("Column B".into()))
                     .add(&Value::TinyInt(1))
                     .build(),
@@ -503,11 +503,11 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
                 ]),
-                lhs: TupleBuilder::new()
+                lhs: Builder::new()
                     .add(&Value::Varchar("Column A".into()))
                     .add(&Value::TinyInt(1))
                     .build(),
-                rhs: TupleBuilder::new()
+                rhs: Builder::new()
                     .add(&Value::Varchar("Column".into()))
                     .add(&Value::TinyInt(1))
                     .build(),

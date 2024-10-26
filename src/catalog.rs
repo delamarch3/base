@@ -7,7 +7,7 @@ use {
         table::{
             list::{List as TableInner, SharedList as Table},
             node::RID,
-            tuple::{fit_tuple_with_schema, TupleData},
+            tuple::{fit_tuple_with_schema, Data as TupleData},
         },
     },
     std::{
@@ -328,7 +328,7 @@ mod test {
         replacer::LRU,
         table::{
             node::{TupleMeta, RID},
-            tuple::{TupleBuilder, TupleData, Value},
+            tuple::{Builder as TupleBuilder, Data as TupleData, Value},
         },
     };
 
