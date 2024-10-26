@@ -262,7 +262,7 @@ mod test {
         t6,
         ident("c1"),
         [("c1", Type::Int)],
-        TupleBuilder::new().add(&Value::Int(1)).build(),
+        TupleBuilder::new().int(1).build(),
         Ok(Value::Int(1))
     );
 
@@ -270,7 +270,7 @@ mod test {
         t7,
         ident("c1").eq(number("1")),
         [("c1", Type::Int)],
-        TupleBuilder::new().add(&Value::Int(1)).build(),
+        TupleBuilder::new().int(1).build(),
         Ok(Value::Bool(true))
     );
 
@@ -278,7 +278,7 @@ mod test {
         t8,
         ident("c1").eq(string("1")),
         [("c1", Type::Int)],
-        TupleBuilder::new().add(&Value::Int(1)).build(),
+        TupleBuilder::new().int(1).build(),
         Err(UnsupportedOperation)
     );
 
@@ -286,7 +286,7 @@ mod test {
         t9,
         ident("c1").eq(string("a")).and(ident("c2").between(number("20"), number("30"))),
         [("c1", Type::Varchar), ("c2", Type::Int)],
-        TupleBuilder::new().add(&Value::Varchar("a".into())).add(&Value::Int(20)).build(),
+        TupleBuilder::new().varchar("a").int(20).build(),
         Ok(Value::Bool(true))
     );
 }

@@ -328,7 +328,7 @@ mod test {
         replacer::LRU,
         table::{
             node::{TupleMeta, RID},
-            tuple::{Builder as TupleBuilder, Data as TupleData, Value},
+            tuple::{Builder as TupleBuilder, Data as TupleData},
         },
     };
 
@@ -354,23 +354,23 @@ mod test {
                 key: &["col_a", "col_c"],
                 tuples: vec![
                     TupleBuilder::new()
-                        .add(&Value::Int(10))
-                        .add(&Value::Varchar("row_a".into())) // TODO: slot panics when this is the last column?
-                        .add(&Value::BigInt(20))
+                        .int(10)
+                        .varchar("row_a") // TODO: slot panics when this is the last column?
+                        .big_int(20)
                         .build(),
                     TupleBuilder::new()
-                        .add(&Value::Int(20))
-                        .add(&Value::Varchar("row_b".into())) // TODO: slot panics when this is the last column?
-                        .add(&Value::BigInt(30))
+                        .int(20)
+                        .varchar("row_b") // TODO: slot panics when this is the last column?
+                        .big_int(30)
                         .build(),
                 ],
                 want: vec![
                     (
-                        TupleBuilder::new().add(&Value::Int(10)).add(&Value::BigInt(20)).build(),
+                        TupleBuilder::new().int(10).big_int(20).build(),
                         RID { page_id: 0, slot_id: 0 },
                     ),
                     (
-                        TupleBuilder::new().add(&Value::Int(20)).add(&Value::BigInt(30)).build(),
+                        TupleBuilder::new().int(20).big_int(30).build(),
                         RID { page_id: 0, slot_id: 1 },
                     ),
                 ],
@@ -380,30 +380,16 @@ mod test {
                     .into(),
                 key: &["col_a", "col_c"],
                 tuples: vec![
-                    TupleBuilder::new()
-                        .add(&Value::Int(20))
-                        .add(&Value::BigInt(20))
-                        .add(&Value::Varchar("row_a".into()))
-                        .build(),
-                    TupleBuilder::new()
-                        .add(&Value::Int(20))
-                        .add(&Value::BigInt(30))
-                        .add(&Value::Varchar("row_b".into()))
-                        .build(),
+                    TupleBuilder::new().int(20).big_int(20).varchar("row_a").build(),
+                    TupleBuilder::new().int(20).big_int(30).varchar("row_b").build(),
                 ],
                 want: vec![
                     (
-                        TupleBuilder::new()
-                            .add(&Value::Int(20))
-                            .add(&Value::Varchar("row_a".into()))
-                            .build(),
+                        TupleBuilder::new().int(20).varchar("row_a").build(),
                         RID { page_id: 2, slot_id: 0 },
                     ),
                     (
-                        TupleBuilder::new()
-                            .add(&Value::Int(20))
-                            .add(&Value::Varchar("row_b".into()))
-                            .build(),
+                        TupleBuilder::new().int(20).varchar("row_b").build(),
                         RID { page_id: 2, slot_id: 1 },
                     ),
                 ],

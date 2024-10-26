@@ -249,7 +249,7 @@ impl<'a> Ord for Comparand<'a, i32> {
 
 impl Into<Data> for i32 {
     fn into(self) -> Data {
-        Builder::new().add(&Value::Int(self)).build()
+        Builder::new().int(self).build()
     }
 }
 
@@ -273,25 +273,45 @@ impl Builder {
         Self { data: BytesMut::with_capacity(size), ..Default::default() }
     }
 
-    pub fn add(mut self, value: &Value) -> Self {
+    pub fn add(self, value: &Value) -> Self {
         match value {
-            Value::TinyInt(v) => self.data.put(&i8::to_be_bytes(*v)[..]),
-            Value::Bool(v) => self.data.put(&u8::to_be_bytes(if *v { 1 } else { 0 })[..]),
-            Value::Int(v) => self.data.put(&i32::to_be_bytes(*v)[..]),
-            Value::BigInt(v) => self.data.put(&i64::to_be_bytes(*v)[..]),
-            Value::Varchar(v) => {
-                let offset = self.data.len();
+            Value::TinyInt(v) => self.tiny_int(*v),
+            Value::Bool(v) => self.bool(*v),
+            Value::Int(v) => self.int(*v),
+            Value::BigInt(v) => self.big_int(*v),
+            Value::Varchar(v) => self.varchar(v),
+        }
+    }
 
-                // First two bytes is the offset, which we won't know until build()
-                // Second two bytes is the length
-                self.data.resize(offset + 4, 0);
-                self.data[offset + 2..offset + 4]
-                    .copy_from_slice(&u16::to_be_bytes(v.len() as u16));
+    pub fn tiny_int(mut self, value: i8) -> Self {
+        self.data.put(&value.to_be_bytes()[..]);
+        self
+    }
 
-                self.variable
-                    .push(Variable { data: BytesMut::from(&v[..]), offset_offset: offset });
-            }
-        };
+    pub fn bool(mut self, value: bool) -> Self {
+        self.data.put(&u8::to_be_bytes(if value { 1 } else { 0 })[..]);
+        self
+    }
+
+    pub fn int(mut self, value: i32) -> Self {
+        self.data.put(&value.to_be_bytes()[..]);
+        self
+    }
+
+    pub fn big_int(mut self, value: i64) -> Self {
+        self.data.put(&value.to_be_bytes()[..]);
+        self
+    }
+
+    pub fn varchar(mut self, value: &str) -> Self {
+        let offset = self.data.len();
+
+        // First two bytes is the offset, which we won't know until build()
+        // Second two bytes is the length
+        self.data.resize(offset + 4, 0);
+        self.data[offset + 2..offset + 4].copy_from_slice(&u16::to_be_bytes(value.len() as u16));
+
+        self.variable.push(Variable { data: BytesMut::from(&value[..]), offset_offset: offset });
 
         self
     }
@@ -317,7 +337,7 @@ mod test {
     use {
         crate::{
             catalog::{Column, Schema, Type},
-            table::tuple::{fit_tuple_with_schema, Builder, Comparand, Data, Value},
+            table::tuple::{fit_tuple_with_schema, Builder, Comparand, Data},
         },
         std::cmp::Ordering::{self, *},
     };
@@ -333,43 +353,22 @@ mod test {
         let tcs = [
             Test {
                 schema: [("col_b", Type::Varchar), ("col_c", Type::Int)].into(),
-                tuple: Builder::new()
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::Int(20))
-                    .build(),
-                want: Builder::new()
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::Int(20))
-                    .build(),
+                tuple: Builder::new().varchar("row_a").int(20).build(),
+                want: Builder::new().varchar("row_a").int(20).build(),
             },
             Test {
                 schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)]
                     .into(),
-                tuple: Builder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
-                want: Builder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
+                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+                want: Builder::new().int(10).varchar("row_a").big_int(20).build(),
             },
             Test {
                 schema: Schema::new(vec![
                     Column { name: "col_b".into(), ty: Type::Varchar, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
                 ]),
-                tuple: Builder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
-                want: Builder::new()
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
+                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+                want: Builder::new().varchar("row_a").big_int(20).build(),
             },
             Test {
                 schema: Schema::new(vec![Column {
@@ -377,24 +376,16 @@ mod test {
                     ty: Type::Varchar,
                     offset: 4,
                 }]),
-                tuple: Builder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
-                want: Builder::new().add(&Value::Varchar("row_a".into())).build(),
+                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+                want: Builder::new().varchar("row_a").build(),
             },
             Test {
                 schema: Schema::new(vec![
                     Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
                 ]),
-                tuple: Builder::new()
-                    .add(&Value::Int(10))
-                    .add(&Value::Varchar("row_a".into()))
-                    .add(&Value::BigInt(20))
-                    .build(),
-                want: Builder::new().add(&Value::Int(10)).add(&Value::BigInt(20)).build(),
+                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+                want: Builder::new().int(10).big_int(20).build(),
             },
         ];
 
@@ -420,16 +411,8 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(false))
-                    .add(&Value::BigInt(100))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(false))
-                    .add(&Value::BigInt(100))
-                    .build(),
+                lhs: Builder::new().int(4).bool(false).big_int(100).build(),
+                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
                 want: Equal,
             },
             Test {
@@ -438,16 +421,8 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(true))
-                    .add(&Value::BigInt(100))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(false))
-                    .add(&Value::BigInt(100))
-                    .build(),
+                lhs: Builder::new().int(4).bool(true).big_int(100).build(),
+                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
                 want: Greater,
             },
             Test {
@@ -456,16 +431,8 @@ mod test {
                     Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
                     Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(false))
-                    .add(&Value::BigInt(90))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::Int(4))
-                    .add(&Value::Bool(false))
-                    .add(&Value::BigInt(100))
-                    .build(),
+                lhs: Builder::new().int(4).bool(false).big_int(90).build(),
+                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
                 want: Less,
             },
             Test {
@@ -473,14 +440,8 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::TinyInt, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::Varchar, offset: 1 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::TinyInt(1))
-                    .add(&Value::Varchar("Column".into()))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::TinyInt(1))
-                    .add(&Value::Varchar("Column".into()))
-                    .build(),
+                lhs: Builder::new().tiny_int(1).varchar("Column").build(),
+                rhs: Builder::new().tiny_int(1).varchar("Column").build(),
                 want: Equal,
             },
             Test {
@@ -488,14 +449,8 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::Varchar("Column A".into()))
-                    .add(&Value::TinyInt(1))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::Varchar("Column B".into()))
-                    .add(&Value::TinyInt(1))
-                    .build(),
+                lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
+                rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
                 want: Less,
             },
             Test {
@@ -503,14 +458,8 @@ mod test {
                     Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
                     Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
                 ]),
-                lhs: Builder::new()
-                    .add(&Value::Varchar("Column A".into()))
-                    .add(&Value::TinyInt(1))
-                    .build(),
-                rhs: Builder::new()
-                    .add(&Value::Varchar("Column".into()))
-                    .add(&Value::TinyInt(1))
-                    .build(),
+                lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
+                rhs: Builder::new().varchar("Column").tiny_int(1).build(),
                 want: Greater,
             },
         ];
