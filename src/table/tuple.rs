@@ -7,7 +7,7 @@ use {
     },
 };
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Value {
     TinyInt(i8),
     Bool(bool),
@@ -89,6 +89,7 @@ impl Value {
     }
 }
 
+// TODO: support NULL - include a null bitmap with each tuple if columns can be nullable
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TupleData(pub BytesMut);
 
