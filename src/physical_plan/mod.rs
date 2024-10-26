@@ -75,6 +75,7 @@ fn eval_in_list(
         let value = eval(expr, schema, tuple)?;
         if value == search {
             found = true;
+            break;
         }
     }
 
