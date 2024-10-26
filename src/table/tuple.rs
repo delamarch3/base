@@ -337,136 +337,142 @@ mod test {
     use {
         crate::{
             catalog::{Column, Schema, Type},
-            table::tuple::{fit_tuple_with_schema, Builder, Comparand, Data},
+            table::tuple::{fit_tuple_with_schema, Builder, Comparand},
         },
-        std::cmp::Ordering::{self, *},
+        std::cmp::Ordering::*,
     };
 
-    #[test]
-    fn test_from() {
-        struct Test {
-            schema: Schema,
-            tuple: Data,
-            want: Data,
-        }
-
-        let tcs = [
-            Test {
-                schema: [("col_b", Type::Varchar), ("col_c", Type::Int)].into(),
-                tuple: Builder::new().varchar("row_a").int(20).build(),
-                want: Builder::new().varchar("row_a").int(20).build(),
-            },
-            Test {
-                schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)]
-                    .into(),
-                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
-                want: Builder::new().int(10).varchar("row_a").big_int(20).build(),
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_b".into(), ty: Type::Varchar, offset: 4 },
-                    Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
-                ]),
-                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
-                want: Builder::new().varchar("row_a").big_int(20).build(),
-            },
-            Test {
-                schema: Schema::new(vec![Column {
-                    name: "col_b".into(),
-                    ty: Type::Varchar,
-                    offset: 4,
-                }]),
-                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
-                want: Builder::new().varchar("row_a").build(),
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-                    Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
-                ]),
-                tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
-                want: Builder::new().int(10).big_int(20).build(),
-            },
-        ];
-
-        for Test { schema, tuple, want } in tcs {
-            let have = fit_tuple_with_schema(&tuple.as_bytes(), &schema);
-            assert_eq!(want, have);
-        }
+    macro_rules! test_fit_tuple_with_schema {
+        ($name:tt, schema: $schema:expr, tuple: $tuple:expr, want: $want:expr) => {
+            #[test]
+            fn $name() {
+                let have = fit_tuple_with_schema(&$tuple.as_bytes(), &$schema.into());
+                assert_eq!($want, have);
+            }
+        };
     }
 
-    #[test]
-    fn test_comparator() {
-        struct Test {
-            schema: Schema,
-            lhs: Data,
-            rhs: Data,
-            want: Ordering,
-        }
+    test_fit_tuple_with_schema! (
+        fit_same_schema_2_columns,
+        schema: [("col_b", Type::Varchar), ("col_c", Type::Int)],
+        tuple: Builder::new().varchar("row_a").int(20).build(),
+        want: Builder::new().varchar("row_a").int(20).build()
+    );
 
-        let tcs = [
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-                    Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-                ]),
-                lhs: Builder::new().int(4).bool(false).big_int(100).build(),
-                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
-                want: Equal,
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-                    Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-                ]),
-                lhs: Builder::new().int(4).bool(true).big_int(100).build(),
-                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
-                want: Greater,
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-                    Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-                ]),
-                lhs: Builder::new().int(4).bool(false).big_int(90).build(),
-                rhs: Builder::new().int(4).bool(false).big_int(100).build(),
-                want: Less,
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::TinyInt, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::Varchar, offset: 1 },
-                ]),
-                lhs: Builder::new().tiny_int(1).varchar("Column").build(),
-                rhs: Builder::new().tiny_int(1).varchar("Column").build(),
-                want: Equal,
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
-                ]),
-                lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
-                rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
-                want: Less,
-            },
-            Test {
-                schema: Schema::new(vec![
-                    Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-                    Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
-                ]),
-                lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
-                rhs: Builder::new().varchar("Column").tiny_int(1).build(),
-                want: Greater,
-            },
-        ];
+    test_fit_tuple_with_schema! (
+        fit_same_schema_3_columns,
+        schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)],
+        tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+        want: Builder::new().int(10).varchar("row_a").big_int(20).build()
+    );
 
-        for Test { schema, lhs, rhs, want } in tcs {
-            let have = Comparand(&schema, &lhs).cmp(&Comparand(&schema, &rhs));
-            assert_eq!(want, have);
-        }
+    test_fit_tuple_with_schema! (
+        fit_last_columns,
+        schema: Schema::new(vec![
+            Column { name: "col_b".into(), ty: Type::Varchar, offset: 4 },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
+        ]),
+        tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+        want: Builder::new().varchar("row_a").big_int(20).build()
+    );
+
+    test_fit_tuple_with_schema! (
+        fit_middle_column,
+        schema: Schema::new(vec![Column {
+            name: "col_b".into(),
+            ty: Type::Varchar,
+            offset: 4,
+        }]),
+        tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+        want: Builder::new().varchar("row_a").build()
+    );
+
+    test_fit_tuple_with_schema! (
+        fit_outer_columns,
+        schema: Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
+        ]),
+        tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
+        want: Builder::new().int(10).big_int(20).build()
+    );
+
+    macro_rules! test_comparator {
+        ($name:tt, $schema:expr, lhs: $lhs:expr, rhs: $rhs:expr, $want:expr) => {
+            #[test]
+            fn $name() {
+                let have = Comparand(&$schema, &$lhs).cmp(&Comparand(&$schema, &$rhs));
+                assert_eq!($want, have);
+            }
+        };
     }
+
+    test_comparator!(
+        t1,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
+        ]),
+        lhs: Builder::new().int(4).bool(false).big_int(100).build(),
+        rhs: Builder::new().int(4).bool(false).big_int(100).build(),
+        Equal
+    );
+
+    test_comparator!(
+        t2,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
+        ]),
+        lhs: Builder::new().int(4).bool(true).big_int(100).build(),
+        rhs: Builder::new().int(4).bool(false).big_int(100).build(),
+        Greater
+    );
+
+    test_comparator!(
+        t3,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
+        ]),
+        lhs: Builder::new().int(4).bool(false).big_int(90).build(),
+        rhs: Builder::new().int(4).bool(false).big_int(100).build(),
+        Less
+    );
+
+    test_comparator!(
+        t4,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::TinyInt, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::Varchar, offset: 1 },
+        ]),
+        lhs: Builder::new().tiny_int(1).varchar("Column").build(),
+        rhs: Builder::new().tiny_int(1).varchar("Column").build(),
+        Equal
+    );
+
+    test_comparator!(
+        t5,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
+        ]),
+        lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
+        rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
+        Less
+    );
+
+    test_comparator!(
+        t6,
+        Schema::new(vec![
+            Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
+            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 255 + 2 },
+        ]),
+        lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
+        rhs: Builder::new().varchar("Column").tiny_int(1).build(),
+        Greater
+    );
 }

@@ -430,17 +430,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use rand::{seq::SliceRandom, thread_rng, Rng};
-
-    use crate::{
-        catalog::{Column, Type},
-        disk::Memory,
-        page::PAGE_SIZE,
-        page_cache::PageCache,
-        replacer::LRU,
+    use {
+        super::*,
+        crate::{
+            catalog::{Column, Type},
+            disk::Memory,
+            page::PAGE_SIZE,
+            page_cache::PageCache,
+            replacer::LRU,
+        },
+        rand::{seq::SliceRandom, thread_rng, Rng},
     };
-
-    use super::*;
 
     macro_rules! inserts {
         ($range:expr, $t:ty) => {{
@@ -568,77 +568,68 @@ mod test {
         Ok(())
     }
 
-    #[test]
-    fn test_btree_range() -> crate::Result<()> {
-        struct TestCase {
-            name: &'static str,
-            range: std::ops::Range<i32>,
-            from: TupleData,
-            to: TupleData,
-        }
+    /// Test that range() returns the requested range of inserted values in the correct order
+    macro_rules! test_btree_range {
+        ($name:tt, inserts: $range:expr, from: $from:expr, to: $to:expr) => {
+            #[test]
+            fn $name() -> crate::Result<()> {
+                const MEMORY: usize = PAGE_SIZE * 16;
+                const K: usize = 2;
+                let disk = Memory::new::<MEMORY>();
+                let lru = LRU::new(K);
+                let pc = PageCache::new(disk, lru, 0);
 
-        const MEMORY: usize = PAGE_SIZE * 16;
-        const K: usize = 2;
+                let schema = [("", Type::Int)].into();
 
-        let disk = Memory::new::<MEMORY>();
-        let lru = LRU::new(K);
-        let pc = PageCache::new(disk, lru, 0);
-        let pc2 = pc.clone();
+                let mut btree = BTree::new(pc.clone(), &schema);
 
-        let tcs = [
-            TestCase {
-                name: "random range",
-                range: -50..50,
-                from: rand::thread_rng().gen_range(-50..0).into(),
-                to: rand::thread_rng().gen_range(0..50).into(),
-            },
-            TestCase {
-                name: "out of bounds range",
-                range: -50..50,
-                from: (-100).into(),
-                to: (-50).into(),
-            },
-        ];
+                let mut inserts = inserts!($range, i32);
+                for (k, v) in &inserts {
+                    btree.insert(k, v)?;
+                }
 
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+                pc.flush_all_pages()?;
 
-        for TestCase { name, range, from, to } in tcs {
-            let mut btree = BTree::new(pc.clone(), &schema);
+                for (k, v) in &inserts {
+                    let have = btree.get(k)?;
+                    let want = Some(Slot(k.clone(), Either::Value(*v)));
+                    assert_eq!(want, have);
+                }
 
-            let mut inserts = inserts!(range, i32);
-            for (k, v) in &inserts {
-                btree.insert(k, v)?;
+                inserts
+                    .sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
+
+                // Avoid creating two ranges for the random range test:
+                let from = $from.into();
+                let to = $to.into();
+
+                let want = inserts
+                    .into_iter()
+                    .filter(|(k, _)| {
+                        Comparand(&schema, k) >= Comparand(&schema, &from)
+                            && Comparand(&schema, k) <= Comparand(&schema, &to)
+                    })
+                    .collect::<Vec<(TupleData, i32)>>();
+
+                let have = btree.range(&from, &to)?;
+                assert_eq!(want, have);
+
+                Ok(())
             }
-
-            pc2.flush_all_pages()?;
-
-            for (k, v) in &inserts {
-                let have = btree.get(k)?;
-                let want = Some(Slot(k.clone(), Either::Value(*v)));
-                assert!(want == have, "\nWant: {:?}\nHave: {:?}\n", want, have);
-            }
-
-            inserts.sort_by(|(k, _), (k0, _)| Comparand(&schema, k).cmp(&Comparand(&schema, k0)));
-
-            let want = inserts
-                .into_iter()
-                .filter(|(k, _)| {
-                    Comparand(&schema, k) >= Comparand(&schema, &from)
-                        && Comparand(&schema, k) <= Comparand(&schema, &to)
-                })
-                .collect::<Vec<(TupleData, i32)>>();
-
-            let have = btree.range(&from, &to)?;
-            assert!(
-                want == have,
-                "TestCase \"{}\" failed:\nWant: {:?}\nHave: {:?}\nRange: {:?}",
-                name,
-                want,
-                have,
-                (from, to)
-            );
-        }
-
-        Ok(())
+        };
     }
+
+    test_btree_range! (
+        random_range,
+        inserts: -50..50,
+        from: rand::thread_rng().gen_range(-50..0),
+        to: rand::thread_rng().gen_range(0..50)
+    );
+
+    test_btree_range! (
+        out_of_bounds_range,
+        inserts: -50..50,
+        from: -100,
+        to: -50
+    );
 }
