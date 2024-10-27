@@ -342,4 +342,15 @@ mod test {
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
     );
+
+    test_eval!(
+        t12,
+        concat(vec![
+            concat(vec![ident("c1"), ident("c2")]),
+            concat(vec![string("c"), number("9")])
+        ]),
+        [("c1", Type::Varchar), ("c2", Type::Varchar)],
+        TupleBuilder::new().varchar("a").varchar("b").build(),
+        Ok(Value::Varchar("abc9".to_string()))
+    );
 }
