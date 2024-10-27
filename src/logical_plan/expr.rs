@@ -7,6 +7,8 @@ pub enum FunctionName {
     Sum,
     Avg,
     Count,
+    Contains,
+    Concat,
 }
 
 impl std::fmt::Display for FunctionName {
@@ -17,14 +19,16 @@ impl std::fmt::Display for FunctionName {
             FunctionName::Sum => write!(f, "SUM"),
             FunctionName::Avg => write!(f, "AVG"),
             FunctionName::Count => write!(f, "COUNT"),
+            FunctionName::Contains => write!(f, "CONTAINS"),
+            FunctionName::Concat => write!(f, "CONCAT"),
         }
     }
 }
 
 pub struct Function {
     pub name: FunctionName,
-    args: Vec<Expr>,
-    distinct: bool,
+    pub args: Vec<Expr>,
+    pub distinct: bool,
 }
 
 impl std::fmt::Display for Function {
@@ -144,24 +148,42 @@ pub fn null() -> Expr {
     Expr::Value(Value::Null)
 }
 
-pub fn min(expr: Expr) -> Function {
-    Function { name: FunctionName::Min, args: vec![expr], distinct: false }
+pub fn distinct(expr: Expr) -> Expr {
+    match expr {
+        Expr::Function(mut function) => {
+            function.distinct = true;
+            Expr::Function(function)
+        }
+        _ => expr,
+    }
 }
 
-pub fn max(expr: Expr) -> Function {
-    Function { name: FunctionName::Max, args: vec![expr], distinct: false }
+pub fn min(expr: Expr) -> Expr {
+    Expr::Function(Function { name: FunctionName::Min, args: vec![expr], distinct: false })
 }
 
-pub fn sum(expr: Expr) -> Function {
-    Function { name: FunctionName::Sum, args: vec![expr], distinct: false }
+pub fn max(expr: Expr) -> Expr {
+    Expr::Function(Function { name: FunctionName::Max, args: vec![expr], distinct: false })
 }
 
-pub fn avg(expr: Expr) -> Function {
-    Function { name: FunctionName::Avg, args: vec![expr], distinct: false }
+pub fn sum(expr: Expr) -> Expr {
+    Expr::Function(Function { name: FunctionName::Sum, args: vec![expr], distinct: false })
 }
 
-pub fn count(expr: Expr) -> Function {
-    Function { name: FunctionName::Count, args: vec![expr], distinct: false }
+pub fn avg(expr: Expr) -> Expr {
+    Expr::Function(Function { name: FunctionName::Avg, args: vec![expr], distinct: false })
+}
+
+pub fn count(expr: Expr) -> Expr {
+    Expr::Function(Function { name: FunctionName::Count, args: vec![expr], distinct: false })
+}
+
+pub fn contains(args: Vec<Expr>) -> Expr {
+    Expr::Function(Function { name: FunctionName::Contains, args, distinct: false })
+}
+
+pub fn concat(args: Vec<Expr>) -> Expr {
+    Expr::Function(Function { name: FunctionName::Concat, args, distinct: false })
 }
 
 impl Expr {

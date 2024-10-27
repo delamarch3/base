@@ -5,12 +5,22 @@ use crate::{
     table::tuple::{Data as TupleData, Value},
 };
 
+macro_rules! get_value {
+    ($value:ident, $type:tt) => {
+        match $value {
+            Value::$type(value) => value,
+            _ => unreachable!(),
+        }
+    };
+}
+
 #[derive(Debug, PartialEq)]
 enum EvalError {
     UnknownIdentifier,
     UnsupportedOperation,
     UnsupportedFunction,
     InvalidNumber,
+    IncorrectNumberOfArguments,
 }
 use EvalError::*;
 
@@ -25,7 +35,7 @@ fn eval(expr: &Expr, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalEr
             eval_between(expr, low, high, *negated, schema, tuple)
         }
         Expr::BinaryOp { left, op, right } => eval_binary_op(left, *op, right, schema, tuple),
-        Expr::Function(function) => eval_function(function),
+        Expr::Function(function) => eval_function(function, schema, tuple),
     }
 }
 
@@ -94,11 +104,9 @@ fn eval_between(
     let low = eval(low, schema, tuple)?;
     let high = eval(high, schema, tuple)?;
 
-    if Value::Bool(true) != value_op(&value, Op::Ge, &low)? {
-        return Ok(Value::Bool(false));
-    }
-
-    if Value::Bool(true) != value_op(&value, Op::Le, &high)? {
+    if Value::Bool(true) != value_op(&value, Op::Ge, &low)?
+        && Value::Bool(true) != value_op(&value, Op::Le, &high)?
+    {
         return Ok(Value::Bool(false));
     }
 
@@ -118,27 +126,55 @@ fn eval_binary_op(
     value_op(&lhs, op, &rhs)
 }
 
-fn eval_function(function: &Function) -> Result<Value, EvalError> {
+fn eval_function(
+    function: &Function,
+    schema: &Schema,
+    tuple: &TupleData,
+) -> Result<Value, EvalError> {
     match function.name {
         FunctionName::Min
         | FunctionName::Max
         | FunctionName::Sum
         | FunctionName::Avg
         | FunctionName::Count => Err(UnsupportedFunction),
+        FunctionName::Contains => eval_contains(&function.args, schema, tuple),
+        FunctionName::Concat => eval_concat(&function.args, schema, tuple),
     }
 }
 
-fn value_op(lhs: &Value, op: Op, rhs: &Value) -> Result<Value, EvalError> {
-    macro_rules! get_value {
-        ($value:ident, $type:tt) => {
-            match $value {
-                Value::$type(value) => value,
-                _ => unreachable!(),
-            }
-        };
+fn eval_concat(args: &[Expr], schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
+    let mut result = String::new();
+    for arg in args {
+        let value = eval(arg, schema, tuple)?;
+        match value {
+            Value::TinyInt(v) => result.push_str(&v.to_string()),
+            Value::Bool(v) => result.push_str(&v.to_string()),
+            Value::Int(v) => result.push_str(&v.to_string()),
+            Value::BigInt(v) => result.push_str(&v.to_string()),
+            Value::Varchar(v) => result.push_str(&v),
+        }
     }
 
-    if Type::from(lhs) != Type::from(rhs) {
+    Ok(Value::Varchar(result))
+}
+
+fn eval_contains(args: &[Expr], schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
+    if args.len() > 2 {
+        Err(IncorrectNumberOfArguments)?
+    }
+
+    let arg0 = eval(&args[0], schema, tuple)?;
+    let arg1 = eval(&args[1], schema, tuple)?;
+
+    if arg0.ty() != Type::Varchar && arg1.ty() != Type::Varchar {
+        return Ok(Value::Bool(false));
+    }
+
+    Ok(Value::Bool(get_value!(arg0, Varchar).contains(get_value!(arg1, Varchar).as_str())))
+}
+
+fn value_op(lhs: &Value, op: Op, rhs: &Value) -> Result<Value, EvalError> {
+    if lhs.ty() != rhs.ty() {
         Err(UnsupportedOperation)?
     }
 
@@ -231,7 +267,7 @@ mod test {
         super::{eval, EvalError::*},
         crate::{
             catalog::Type,
-            logical_plan::expr::{ident, number, string},
+            logical_plan::expr::{concat, contains, ident, number, string},
             table::tuple::{Builder as TupleBuilder, Value},
         },
     };
@@ -289,5 +325,21 @@ mod test {
         [("c1", Type::Varchar), ("c2", Type::Int)],
         TupleBuilder::new().varchar("a").int(20).build(),
         Ok(Value::Bool(true))
+    );
+
+    test_eval!(
+        t10,
+        contains(vec![ident("c1"), string("sd")]),
+        [("c1", Type::Varchar)],
+        TupleBuilder::new().varchar("asdf").build(),
+        Ok(Value::Bool(true))
+    );
+
+    test_eval!(
+        t11,
+        concat(vec![ident("c1"), ident("c2"), string("c"), number("9")]),
+        [("c1", Type::Varchar), ("c2", Type::Varchar)],
+        TupleBuilder::new().varchar("a").varchar("b").build(),
+        Ok(Value::Varchar("abc9".to_string()))
     );
 }
