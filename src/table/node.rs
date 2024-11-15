@@ -134,7 +134,7 @@ impl From<&PageBuf> for Node {
             let bytes = &left[from..from + SLOT_SIZE];
             let slot = TupleSlot::from(bytes);
             slots.push(slot);
-            from = from + SLOT_SIZE;
+            from += SLOT_SIZE;
             rem -= 1;
         }
 

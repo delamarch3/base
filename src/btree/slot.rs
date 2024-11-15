@@ -91,7 +91,7 @@ where
     fn from(Slot(TupleData(k), v): &Slot<V>) -> Self {
         let mut ret = BytesMut::zeroed(k.len() + Either::<V>::SIZE);
 
-        ret[..k.len()].copy_from_slice(&k);
+        ret[..k.len()].copy_from_slice(k);
         ret[k.len()..k.len() + Either::<V>::SIZE].copy_from_slice(&BytesMut::from(v));
 
         ret

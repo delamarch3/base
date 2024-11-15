@@ -56,9 +56,9 @@ pub enum Token {
     Eof,
 }
 
-impl Into<Token> for &str {
-    fn into(self) -> Token {
-        let lower = self.to_lowercase();
+impl From<&str> for Token {
+    fn from(val: &str) -> Self {
+        let lower = val.to_lowercase();
 
         match &lower[..] {
             "(" => Token::LParen,

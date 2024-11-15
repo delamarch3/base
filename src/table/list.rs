@@ -198,7 +198,7 @@ mod test {
 
     #[test]
     fn test_table() -> crate::Result<()> {
-        const MEMORY: usize = PAGE_SIZE * 1;
+        const MEMORY: usize = PAGE_SIZE;
         const K: usize = 2;
 
         let disk = Memory::new::<MEMORY>();

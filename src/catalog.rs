@@ -113,7 +113,7 @@ impl Schema {
     /// Returns a new `Schema` where another `Schema` is appended
     pub fn join(&self, other: &Schema) -> Self {
         let mut schema = self.clone();
-        schema.columns.extend(other.columns.iter().map(|column| column.clone()));
+        schema.columns.extend(other.columns.iter().cloned());
         schema.tuple_size += other.tuple_size;
 
         schema
@@ -270,8 +270,7 @@ impl<D: Disk> Catalog<D> {
         // Correct offsets for the index so they are read/written correctly
         let index_schema = tuple_schema.compact();
 
-        let root;
-        match index_ty {
+        let root_page_id = match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
                 let mut btree = BTree::<RID, _>::new(self.pc.clone(), &index_schema);
@@ -283,7 +282,7 @@ impl<D: Disk> Catalog<D> {
                     btree.insert(&tuple, &rid).expect("todo");
                 }
 
-                root = btree.root();
+                btree.root()
             }
         };
 
@@ -297,7 +296,7 @@ impl<D: Disk> Catalog<D> {
                 schema: index_schema,
                 oid,
                 index_ty,
-                root_page_id: root,
+                root_page_id,
             },
         );
         indexed_table.insert(index_name.into(), oid);
@@ -314,7 +313,7 @@ impl<D: Disk> Catalog<D> {
     }
 
     pub fn list_indexes(&self) -> Vec<&IndexInfo> {
-        self.indexes.iter().map(|(_, info)| info).collect()
+        self.indexes.values().collect()
     }
 }
 
@@ -376,7 +375,7 @@ mod test {
         test_int_big_int_key,
         [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)],
         ["col_a", "col_c"],
-        vec![
+        [
             TupleBuilder::new()
                 .int(10)
                 .varchar("row_a") // TODO: slot panics when this is the last column?
@@ -386,7 +385,7 @@ mod test {
                 .int(20)
                 .varchar("row_b") // TODO: slot panics when this is the last column?
                 .big_int(30)
-                .build(),
+                .build()
         ],
         vec![
             (TupleBuilder::new().int(10).big_int(20).build(), RID { page_id: 0, slot_id: 0 },),
@@ -398,9 +397,9 @@ mod test {
         test_int_varchar_key,
         [("col_a", Type::Int), ("col_b", Type::BigInt), ("col_c", Type::Varchar)],
         ["col_a", "col_c"],
-        vec![
+        [
             TupleBuilder::new().int(20).big_int(20).varchar("row_a").build(),
-            TupleBuilder::new().int(20).big_int(30).varchar("row_b").build(),
+            TupleBuilder::new().int(20).big_int(30).varchar("row_b").build()
         ],
         vec![
             (TupleBuilder::new().int(20).varchar("row_a").build(), RID { page_id: 0, slot_id: 0 },),

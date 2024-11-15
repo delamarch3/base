@@ -90,7 +90,7 @@ where
         for (i, Slot(k, v)) in self.values.iter().enumerate() {
             let Slot(k0, v0) = &other.values[i];
 
-            if Comparand(&self.schema, k) != Comparand(&self.schema, k0) {
+            if Comparand(self.schema, k) != Comparand(self.schema, k0) {
                 return false;
             }
 
@@ -138,6 +138,16 @@ where
 {
     fn from(node: Node<V>) -> Self {
         PageBuf::from(&node)
+    }
+}
+
+impl<'s, V> IntoIterator for Node<'s, V> {
+    type Item = Slot<V>;
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
     }
 }
 
@@ -207,7 +217,7 @@ where
         match self
             .values
             .iter()
-            .find(|&s| Comparand(&self.schema, key) < Comparand(&self.schema, &s.0))
+            .find(|&s| Comparand(self.schema, key) < Comparand(self.schema, &s.0))
             .map(|s| get_ptr!(s))
         {
             None => match self.next {
@@ -242,12 +252,12 @@ where
     pub fn insert(&mut self, slot: Slot<V>) -> bool {
         let mut i = self.values.len();
         for (j, Slot(k, _)) in self.values.iter().enumerate() {
-            if Comparand(&self.schema, k) == Comparand(&self.schema, &slot.0) {
+            if Comparand(self.schema, k) == Comparand(self.schema, &slot.0) {
                 // Duplicate key
                 return false;
             }
 
-            if Comparand(&self.schema, k) > Comparand(&self.schema, &slot.0) {
+            if Comparand(self.schema, k) > Comparand(self.schema, &slot.0) {
                 i = j;
                 break;
             }
@@ -262,12 +272,12 @@ where
     pub fn replace(&mut self, mut slot: Slot<V>) -> Option<Slot<V>> {
         let mut i = self.values.len();
         for (j, Slot(k, _)) in self.values.iter().enumerate() {
-            if Comparand(&self.schema, k) == Comparand(&self.schema, &slot.0) {
+            if Comparand(self.schema, k) == Comparand(self.schema, &slot.0) {
                 std::mem::swap(&mut self.values[j], &mut slot);
                 return Some(slot);
             }
 
-            if Comparand(&self.schema, k) > Comparand(&self.schema, &slot.0) {
+            if Comparand(self.schema, k) > Comparand(self.schema, &slot.0) {
                 i = j;
                 break;
             }
@@ -289,14 +299,14 @@ where
         self.values.iter()
     }
 
-    pub fn into_iter(self) -> std::vec::IntoIter<Slot<V>> {
-        self.values.into_iter()
-    }
+    // pub fn into_iter(self) -> std::vec::IntoIter<Slot<V>> {
+    //     self.values.into_iter()
+    // }
 
     pub fn get(&self, key: &TupleData) -> Option<&Slot<V>> {
         self.values
             .iter()
-            .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, &key))
+            .find(|Slot(k, _)| Comparand(self.schema, k) == Comparand(self.schema, key))
     }
 
     pub fn remove(&mut self, key: &TupleData) -> bool {
@@ -304,7 +314,7 @@ where
             .values
             .iter()
             .enumerate()
-            .find(|(_, Slot(k, _))| Comparand(self.schema, k) == Comparand(self.schema, &key))
+            .find(|(_, Slot(k, _))| Comparand(self.schema, k) == Comparand(self.schema, key))
             .map(|(i, _)| i)
         {
             self.values.remove(i);
@@ -578,7 +588,7 @@ mod test {
         // Get
         let mut have = Vec::new();
         for Slot(k, _) in &want {
-            match node.get(&k) {
+            match node.get(k) {
                 Some(s) => have.push(s.clone()),
                 None => panic!("expected to find {k:?}"),
             }
@@ -588,19 +598,18 @@ mod test {
         // Delete
         let (first_half, second_half) = want.split_at(want.len() / 2);
         for Slot(k, _) in first_half {
-            assert!(node.remove(&k));
+            assert!(node.remove(k));
         }
         assert_eq!(node.values.len(), second_half.len());
 
         for Slot(k, _) in first_half {
-            match node.get(&k) {
-                Some(_) => panic!("unexpected deleted slot: {k:?}"),
-                None => {}
+            if let Some(_) = node.get(k) {
+                panic!("unexpected deleted slot: {k:?}")
             }
         }
 
         for Slot(k, _) in second_half {
-            match node.get(&k) {
+            match node.get(k) {
                 Some(_) => {}
                 None => panic!("expected to find {k:?}"),
             }

@@ -58,10 +58,10 @@ impl std::fmt::Display for LogicalPlan {
 
             let (lhs, rhs) = plan.inputs();
             if let Some(plan) = lhs {
-                fmt(f, &plan, indent + 1)?;
+                fmt(f, plan, indent + 1)?;
             }
             if let Some(plan) = rhs {
-                fmt(f, &plan, indent + 1)?;
+                fmt(f, plan, indent + 1)?;
             }
 
             Ok(())
@@ -105,7 +105,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     seperator: &'static str,
 ) -> std::fmt::Result {
     let mut tmp = "";
-    while let Some(item) = iter.next() {
+    for item in iter.by_ref() {
         write!(f, "{tmp}")?;
         tmp = seperator;
         write!(f, "{item}")?;

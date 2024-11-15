@@ -138,13 +138,13 @@ impl<D: Disk> PageCache<D> {
         self.next_page_id.fetch_add(1, Relaxed)
     }
 
-    pub fn new_page<'a>(&self) -> Result<Pin> {
+    pub fn new_page(&self) -> Result<Pin> {
         let page_id = self.allocate_page();
 
         self.try_get_page(page_id)
     }
 
-    pub fn fetch_page<'a>(&self, page_id: PageID) -> Result<Pin> {
+    pub fn fetch_page(&self, page_id: PageID) -> Result<Pin> {
         if let Some(i) = self.page_table.read().expect("todo").get(&page_id) {
             let mut replacer = self.replacer.lock();
             replacer.record_access(*i, AccessType::Get);

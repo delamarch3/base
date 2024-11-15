@@ -184,7 +184,7 @@ fn value_op(lhs: &Value, op: Op, rhs: &Value) -> Result<Value, EvalError> {
         Value::Bool(lhs) => bool_op(*lhs, op, *get_value!(rhs, Bool)),
         Value::Int(lhs) => int_op(*lhs, op, *get_value!(rhs, Int)),
         Value::BigInt(lhs) => big_int_op(*lhs, op, *get_value!(rhs, BigInt)),
-        Value::Varchar(lhs) => varchar_op(&lhs, op, get_value!(rhs, Varchar).as_str()),
+        Value::Varchar(lhs) => varchar_op(lhs, op, get_value!(rhs, Varchar).as_str()),
     }?;
 
     Ok(Value::Bool(result))
@@ -208,9 +208,9 @@ fn bool_op(lhs: bool, op: Op, rhs: bool) -> Result<bool, EvalError> {
     let result = match op {
         Op::Eq => lhs == rhs,
         Op::Neq => lhs != rhs,
-        Op::Lt => lhs < rhs,
+        Op::Lt => !lhs & rhs,
         Op::Le => lhs <= rhs,
-        Op::Gt => lhs > rhs,
+        Op::Gt => lhs & !rhs,
         Op::Ge => lhs >= rhs,
         Op::And => lhs && rhs,
         Op::Or => lhs || rhs,

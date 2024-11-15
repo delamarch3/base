@@ -197,7 +197,7 @@ impl std::fmt::Display for Node {
             Node::None => write!(f, "NONE"),
             Node::Between(from, to) => write!(f, "({} {})", from, to),
             Node::In(vs) => {
-                if vs.len() == 0 {
+                if vs.is_empty() {
                     return write!(f, "[]");
                 }
 
@@ -248,11 +248,11 @@ macro_rules! check_next {
     ($l:ident, [$( $($need:path)? $(: $want:path)*),*]) => {
         $(
             $(
-                crate::check_next!($l, :$want);
+                $crate::check_next!($l, :$want);
             )*
 
             $(
-                crate::check_next!($l, $need);
+                $crate::check_next!($l, $need);
             )?
         )*
     };
@@ -436,7 +436,7 @@ fn projection(l: &mut Lexer) -> Result<Vec<Node>> {
     match l.peek() {
         Token::All => {
             l.next();
-            return Ok(vec![Node::All]);
+            Ok(vec![Node::All])
         }
 
         _ => list(column_ref)(l),
@@ -464,7 +464,7 @@ fn list<T>(
                     l.next();
                     _list(l, f, list, State::Item)
                 }
-                _ if state == State::Comma => return Ok(list),
+                _ if state == State::Comma => Ok(list),
                 _ => {
                     list.push(f(l)?);
                     _list(l, f, list, State::Comma)

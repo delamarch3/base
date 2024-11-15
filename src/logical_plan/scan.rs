@@ -1,6 +1,6 @@
 use crate::{
     catalog::{TableInfo, OID},
-    disk::{Disk, FileSystem},
+    disk::Disk,
 };
 
 use {super::LogicalPlan, crate::catalog::Schema};

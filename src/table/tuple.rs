@@ -108,21 +108,18 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
         let start = tuple.len();
         tuple.put(&data[*offset..*offset + ty.size()]);
 
-        match ty {
-            Type::Varchar => {
-                let (var_offset, length) = (
-                    u16::from_be_bytes((&data[*offset..*offset + 2]).try_into().unwrap()) as usize,
-                    u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
-                        as usize,
-                );
+        if ty == &Type::Varchar {
+            let (var_offset, length) = (
+                u16::from_be_bytes((&data[*offset..*offset + 2]).try_into().unwrap()) as usize,
+                u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
+                    as usize,
+            );
 
-                // Data to add on at the end of the tuple
-                vars.push(Variable {
-                    data: &data[var_offset..var_offset + length],
-                    offset_offset: start,
-                });
-            }
-            _ => {}
+            // Data to add on at the end of the tuple
+            vars.push(Variable {
+                data: &data[var_offset..var_offset + length],
+                offset_offset: start,
+            });
         }
     }
 
@@ -182,7 +179,7 @@ impl Data {
     }
 
     pub fn get_value(&self, column: &Column) -> Value {
-        Value::from(&self.0, &column)
+        Value::from(&self.0, column)
     }
 
     pub fn size(&self) -> usize {
@@ -198,7 +195,7 @@ pub struct Comparand<'a, T>(pub &'a Schema, pub T);
 
 impl<'a, 'b> PartialEq for Comparand<'a, &'b Data> {
     fn eq(&self, other: &Self) -> bool {
-        self.1.eq(&other.1)
+        self.1.eq(other.1)
     }
 }
 impl<'a, 'b> Eq for Comparand<'a, &'b Data> {}
@@ -211,7 +208,7 @@ impl<'a, 'b> PartialOrd for Comparand<'a, &'b Data> {
 
 impl<'a, 'b> Ord for Comparand<'a, &'b Data> {
     fn cmp(&self, other: &Self) -> Ordering {
-        for (_, col) in self.0.iter().enumerate() {
+        for col in self.0.iter() {
             let lhs = Value::from(&self.1 .0, col);
             let rhs = Value::from(&other.1 .0, col);
 
@@ -245,9 +242,9 @@ impl<'a> Ord for Comparand<'a, i32> {
     }
 }
 
-impl Into<Data> for i32 {
-    fn into(self) -> Data {
-        Builder::new().int(self).build()
+impl From<i32> for Data {
+    fn from(val: i32) -> Self {
+        Builder::new().int(val).build()
     }
 }
 
@@ -309,7 +306,7 @@ impl Builder {
         self.data.resize(offset + 4, 0);
         self.data[offset + 2..offset + 4].copy_from_slice(&u16::to_be_bytes(value.len() as u16));
 
-        self.variable.push(Variable { data: BytesMut::from(&value[..]), offset_offset: offset });
+        self.variable.push(Variable { data: BytesMut::from(value), offset_offset: offset });
 
         self
     }

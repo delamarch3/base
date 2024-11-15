@@ -9,7 +9,7 @@ pub struct Aggregate {
 impl std::fmt::Display for Aggregate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Aggregate [{}]", self.function)?;
-        if self.keys.len() > 0 {
+        if !self.keys.is_empty() {
             write!(f, " keys:[")?;
             write_iter(f, &mut self.keys.iter(), ",")?;
         }
