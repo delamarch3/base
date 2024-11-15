@@ -1,35 +1,28 @@
 use crate::catalog::IndexInfo;
 
-use {
-    super::{LogicalPlan, LogicalPlanInputs},
-    crate::catalog::Schema,
-};
+use super::LogicalPlan;
 
 pub struct IndexScan {
-    index_info: IndexInfo,
+    pub(super) index: IndexInfo,
 }
 
 impl std::fmt::Display for IndexScan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let IndexInfo { name, oid, index_ty, .. } = &self.index_info;
+        let IndexInfo { name, oid, index_ty, .. } = &self.index;
         write!(f, "IndexScan {} {} {}", name, index_ty, oid)?;
 
         Ok(())
     }
 }
 
-impl LogicalPlan for IndexScan {
-    fn schema(&self) -> &Schema {
-        &self.index_info.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (None, None)
+impl From<IndexScan> for LogicalPlan {
+    fn from(index_scan: IndexScan) -> Self {
+        Self::IndexScan(index_scan)
     }
 }
 
 impl IndexScan {
-    pub fn new(index_info: IndexInfo) -> Self {
-        Self { index_info }
+    pub fn new(index: IndexInfo) -> Self {
+        Self { index }
     }
 }

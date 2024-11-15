@@ -1,20 +1,20 @@
 use {
-    super::{Expr, LogicalPlan, LogicalPlanInputs},
+    super::{Expr, LogicalPlan},
     crate::catalog::Schema,
 };
 
 pub enum JoinAlgorithm {
-    NestedLoopJoin,
-    HashJoin,
-    MergeJoin,
+    NestedLoop,
+    Hash,
+    Merge,
 }
 
 impl std::fmt::Display for JoinAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JoinAlgorithm::NestedLoopJoin => write!(f, "BlockNestedLoopJoin"),
-            JoinAlgorithm::HashJoin => write!(f, "HashJoin"),
-            JoinAlgorithm::MergeJoin => write!(f, "MergeJoin"),
+            JoinAlgorithm::NestedLoop => write!(f, "NestedLoopJoin"),
+            JoinAlgorithm::Hash => write!(f, "HashJoin"),
+            JoinAlgorithm::Merge => write!(f, "MergeJoin"),
         }
     }
 }
@@ -22,9 +22,9 @@ impl std::fmt::Display for JoinAlgorithm {
 pub struct Join {
     algo: JoinAlgorithm,
     predicate: Expr,
-    schema: Schema,
-    lhs: Box<dyn LogicalPlan>,
-    rhs: Box<dyn LogicalPlan>,
+    pub(super) schema: Schema,
+    pub(super) left_input: Box<LogicalPlan>,
+    pub(super) right_input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Join {
@@ -33,13 +33,9 @@ impl std::fmt::Display for Join {
     }
 }
 
-impl LogicalPlan for Join {
-    fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.lhs), Some(&self.rhs))
+impl From<Join> for LogicalPlan {
+    fn from(join: Join) -> Self {
+        Self::Join(join)
     }
 }
 
@@ -47,10 +43,12 @@ impl Join {
     pub fn new(
         algo: JoinAlgorithm,
         predicate: Expr,
-        lhs: Box<dyn LogicalPlan>,
-        rhs: Box<dyn LogicalPlan>,
+        left_input: impl Into<LogicalPlan>,
+        right_input: impl Into<LogicalPlan>,
     ) -> Self {
-        let schema = lhs.schema().join(rhs.schema());
-        Self { algo, predicate, schema, lhs, rhs }
+        let left_input = Box::new(left_input.into());
+        let right_input = Box::new(right_input.into());
+        let schema = left_input.schema().join(right_input.schema());
+        Self { algo, predicate, schema, left_input, right_input }
     }
 }

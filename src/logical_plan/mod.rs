@@ -26,33 +26,77 @@ pub use {
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
-pub type LogicalPlanInputs<'a> =
-    (Option<&'a Box<dyn LogicalPlan>>, Option<&'a Box<dyn LogicalPlan>>);
+pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
 
-pub trait LogicalPlan: std::fmt::Display {
-    fn schema(&self) -> &Schema;
-    fn inputs(&self) -> LogicalPlanInputs;
+pub enum LogicalPlan {
+    Aggregate(Aggregate),
+    Filter(Filter),
+    Group(Group),
+    IndexScan(IndexScan),
+    Join(Join),
+    Projection(Projection),
+    Scan(Scan),
 }
 
-pub fn format_logical_plan(plan: &dyn LogicalPlan) -> String {
-    fn format_logical_plan(plan: &dyn LogicalPlan, indent: u16) -> String {
-        let mut output = String::new();
-        (0..indent).for_each(|_| output.push('\t'));
-        output.push_str(&plan.to_string());
-        output.push('\n');
+impl std::fmt::Display for LogicalPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt(
+            f: &mut std::fmt::Formatter<'_>,
+            plan: &LogicalPlan,
+            indent: u16,
+        ) -> std::fmt::Result {
+            (0..indent * 4).try_for_each(|_| write!(f, " "))?;
+            match plan {
+                LogicalPlan::Aggregate(aggregate) => writeln!(f, "{aggregate}"),
+                LogicalPlan::Filter(filter) => writeln!(f, "{filter}"),
+                LogicalPlan::Group(group) => writeln!(f, "{group}"),
+                LogicalPlan::IndexScan(index_scan) => writeln!(f, "{index_scan}"),
+                LogicalPlan::Join(join) => writeln!(f, "{join}"),
+                LogicalPlan::Projection(projection) => writeln!(f, "{projection}"),
+                LogicalPlan::Scan(scan) => writeln!(f, "{scan}"),
+            }?;
 
-        let (lhs, rhs) = plan.inputs();
-        if let Some(plan) = lhs {
-            output.push_str(&format_logical_plan(plan.as_ref(), indent + 1));
-        }
-        if let Some(plan) = rhs {
-            output.push_str(&format_logical_plan(plan.as_ref(), indent + 1));
+            let (lhs, rhs) = plan.inputs();
+            if let Some(plan) = lhs {
+                fmt(f, &plan, indent + 1)?;
+            }
+            if let Some(plan) = rhs {
+                fmt(f, &plan, indent + 1)?;
+            }
+
+            Ok(())
         }
 
-        output
+        fmt(f, self, 0)
+    }
+}
+
+impl LogicalPlan {
+    pub fn inputs(&self) -> LogicalPlanInputs<'_> {
+        match self {
+            LogicalPlan::Aggregate(aggregate) => (Some(aggregate.input.as_ref()), None),
+            LogicalPlan::Filter(filter) => (Some(filter.input.as_ref()), None),
+            LogicalPlan::Group(group) => (Some(group.input.as_ref()), None),
+            LogicalPlan::IndexScan(_) => (None, None),
+            LogicalPlan::Join(join) => {
+                (Some(join.left_input.as_ref()), Some(join.right_input.as_ref()))
+            }
+            LogicalPlan::Projection(projection) => (Some(projection.input.as_ref()), None),
+            LogicalPlan::Scan(_) => (None, None),
+        }
     }
 
-    format_logical_plan(plan, 0)
+    pub fn schema(&self) -> &Schema {
+        match self {
+            LogicalPlan::Aggregate(aggregate) => aggregate.input.schema(),
+            LogicalPlan::Filter(filter) => filter.input.schema(),
+            LogicalPlan::Group(group) => group.input.schema(),
+            LogicalPlan::IndexScan(index_scan) => &index_scan.index.schema,
+            LogicalPlan::Join(join) => &join.schema,
+            LogicalPlan::Projection(projection) => &projection.schema,
+            LogicalPlan::Scan(scan) => &scan.schema,
+        }
+    }
 }
 
 fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
@@ -70,54 +114,54 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 pub struct Builder {
-    root: Box<dyn LogicalPlan>,
+    root: LogicalPlan,
+}
+
+pub fn scan<D: Disk>(table_info: &TableInfo<D>) -> Builder {
+    Builder { root: LogicalPlan::Scan(Scan::new(table_info)) }
+}
+
+pub fn index_scan(index_info: IndexInfo) -> Builder {
+    Builder { root: LogicalPlan::IndexScan(IndexScan::new(index_info)) }
 }
 
 impl Builder {
-    pub fn scan<D: Disk + 'static>(table_info: TableInfo<D>) -> Self {
-        Self { root: Box::new(Scan::new(table_info)) }
-    }
-
-    pub fn index_scan(index_info: IndexInfo) -> Self {
-        Self { root: Box::new(IndexScan::new(index_info)) }
-    }
-
     pub fn project(self, exprs: &[&str]) -> Self {
         let input = self.root;
         let projection = Projection::new(exprs, input);
 
-        Self { root: Box::new(projection) }
+        Self { root: LogicalPlan::Projection(projection) }
     }
 
     pub fn filter(self, expr: Expr) -> Self {
         let input = self.root;
         let filter = Filter::new(expr, input);
 
-        Self { root: Box::new(filter) }
+        Self { root: LogicalPlan::Filter(filter) }
     }
 
-    pub fn join(self, rhs: Builder, predicate: Expr) -> Self {
+    pub fn join(self, rhs: impl Into<LogicalPlan>, predicate: Expr) -> Self {
         let lhs = self.root;
-        let join = Join::new(JoinAlgorithm::NestedLoopJoin, predicate, lhs, rhs.root);
+        let join = Join::new(JoinAlgorithm::NestedLoop, predicate, lhs, rhs);
 
-        Self { root: Box::new(join) }
+        Self { root: LogicalPlan::Join(join) }
     }
 
     pub fn group(self, keys: Vec<Expr>) -> Self {
         let input = self.root;
         let group = Group::new(keys, input);
 
-        Self { root: Box::new(group) }
+        Self { root: LogicalPlan::Group(group) }
     }
 
     pub fn aggregate(self, function: Function, keys: Vec<Expr>) -> Self {
         let input = self.root;
         let aggregate = Aggregate::new(function, keys, input);
 
-        Self { root: Box::new(aggregate) }
+        Self { root: LogicalPlan::Aggregate(aggregate) }
     }
 
-    pub fn build(self) -> Box<dyn LogicalPlan> {
+    pub fn build(self) -> LogicalPlan {
         self.root
     }
 }
@@ -131,7 +175,7 @@ mod test {
             disk::Memory,
             logical_plan::{
                 expr::{ident, number, string},
-                format_logical_plan,
+                scan,
             },
             page::PAGE_SIZE,
             page_cache::PageCache,
@@ -159,24 +203,25 @@ mod test {
             .expect("there is no table")
             .clone();
 
-        let plan = Builder::scan(t1)
+        let plan = scan(&t1)
             .filter(ident("c1").is_not_null())
             .join(
-                Builder::scan(t2)
-                    .filter(number("1").eq(number("1").and(string("1").eq(string("1"))))),
+                scan(&t2)
+                    .filter(number("1").eq(number("1").and(string("1").eq(string("1")))))
+                    .build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
             .project(&["c1"])
             .build();
 
-        let have = format_logical_plan(&*plan);
+        let have = plan.to_string();
         let want = "\
 Projection [c1]
-	BlockNestedLoopJoin [t1.c3 = t2.c3]
-		Filter [c1 IS NOT NULL]
-			Scan t1 0
-		Filter [1 = 1 AND \"1\" = \"1\"]
-			Scan t2 1
+    NestedLoopJoin [t1.c3 = t2.c3]
+        Filter [c1 IS NOT NULL]
+            Scan t1 0
+        Filter [1 = 1 AND \"1\" = \"1\"]
+            Scan t2 1
 ";
 
         assert_eq!(want, have)
@@ -202,30 +247,32 @@ Projection [c1]
             .expect("there is no table")
             .clone();
 
-        let scan_a = Scan::new(t1);
+        let scan_a = Scan::new(&t1);
         let filter_expr_a = ident("c1").is_null().and(number("5").lt(ident("c2")));
-        let filter_a = Filter::new(filter_expr_a, Box::new(scan_a));
+        let filter_a = Filter::new(filter_expr_a, scan_a);
 
-        let scan_b = Scan::new(t2);
+        let scan_b = Scan::new(&t2);
         let filter_expr_b = ident("c5").is_not_null();
-        let filter_b = Filter::new(filter_expr_b, Box::new(scan_b));
+        let filter_b = Filter::new(filter_expr_b, scan_b);
 
         let join = Join::new(
-            JoinAlgorithm::NestedLoopJoin,
+            JoinAlgorithm::NestedLoop,
             ident("t1.c3").eq(ident("t2.c3")),
-            Box::new(filter_a),
-            Box::new(filter_b),
+            filter_a,
+            filter_b,
         );
-        let projection = Projection::new(&["c1", "c2"], Box::new(join));
+        let projection = Projection::new(&["c1", "c2"], join);
 
-        let have = format_logical_plan(&projection);
+        let plan = LogicalPlan::Projection(projection);
+
+        let have = plan.to_string();
         let want = "\
 Projection [c1,c2]
-	BlockNestedLoopJoin [t1.c3 = t2.c3]
-		Filter [c1 IS NULL AND 5 < c2]
-			Scan t1 0
-		Filter [c5 IS NOT NULL]
-			Scan t2 1
+    NestedLoopJoin [t1.c3 = t2.c3]
+        Filter [c1 IS NULL AND 5 < c2]
+            Scan t1 0
+        Filter [c5 IS NOT NULL]
+            Scan t2 1
 ";
 
         assert_eq!(want, have)

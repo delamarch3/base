@@ -1,11 +1,8 @@
-use {
-    super::{Expr, LogicalPlan, LogicalPlanInputs},
-    crate::catalog::Schema,
-};
+use super::{Expr, LogicalPlan};
 
 pub struct Filter {
     expr: Expr,
-    input: Box<dyn LogicalPlan>,
+    pub(super) input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Filter {
@@ -16,18 +13,14 @@ impl std::fmt::Display for Filter {
     }
 }
 
-impl LogicalPlan for Filter {
-    fn schema(&self) -> &Schema {
-        self.input.schema()
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
+impl From<Filter> for LogicalPlan {
+    fn from(filter: Filter) -> Self {
+        Self::Filter(filter)
     }
 }
 
 impl Filter {
-    pub fn new(expr: Expr, input: Box<dyn LogicalPlan>) -> Self {
-        Self { expr, input }
+    pub fn new(expr: Expr, input: impl Into<LogicalPlan>) -> Self {
+        Self { expr, input: Box::new(input.into()) }
     }
 }

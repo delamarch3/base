@@ -1,11 +1,8 @@
-use {
-    super::{write_iter, Expr, LogicalPlan, LogicalPlanInputs},
-    crate::catalog::Schema,
-};
+use super::{write_iter, Expr, LogicalPlan};
 
 pub struct Group {
     keys: Vec<Expr>,
-    input: Box<dyn LogicalPlan>,
+    pub(super) input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Group {
@@ -16,18 +13,14 @@ impl std::fmt::Display for Group {
     }
 }
 
-impl LogicalPlan for Group {
-    fn schema(&self) -> &Schema {
-        self.input.schema()
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
+impl From<Group> for LogicalPlan {
+    fn from(group: Group) -> Self {
+        Self::Group(group)
     }
 }
 
 impl Group {
-    pub fn new(keys: Vec<Expr>, input: Box<dyn LogicalPlan>) -> Self {
-        Self { keys, input }
+    pub fn new(keys: Vec<Expr>, input: impl Into<LogicalPlan>) -> Self {
+        Self { keys, input: Box::new(input.into()) }
     }
 }

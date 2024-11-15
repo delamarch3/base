@@ -1,12 +1,9 @@
-use {
-    super::{write_iter, Expr, Function, LogicalPlan, LogicalPlanInputs},
-    crate::catalog::Schema,
-};
+use super::{write_iter, Expr, Function, LogicalPlan};
 
 pub struct Aggregate {
     function: Function,
     keys: Vec<Expr>,
-    input: Box<dyn LogicalPlan>,
+    pub(super) input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Aggregate {
@@ -21,18 +18,14 @@ impl std::fmt::Display for Aggregate {
     }
 }
 
-impl LogicalPlan for Aggregate {
-    fn schema(&self) -> &Schema {
-        self.input.schema()
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
+impl From<Aggregate> for LogicalPlan {
+    fn from(aggregate: Aggregate) -> Self {
+        Self::Aggregate(aggregate)
     }
 }
 
 impl Aggregate {
-    pub fn new(function: Function, keys: Vec<Expr>, input: Box<dyn LogicalPlan>) -> Self {
-        Self { input, function, keys }
+    pub fn new(function: Function, keys: Vec<Expr>, input: impl Into<LogicalPlan>) -> Self {
+        Self { input: Box::new(input.into()), function, keys }
     }
 }

@@ -1,12 +1,12 @@
 use {
-    super::{write_iter, LogicalPlan, LogicalPlanInputs},
+    super::{write_iter, LogicalPlan},
     crate::catalog::Schema,
 };
 
 // TODO: keeping this simple for now but should be able to support expressions too
 pub struct Projection {
-    schema: Schema,
-    input: Box<dyn LogicalPlan>,
+    pub(super) schema: Schema,
+    pub(super) input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Projection {
@@ -17,18 +17,15 @@ impl std::fmt::Display for Projection {
     }
 }
 
-impl LogicalPlan for Projection {
-    fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (Some(&self.input), None)
+impl From<Projection> for LogicalPlan {
+    fn from(projection: Projection) -> Self {
+        Self::Projection(projection)
     }
 }
 
 impl Projection {
-    pub fn new(exprs: &[&str], input: Box<dyn LogicalPlan>) -> Self {
+    pub fn new(exprs: &[&str], input: impl Into<LogicalPlan>) -> Self {
+        let input = Box::new(input.into());
         let schema = input.schema().filter(exprs);
         Self { schema, input }
     }

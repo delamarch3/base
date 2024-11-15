@@ -1,48 +1,33 @@
 use crate::{
-    catalog::TableInfo,
+    catalog::{TableInfo, OID},
     disk::{Disk, FileSystem},
 };
 
-use {
-    super::{LogicalPlan, LogicalPlanInputs},
-    crate::catalog::Schema,
-};
+use {super::LogicalPlan, crate::catalog::Schema};
 
-// TODO: scan doesn't need the actual table pointer, could remove it later to get rid of the generic too
-pub struct Scan<D: Disk = FileSystem> {
-    table_info: TableInfo<D>,
+pub struct Scan {
+    name: String,
+    oid: OID,
+    pub(super) schema: Schema,
 }
 
-impl<D> std::fmt::Display for Scan<D>
-where
-    D: Disk,
-{
+impl std::fmt::Display for Scan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let TableInfo { name, oid, .. } = &self.table_info;
-        write!(f, "Scan {} {}", name, oid)?;
+        write!(f, "Scan {} {}", self.name, self.oid)?;
 
         Ok(())
     }
 }
 
-impl<D> LogicalPlan for Scan<D>
-where
-    D: Disk,
-{
-    fn schema(&self) -> &Schema {
-        &self.table_info.schema
-    }
-
-    fn inputs(&self) -> LogicalPlanInputs {
-        (None, None)
+impl From<Scan> for LogicalPlan {
+    fn from(scan: Scan) -> Self {
+        Self::Scan(scan)
     }
 }
 
-impl<D> Scan<D>
-where
-    D: Disk,
-{
-    pub fn new(table_info: TableInfo<D>) -> Self {
-        Self { table_info }
+impl Scan {
+    pub fn new<D: Disk>(table_info: &TableInfo<D>) -> Self {
+        let TableInfo { name, schema, oid, .. } = table_info;
+        Self { name: name.clone(), oid: *oid, schema: schema.clone() }
     }
 }
