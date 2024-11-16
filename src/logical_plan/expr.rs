@@ -1,3 +1,5 @@
+use crate::catalog::Type;
+
 // TODO: all of this will come from the parser and be used as is
 use super::write_iter;
 
@@ -82,6 +84,17 @@ impl<'a> From<&'a str> for Value {
 impl From<bool> for Value {
     fn from(bool: bool) -> Self {
         Self::Bool(bool)
+    }
+}
+
+impl From<&Value> for Type {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Number(_) => Type::Int,
+            Value::String(_) => Type::Varchar,
+            Value::Bool(_) => Type::Bool,
+            Value::Null => todo!(),
+        }
     }
 }
 

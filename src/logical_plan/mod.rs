@@ -1,7 +1,9 @@
-use self::expr::{Expr, Function};
-use crate::{
-    catalog::{IndexInfo, Schema, TableInfo},
-    disk::Disk,
+use {
+    self::expr::{Expr, Function, FunctionName},
+    crate::{
+        catalog::{IndexInfo, Schema, TableInfo},
+        disk::Disk,
+    },
 };
 
 pub mod expr;
@@ -27,6 +29,27 @@ pub use {
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
 pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
+
+pub enum LogicalPlanError {
+    InvalidIdent(String),
+}
+
+impl std::error::Error for LogicalPlanError {}
+
+impl std::fmt::Display for LogicalPlanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "logical plan error: ")?;
+        match self {
+            LogicalPlanError::InvalidIdent(ident) => write!(f, "invalid identifier: {}", ident),
+        }
+    }
+}
+
+impl std::fmt::Debug for LogicalPlanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
 
 pub enum LogicalPlan {
     Aggregate(Aggregate),
@@ -126,11 +149,11 @@ pub fn index_scan(index_info: IndexInfo) -> Builder {
 }
 
 impl Builder {
-    pub fn project(self, exprs: &[&str]) -> Self {
+    pub fn project(self, exprs: &[Expr]) -> Result<Self, LogicalPlanError> {
         let input = self.root;
-        let projection = Projection::new(exprs, input);
+        let projection = Projection::new(exprs, input)?;
 
-        Self { root: LogicalPlan::Projection(projection) }
+        Ok(Self { root: LogicalPlan::Projection(projection) })
     }
 
     pub fn filter(self, expr: Expr) -> Self {
@@ -174,7 +197,7 @@ mod test {
             catalog::{Catalog, Type},
             disk::Memory,
             logical_plan::{
-                expr::{ident, lit},
+                expr::{concat, ident, lit},
                 scan,
             },
             page::PAGE_SIZE,
@@ -184,7 +207,7 @@ mod test {
     };
 
     #[test]
-    fn test_builder() {
+    fn test_builder() -> Result<(), LogicalPlanError> {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
@@ -209,12 +232,12 @@ mod test {
                 scan(&t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
-            .project(&["c1"])
+            .project(&[ident("c1"), concat(vec![lit(1), lit("2")]), ident("c5").is_null()])?
             .build();
 
         let have = plan.to_string();
         let want = "\
-Projection [c1]
+Projection [c1, CONCAT(1,\"2\"), c5 IS NULL]
     NestedLoopJoin [t1.c3 = t2.c3]
         Filter [c1 IS NOT NULL]
             Scan t1 0
@@ -222,11 +245,13 @@ Projection [c1]
             Scan t2 1
 ";
 
-        assert_eq!(want, have)
+        assert_eq!(want, have);
+
+        Ok(())
     }
 
     #[test]
-    fn test_format_logical_plan() {
+    fn test_format_logical_plan() -> Result<(), LogicalPlanError> {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();
@@ -259,13 +284,13 @@ Projection [c1]
             filter_a,
             filter_b,
         );
-        let projection = Projection::new(&["c1", "c2"], join);
+        let projection = Projection::new(&[ident("c1"), ident("c2")], join)?;
 
         let plan = LogicalPlan::Projection(projection);
 
         let have = plan.to_string();
         let want = "\
-Projection [c1,c2]
+Projection [c1, c2]
     NestedLoopJoin [t1.c3 = t2.c3]
         Filter [c1 IS NULL AND 5 < c2]
             Scan t1 0
@@ -273,6 +298,8 @@ Projection [c1,c2]
             Scan t2 1
 ";
 
-        assert_eq!(want, have)
+        assert_eq!(want, have);
+
+        Ok(())
     }
 }

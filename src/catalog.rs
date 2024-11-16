@@ -55,13 +55,19 @@ impl Column {
     }
 }
 
+#[derive(PartialEq, Clone, Debug, Default)]
+pub struct Schema {
+    pub columns: Vec<Column>,
+    tuple_size: usize,
+}
+
 impl<const N: usize> From<[(&str, Type); N]> for Schema {
-    fn from(value: [(&str, Type); N]) -> Self {
+    fn from(fields: [(&str, Type); N]) -> Self {
         let mut columns = Vec::new();
 
         let mut offset = 0;
-        for (name, ty) in value {
-            columns.push(Column { name: name.into(), ty, offset });
+        for (name, ty) in fields {
+            columns.push(Column { name: name.to_string(), ty, offset });
             offset += ty.size();
         }
 
@@ -69,10 +75,18 @@ impl<const N: usize> From<[(&str, Type); N]> for Schema {
     }
 }
 
-#[derive(PartialEq, Clone, Debug, Default)]
-pub struct Schema {
-    pub columns: Vec<Column>,
-    tuple_size: usize,
+impl From<Vec<(String, Type)>> for Schema {
+    fn from(fields: Vec<(String, Type)>) -> Self {
+        let mut columns = Vec::new();
+
+        let mut offset = 0;
+        for (name, ty) in fields {
+            columns.push(Column { name, ty, offset });
+            offset += ty.size();
+        }
+
+        Self { tuple_size: offset, columns }
+    }
 }
 
 impl Schema {
@@ -117,6 +131,10 @@ impl Schema {
         schema.tuple_size += other.tuple_size;
 
         schema
+    }
+
+    pub fn find(&self, column_name: &str) -> Option<&Column> {
+        self.columns.iter().find(|Column { name, .. }| name == column_name)
     }
 
     pub fn tuple_size(&self) -> usize {
