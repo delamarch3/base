@@ -111,8 +111,7 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
         if ty == &Type::Varchar {
             let (var_offset, length) = (
                 u16::from_be_bytes((&data[*offset..*offset + 2]).try_into().unwrap()) as usize,
-                u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap())
-                    as usize,
+                u16::from_be_bytes((&data[*offset + 2..*offset + 4]).try_into().unwrap()) as usize,
             );
 
             // Data to add on at the end of the tuple

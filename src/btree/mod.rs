@@ -495,7 +495,9 @@ mod test {
         pc.flush_all_pages()?;
 
         for (k, _) in first_half {
-            if let Some(_) = btree.get(k)? { panic!("Unexpected deleted key: {:x?}", k.0) };
+            if btree.get(k)?.is_some() {
+                panic!("Unexpected deleted key: {:x?}", k.0)
+            };
         }
 
         // Make sure other half can still be accessed
