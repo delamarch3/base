@@ -267,7 +267,7 @@ mod test {
         super::{eval, EvalError::*},
         crate::{
             catalog::Type,
-            logical_plan::expr::{concat, contains, ident, number, string},
+            logical_plan::expr::{concat, contains, ident, lit},
             table::tuple::{Builder as TupleBuilder, Value},
         },
     };
@@ -289,10 +289,10 @@ mod test {
         };
     }
 
-    test_eval!(t1, string("test").eq(string("test")), Ok(Value::Bool(true)));
-    test_eval!(t2, number("22").eq(number("23")), Ok(Value::Bool(false)));
-    test_eval!(t3, number("22").lt(number("23")), Ok(Value::Bool(true)));
-    test_eval!(t4, number("22").and(number("23")), Err(UnsupportedOperation));
+    test_eval!(t1, lit("test").eq(lit("test")), Ok(Value::Bool(true)));
+    test_eval!(t2, lit(22).eq(lit(23)), Ok(Value::Bool(false)));
+    test_eval!(t3, lit(22).lt(lit(23)), Ok(Value::Bool(true)));
+    test_eval!(t4, lit(22).and(lit(23)), Err(UnsupportedOperation));
     test_eval!(t5, ident("c1"), Err(UnknownIdentifier));
 
     test_eval!(
@@ -305,7 +305,7 @@ mod test {
 
     test_eval!(
         t7,
-        ident("c1").eq(number("1")),
+        ident("c1").eq(lit(1)),
         [("c1", Type::Int)],
         TupleBuilder::new().int(1).build(),
         Ok(Value::Bool(true))
@@ -313,7 +313,7 @@ mod test {
 
     test_eval!(
         t8,
-        ident("c1").eq(string("1")),
+        ident("c1").eq(lit("1")),
         [("c1", Type::Int)],
         TupleBuilder::new().int(1).build(),
         Err(UnsupportedOperation)
@@ -321,7 +321,7 @@ mod test {
 
     test_eval!(
         t9,
-        ident("c1").eq(string("a")).and(ident("c2").between(number("20"), number("30"))),
+        ident("c1").eq(lit("a")).and(ident("c2").between(lit(20), lit(30))),
         [("c1", Type::Varchar), ("c2", Type::Int)],
         TupleBuilder::new().varchar("a").int(20).build(),
         Ok(Value::Bool(true))
@@ -329,7 +329,7 @@ mod test {
 
     test_eval!(
         t10,
-        contains(vec![ident("c1"), string("sd")]),
+        contains(vec![ident("c1"), lit("sd")]),
         [("c1", Type::Varchar)],
         TupleBuilder::new().varchar("asdf").build(),
         Ok(Value::Bool(true))
@@ -337,7 +337,7 @@ mod test {
 
     test_eval!(
         t11,
-        concat(vec![ident("c1"), ident("c2"), string("c"), number("9")]),
+        concat(vec![ident("c1"), ident("c2"), lit("c"), lit(9)]),
         [("c1", Type::Varchar), ("c2", Type::Varchar)],
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
@@ -345,10 +345,7 @@ mod test {
 
     test_eval!(
         t12,
-        concat(vec![
-            concat(vec![ident("c1"), ident("c2")]),
-            concat(vec![string("c"), number("9")])
-        ]),
+        concat(vec![concat(vec![ident("c1"), ident("c2")]), concat(vec![lit("c"), lit(9)])]),
         [("c1", Type::Varchar), ("c2", Type::Varchar)],
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))

@@ -174,7 +174,7 @@ mod test {
             catalog::{Catalog, Type},
             disk::Memory,
             logical_plan::{
-                expr::{ident, number, string},
+                expr::{ident, lit},
                 scan,
             },
             page::PAGE_SIZE,
@@ -206,9 +206,7 @@ mod test {
         let plan = scan(&t1)
             .filter(ident("c1").is_not_null())
             .join(
-                scan(&t2)
-                    .filter(number("1").eq(number("1").and(string("1").eq(string("1")))))
-                    .build(),
+                scan(&t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
             .project(&["c1"])
@@ -248,7 +246,7 @@ Projection [c1]
             .clone();
 
         let scan_a = Scan::new(&t1);
-        let filter_expr_a = ident("c1").is_null().and(number("5").lt(ident("c2")));
+        let filter_expr_a = ident("c1").is_null().and(lit(5).lt(ident("c2")));
         let filter_a = Filter::new(filter_expr_a, scan_a);
 
         let scan_b = Scan::new(&t2);

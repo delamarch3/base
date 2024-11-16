@@ -61,6 +61,30 @@ impl std::fmt::Display for Value {
     }
 }
 
+impl From<i32> for Value {
+    fn from(int: i32) -> Self {
+        Self::Number(int.to_string())
+    }
+}
+
+impl From<f32> for Value {
+    fn from(float: f32) -> Self {
+        Self::Number(float.to_string())
+    }
+}
+
+impl<'a> From<&'a str> for Value {
+    fn from(string: &'a str) -> Self {
+        Self::String(string.to_owned())
+    }
+}
+
+impl From<bool> for Value {
+    fn from(bool: bool) -> Self {
+        Self::Bool(bool)
+    }
+}
+
 pub enum Expr {
     Ident(String),
     Value(Value), // TODO: keep the parser values, translate to schema values later
@@ -132,16 +156,8 @@ pub fn ident(ident: &str) -> Expr {
     Expr::Ident(ident.into())
 }
 
-pub fn number(int: &str) -> Expr {
-    Expr::Value(Value::Number(int.into()))
-}
-
-pub fn string(string: &str) -> Expr {
-    Expr::Value(Value::String(string.into()))
-}
-
-pub fn bool(bool: bool) -> Expr {
-    Expr::Value(Value::Bool(bool))
+pub fn lit(value: impl Into<Value>) -> Expr {
+    Expr::Value(value.into())
 }
 
 pub fn null() -> Expr {
