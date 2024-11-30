@@ -7,9 +7,9 @@ pub mod logical_plan;
 pub mod page;
 pub mod page_cache;
 pub mod pair;
-pub mod parser;
 pub mod physical_plan;
 pub mod replacer;
+pub mod sql;
 pub mod storable;
 pub mod table;
 
