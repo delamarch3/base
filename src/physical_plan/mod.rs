@@ -1,9 +1,7 @@
-use crate::{
-    catalog::{Column, Schema, Type},
-    get_value,
-    logical_plan::expr::{Expr, Function, FunctionName, Op, Value as Literal},
-    table::tuple::{Data as TupleData, Value},
-};
+use crate::catalog::{Column, Schema, Type};
+use crate::get_value;
+use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op};
+use crate::table::tuple::{Data as TupleData, Value};
 
 macro_rules! get_value {
     ($value:ident, $type:tt) => {
@@ -27,20 +25,26 @@ use EvalError::*;
 fn eval(expr: &Expr, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
     match &expr {
         Expr::Ident(ident) => eval_ident(ident, schema, tuple),
-        Expr::Value(literal) => eval_literal(literal),
-        Expr::IsNull(expr) => eval_is_null(expr, schema, tuple),
-        Expr::IsNotNull(expr) => eval_is_not_null(expr, schema, tuple),
+        Expr::Literal(literal) => eval_literal(literal),
+        Expr::IsNull { expr, negated } => eval_is_null(expr, *negated, schema, tuple),
         Expr::InList { expr, list, negated } => eval_in_list(expr, list, *negated, schema, tuple),
         Expr::Between { expr, negated, low, high } => {
             eval_between(expr, low, high, *negated, schema, tuple)
         }
         Expr::BinaryOp { left, op, right } => eval_binary_op(left, *op, right, schema, tuple),
         Expr::Function(function) => eval_function(function, schema, tuple),
+        Expr::Wildcard => todo!(),
+        Expr::QualifiedWildcard(_) => todo!(),
+        Expr::SubQuery(_) => todo!(),
     }
 }
 
-fn eval_ident(ident: &str, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    let Some(column) = schema.columns.iter().find(|Column { name, .. }| name == ident) else {
+fn eval_ident(ident: &Ident, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
+    let Some(column) = schema
+        .columns
+        .iter()
+        .find(|Column { name, .. }| name.as_str() == ident.to_string().as_str())
+    else {
         Err(UnknownIdentifier)?
     };
 
@@ -53,6 +57,9 @@ fn eval_literal(literal: &Literal) -> Result<Value, EvalError> {
             let int = number.parse::<i32>().map_err(|_| InvalidNumber)?;
             Value::Int(int)
         }
+        Literal::Decimal(_) => {
+            todo!()
+        }
         Literal::String(string) => Value::Varchar(string.to_owned()),
         Literal::Bool(bool) => Value::Bool(*bool),
         Literal::Null => todo!(),
@@ -62,7 +69,12 @@ fn eval_literal(literal: &Literal) -> Result<Value, EvalError> {
 }
 
 // TODO: implement these once NULL has been implemented
-fn eval_is_null(expr: &Expr, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
+fn eval_is_null(
+    expr: &Expr,
+    negated: bool,
+    schema: &Schema,
+    tuple: &TupleData,
+) -> Result<Value, EvalError> {
     let value = eval(expr, schema, tuple)?;
     todo!("value == null?")
 }

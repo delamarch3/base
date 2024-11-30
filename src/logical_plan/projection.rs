@@ -1,7 +1,6 @@
-use {
-    super::{write_iter, Expr, FunctionName, LogicalPlan, LogicalPlanError, LogicalPlanError::*},
-    crate::catalog::{Column, Schema, Type},
-};
+use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::catalog::{Column, Schema, Type};
+use crate::sql::{Expr, FunctionName};
 
 pub struct Projection {
     pub(super) schema: Schema,
@@ -27,33 +26,64 @@ impl Projection {
         let input = Box::new(input.into());
 
         // TODO: use aliases from the parser
-        // TODO: validate identifiers inside expressions
         let schema = exprs
             .iter()
-            .map(|expr| match expr {
-                Expr::Ident(ident) => match input.schema().find(ident) {
-                    Some(Column { name, ty, .. }) => Ok((name.clone(), *ty)),
-                    None => Err(InvalidIdent(ident.clone())),
-                },
-                expr @ Expr::Value(value) => Ok((expr.to_string(), value.into())),
-                expr @ Expr::IsNull(_)
-                | expr @ Expr::IsNotNull(_)
-                | expr @ Expr::InList { .. }
-                | expr @ Expr::Between { .. }
-                | expr @ Expr::BinaryOp { .. } => Ok((expr.to_string(), Type::Bool)),
-                Expr::Function(function) => match function.name {
-                    FunctionName::Min
-                    | FunctionName::Max
-                    | FunctionName::Sum
-                    | FunctionName::Avg
-                    | FunctionName::Count => Ok((function.to_string(), Type::Int)),
-                    FunctionName::Contains => Ok((function.to_string(), Type::Bool)),
-                    FunctionName::Concat => Ok((function.to_string(), Type::Varchar)),
-                },
-            })
-            .collect::<Result<Vec<(String, Type)>, LogicalPlanError>>()?
+            .map(|expr| validate_expr(expr, input.schema()))
+            .collect::<Result<Vec<_>, _>>()?
             .into();
 
         Ok(Self { schema, input })
     }
+}
+
+fn validate_expr(expr: &Expr, schema: &Schema) -> Result<(String, Type), LogicalPlanError> {
+    let column = match expr {
+        Expr::Ident(ident) => match schema.find(ident.to_string().as_str()) {
+            Some(Column { name, ty, .. }) => (name.clone(), *ty),
+            None => Err(InvalidIdent(ident.clone()))?,
+        },
+        Expr::Literal(literal) => (expr.to_string(), literal.into()),
+        Expr::IsNull { expr: e, negated: _ } => {
+            let _ = validate_expr(e, schema)?;
+            (expr.to_string(), Type::Bool)
+        }
+        Expr::InList { expr: e, list, .. } => {
+            list.iter().map(|e| validate_expr(e, schema)).collect::<Result<Vec<_>, _>>()?;
+            validate_expr(e, schema)?;
+            (expr.to_string(), Type::Bool)
+        }
+        Expr::Between { expr: e, low, high, .. } => {
+            validate_expr(e, schema)?;
+            validate_expr(low, schema)?;
+            validate_expr(high, schema)?;
+            (expr.to_string(), Type::Bool)
+        }
+        Expr::BinaryOp { left, right, .. } => {
+            validate_expr(left, schema)?;
+            validate_expr(right, schema)?;
+            (expr.to_string(), Type::Bool)
+        }
+        Expr::Function(function) => {
+            function
+                .args
+                .iter()
+                .map(|expr| validate_expr(expr, &schema))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            match function.name {
+                FunctionName::Min
+                | FunctionName::Max
+                | FunctionName::Sum
+                | FunctionName::Avg
+                | FunctionName::Count => (function.to_string(), Type::Int),
+                FunctionName::Contains => (function.to_string(), Type::Bool),
+                FunctionName::Concat => (function.to_string(), Type::Varchar),
+            }
+        }
+        Expr::SubQuery(_) => todo!(),
+        Expr::Wildcard => todo!(),
+        Expr::QualifiedWildcard(_) => todo!(),
+    };
+
+    Ok(column)
 }

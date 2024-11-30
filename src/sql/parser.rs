@@ -10,7 +10,7 @@ pub enum Statement {
 }
 
 #[derive(PartialEq, Debug)]
-enum Literal {
+pub enum Literal {
     Number(String),
     Decimal(String),
     String(String),
@@ -30,8 +30,8 @@ impl std::fmt::Display for Literal {
     }
 }
 
-#[derive(PartialEq, Debug)]
-enum Op {
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum Op {
     Eq,
     Neq,
     Lt,
@@ -57,8 +57,8 @@ impl std::fmt::Display for Op {
     }
 }
 
-#[derive(PartialEq, Debug)]
-enum Ident {
+#[derive(PartialEq, Debug, Clone)]
+pub enum Ident {
     Single(String),
     Compound(Vec<String>),
 }
@@ -73,7 +73,7 @@ impl std::fmt::Display for Ident {
 }
 
 #[derive(PartialEq, Debug)]
-enum FunctionName {
+pub enum FunctionName {
     Min,
     Max,
     Sum,
@@ -99,10 +99,10 @@ impl std::fmt::Display for FunctionName {
 }
 
 #[derive(PartialEq, Debug)]
-struct Function {
-    name: FunctionName,
-    args: Vec<Expr>,
-    distinct: bool,
+pub struct Function {
+    pub name: FunctionName,
+    pub args: Vec<Expr>,
+    pub distinct: bool,
 }
 
 impl std::fmt::Display for Function {
@@ -133,7 +133,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
 }
 
 #[derive(PartialEq, Debug)]
-enum Expr {
+pub enum Expr {
     Wildcard,
     QualifiedWildcard(Ident),
     Ident(Ident),
@@ -184,7 +184,7 @@ impl std::fmt::Display for Expr {
 }
 
 #[derive(PartialEq, Debug)]
-struct Query {
+pub struct Query {
     projection: Vec<SelectItem>,
     from: FromTable,
     joins: Vec<Join>,
@@ -193,38 +193,38 @@ struct Query {
 }
 
 #[derive(PartialEq, Debug)]
-enum FromTable {
+pub enum FromTable {
     Table { name: Ident, alias: Option<String> },
     Derived { query: Box<Query>, alias: Option<String> },
 }
 
 #[derive(PartialEq, Debug)]
-enum JoinConstraint {
+pub enum JoinConstraint {
     On(Expr),
     Using(Vec<Ident>),
 }
 
 #[derive(PartialEq, Debug)]
-enum JoinType {
+pub enum JoinType {
     Inner,
     // TODO: add more joins
 }
 
 #[derive(PartialEq, Debug)]
-struct Join {
+pub struct Join {
     from: FromTable,
     ty: JoinType,
     constraint: JoinConstraint,
 }
 
 #[derive(PartialEq, Debug)]
-struct OrderByExpr {
+pub struct OrderByExpr {
     exprs: Vec<Expr>,
     desc: bool,
 }
 
 #[derive(PartialEq, Debug)]
-enum SelectItem {
+pub enum SelectItem {
     Expr(Expr),
     AliasedExpr { expr: Expr, alias: String },
     QualifiedWildcard(Ident),
@@ -270,13 +270,13 @@ pub struct Create {
 }
 
 #[derive(PartialEq, Debug)]
-enum ColumnType {
+pub enum ColumnType {
     Int,
     Varchar(u16),
 }
 
 #[derive(PartialEq, Debug)]
-struct ColumnDef {
+pub struct ColumnDef {
     ty: ColumnType,
     name: String,
     // TODO: constraints
@@ -319,7 +319,7 @@ impl Parser {
         Ok(Self { tokens, index: 0 })
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Statement>> {
+    pub fn parse_statements(&mut self) -> Result<Vec<Statement>> {
         let mut statements = Vec::new();
         loop {
             let (token, location) = self.peek();
@@ -806,7 +806,7 @@ impl Parser {
         Ok(Expr::InList { expr: Box::new(expr), list, negated })
     }
 
-    fn parse_ident(&mut self) -> Result<Ident> {
+    pub fn parse_ident(&mut self) -> Result<Ident> {
         let (token, location) = self.next();
         let Token::Ident(a) = token else { Err(Unexpected(&token, &location))? };
 
@@ -970,7 +970,7 @@ mod test {
             ],
         })];
 
-        let have = Parser::new(input).unwrap().parse().unwrap();
+        let have = Parser::new(input).unwrap().parse_statements().unwrap();
         assert_eq!(want, have)
     }
 

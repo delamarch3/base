@@ -1,10 +1,6 @@
-use {
-    self::expr::{Expr, Function, FunctionName},
-    crate::{
-        catalog::{IndexInfo, Schema, TableInfo},
-        disk::Disk,
-    },
-};
+use crate::catalog::{IndexInfo, Schema, TableInfo};
+use crate::disk::Disk;
+use crate::sql::{Expr, Function, Ident};
 
 pub mod expr;
 
@@ -31,7 +27,7 @@ pub use {
 pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
 
 pub enum LogicalPlanError {
-    InvalidIdent(String),
+    InvalidIdent(Ident),
 }
 
 impl std::error::Error for LogicalPlanError {}
