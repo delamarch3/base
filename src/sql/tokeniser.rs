@@ -156,10 +156,8 @@ impl std::fmt::Display for TokeniserError {
 
 impl std::error::Error for TokeniserError {}
 
-impl TokeniserError {
-    fn unexpected(want: char, have: Option<char>, location: Location) -> Self {
-        Self::Unexpected { want, have: have.unwrap_or(' '), location }
-    }
+fn unexpected(want: char, have: Option<char>, location: Location) -> TokeniserError {
+    TokeniserError::Unexpected { want, have: have.unwrap_or(' '), location }
 }
 
 pub(crate) struct Tokeniser<'a> {
@@ -221,9 +219,7 @@ impl<'a> Iterator for TokeniserIter<'a> {
                     let s = self.tokeniser.peeking_take_while(|c| c != '"');
                     match self.tokeniser.next_char() {
                         Some('"') => Ok((Token::StringLiteral(s), location)),
-                        have => {
-                            Err(TokeniserError::unexpected('"', have, self.tokeniser.location()))
-                        }
+                        have => Err(unexpected('"', have, self.tokeniser.location())),
                     }
                 }
                 '`' => {
@@ -233,9 +229,7 @@ impl<'a> Iterator for TokeniserIter<'a> {
                     });
                     match self.tokeniser.next_char() {
                         Some('`') => Ok((Token::Ident(s), location)),
-                        have => {
-                            Err(TokeniserError::unexpected('`', have, self.tokeniser.location()))
-                        }
+                        have => Err(unexpected('`', have, self.tokeniser.location())),
                     }
                 }
                 '>' => {
@@ -256,7 +250,7 @@ impl<'a> Iterator for TokeniserIter<'a> {
                     self.tokeniser.next_char();
                     match self.tokeniser.next_char() {
                         Some('=') => self.tokeniser.consume(Token::Neq, location),
-                        have => Err(TokeniserError::unexpected('`', have, location)),
+                        have => Err(unexpected('`', have, location)),
                     }
                 }
                 '=' => self.tokeniser.consume(Token::Eq, location),
