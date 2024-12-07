@@ -229,6 +229,17 @@ pub enum SelectItem {
     Wildcard,
 }
 
+impl std::fmt::Display for SelectItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectItem::Expr(expr) => write!(f, "{expr}"),
+            SelectItem::AliasedExpr { expr, alias } => write!(f, "{expr} AS {alias}"),
+            SelectItem::QualifiedWildcard(ident) => write!(f, "{ident}.*"),
+            SelectItem::Wildcard => write!(f, "*"),
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct Select {
     pub body: Query,

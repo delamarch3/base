@@ -1,8 +1,9 @@
 use crate::catalog::{IndexInfo, Schema, TableInfo};
 use crate::disk::Disk;
-use crate::sql::{Expr, Function, Ident};
+use crate::sql::{Expr, Function, Ident, SelectItem};
 
 pub mod expr;
+pub mod planner;
 
 mod aggregate;
 mod filter;
@@ -132,6 +133,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
 
     Ok(())
 }
+
 pub struct Builder {
     root: LogicalPlan,
 }
@@ -145,11 +147,15 @@ pub fn index_scan(index_info: IndexInfo) -> Builder {
 }
 
 impl Builder {
-    pub fn project(self, exprs: &[Expr]) -> Result<Self, LogicalPlanError> {
-        let input = self.root;
-        let projection = Projection::new(exprs, input)?;
+    pub fn schema(&self) -> &Schema {
+        self.root.schema()
+    }
 
-        Ok(Self { root: LogicalPlan::Projection(projection) })
+    pub fn project(self, projection: &[SelectItem]) -> Self {
+        let input = self.root;
+        let projection = Projection::new(projection, input);
+
+        Self { root: LogicalPlan::Projection(projection) }
     }
 
     pub fn filter(self, expr: Expr) -> Self {
@@ -180,6 +186,14 @@ impl Builder {
         Self { root: LogicalPlan::Aggregate(aggregate) }
     }
 
+    pub fn order_by(self, exprs: &[Expr], desc: bool) -> Self {
+        todo!()
+    }
+
+    pub fn limit(self, expr: Expr) -> Self {
+        todo!()
+    }
+
     pub fn build(self) -> LogicalPlan {
         self.root
     }
@@ -193,7 +207,7 @@ mod test {
             catalog::{Catalog, Type},
             disk::Memory,
             logical_plan::{
-                expr::{concat, ident, lit},
+                expr::{alias, concat, ident, lit, wildcard},
                 scan,
             },
             page::PAGE_SIZE,
@@ -228,12 +242,18 @@ mod test {
                 scan(&t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
-            .project(&[ident("c1"), concat(vec![lit(1), lit("2")]), ident("c5").is_null()])?
+            .project(&[
+                ident("c1").into(),
+                concat(vec![lit(1), lit("2")]).into(),
+                ident("c5").is_null().into(),
+                alias(lit(1), "one"),
+                wildcard(),
+            ])
             .build();
 
         let have = plan.to_string();
         let want = "\
-Projection [c1, CONCAT(1,\"2\"), c5 IS NULL]
+Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, one, c1, c2, c3, c3, c4, c5]
     NestedLoopJoin [t1.c3 = t2.c3]
         Filter [c1 IS NOT NULL]
             Scan t1 0
@@ -280,7 +300,7 @@ Projection [c1, CONCAT(1,\"2\"), c5 IS NULL]
             filter_a,
             filter_b,
         );
-        let projection = Projection::new(&[ident("c1"), ident("c2")], join)?;
+        let projection = Projection::new(&[ident("c1").into(), ident("c2").into()], join);
 
         let plan = LogicalPlan::Projection(projection);
 

@@ -110,7 +110,7 @@ impl Schema {
         Self { columns, tuple_size }
     }
 
-    /// Returns a new `Schema` where the offsets have been adjusted so that each column is packed
+    /// Returns a new `Schema` where the offsets have been adjusted so that all columns are packed
     /// together
     pub fn compact(&self) -> Self {
         let mut schema = self.clone();
@@ -147,6 +147,36 @@ impl Schema {
 
     pub fn iter(&self) -> std::slice::Iter<'_, Column> {
         self.columns.iter()
+    }
+}
+
+pub struct SchemaBuilder {
+    columns: Vec<(String, Type)>,
+}
+
+impl SchemaBuilder {
+    pub fn new() -> Self {
+        Self { columns: vec![] }
+    }
+
+    pub fn append(&mut self, column: (String, Type)) -> &mut Self {
+        self.columns.push(column);
+        self
+    }
+
+    pub fn append_n(&mut self, column: &[(String, Type)]) -> &mut Self {
+        self.columns.extend(column.iter().cloned());
+        self
+    }
+
+    pub fn append_schema(&mut self, schema: &Schema) -> &mut Self {
+        self.columns
+            .extend(schema.columns.iter().cloned().map(|Column { name, ty, .. }| (name, ty)));
+        self
+    }
+
+    pub fn build(self) -> Schema {
+        self.columns.into()
     }
 }
 

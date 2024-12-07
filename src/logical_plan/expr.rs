@@ -1,5 +1,5 @@
 use crate::catalog::Type;
-use crate::sql::{Expr, Function, FunctionName, Literal, Op, Parser};
+use crate::sql::{Expr, Function, FunctionName, Literal, Op, Parser, SelectItem};
 
 impl From<i32> for Literal {
     fn from(int: i32) -> Self {
@@ -35,6 +35,20 @@ impl From<&Literal> for Type {
             Literal::Null => todo!(),
         }
     }
+}
+
+impl From<Expr> for SelectItem {
+    fn from(expr: Expr) -> Self {
+        SelectItem::Expr(expr)
+    }
+}
+
+pub fn alias(expr: Expr, alias: impl Into<String>) -> SelectItem {
+    SelectItem::AliasedExpr { expr, alias: alias.into() }
+}
+
+pub fn wildcard() -> SelectItem {
+    SelectItem::Wildcard
 }
 
 pub fn ident(ident: &str) -> Expr {
