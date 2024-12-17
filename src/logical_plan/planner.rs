@@ -1,25 +1,28 @@
-use crate::{
-    catalog::Catalog,
-    logical_plan::scan,
-    sql::{
-        Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select,
-        Statement,
-    },
+use crate::catalog::Catalog;
+use crate::disk::Disk;
+use crate::logical_plan::scan;
+use crate::sql::{
+    Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
 use super::{Builder as LogicalPlanBuilder, LogicalPlan};
 
+#[derive(Debug)]
 pub enum PlannerError {
     NotImplemented(String),
     UnknownTable(String),
 }
 use PlannerError::*;
 
-pub struct Planner {
-    catalog: Catalog,
+pub struct Planner<D: Disk> {
+    catalog: Catalog<D>,
 }
 
-impl Planner {
+impl<D: Disk> Planner<D> {
+    pub fn new(catalog: Catalog<D>) -> Self {
+        Self { catalog }
+    }
+
     pub fn plan_statement(&self, statement: Statement) -> Result<LogicalPlan, PlannerError> {
         let statement = match statement {
             Statement::Select(select) => self.build_select(select)?,
@@ -95,5 +98,45 @@ impl Planner {
             .ok_or(UnknownTable(format!("unknown table `{name}`")))?;
 
         Ok(scan(&table_info))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::catalog::{Catalog, Type};
+    use crate::disk::Memory;
+    use crate::logical_plan::planner::Planner;
+    use crate::page::PAGE_SIZE;
+    use crate::page_cache::PageCache;
+    use crate::replacer::LRU;
+    use crate::sql::Parser;
+
+    #[test]
+    fn test_plan_select() {
+        const MEMORY: usize = PAGE_SIZE * 1;
+        const K: usize = 2;
+        let disk = Memory::new::<MEMORY>();
+        let replacer = LRU::new(K);
+        let pc = PageCache::new(disk, replacer, 0);
+
+        let mut catalog = Catalog::new(pc);
+        catalog
+            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
+            .unwrap();
+
+        let query = "SELECT * FROM t1 where c1 = c2";
+        let mut parser = Parser::new(&query).unwrap();
+        let select = parser.parse_statements().unwrap().pop().unwrap();
+        let planner = Planner::new(catalog);
+        let plan = planner.plan_statement(select).unwrap();
+
+        assert_eq!(
+            plan.to_string(),
+            "\
+Projection [c1, c2, c3]
+    Filter [c1 = c2]
+        Scan t1 0
+"
+        );
     }
 }

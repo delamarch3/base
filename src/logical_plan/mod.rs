@@ -201,20 +201,17 @@ impl Builder {
 
 #[cfg(test)]
 mod test {
-    use {
-        super::*,
-        crate::{
-            catalog::{Catalog, Type},
-            disk::Memory,
-            logical_plan::{
-                expr::{alias, concat, ident, lit, wildcard},
-                scan,
-            },
-            page::PAGE_SIZE,
-            page_cache::PageCache,
-            replacer::LRU,
-        },
+    use super::*;
+
+    use crate::catalog::{Catalog, Type};
+    use crate::disk::Memory;
+    use crate::logical_plan::{
+        expr::{alias, concat, ident, lit, wildcard},
+        scan,
     };
+    use crate::page::PAGE_SIZE;
+    use crate::page_cache::PageCache;
+    use crate::replacer::LRU;
 
     #[test]
     fn test_builder() -> Result<(), LogicalPlanError> {
@@ -227,13 +224,13 @@ mod test {
         let mut catalog = Catalog::new(pc);
         let t1 = catalog
             .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
-            .expect("could not create table")
-            .expect("there is no table")
+            .unwrap()
+            .unwrap()
             .clone();
         let t2 = catalog
             .create_table("t2", [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)])
-            .expect("could not create table")
-            .expect("there is no table")
+            .unwrap()
+            .unwrap()
             .clone();
 
         let plan = scan(&t1)
