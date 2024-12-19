@@ -1,22 +1,17 @@
-use {
-    crate::{
-        btree::BTree,
-        disk::{Disk, FileSystem},
-        page::PageID,
-        page_cache::SharedPageCache,
-        table::{
-            list::{List as TableInner, SharedList as Table},
-            node::RID,
-            tuple::{fit_tuple_with_schema, Data as TupleData},
-        },
-    },
-    std::{
-        collections::HashMap,
-        sync::{
-            atomic::{AtomicU32, Ordering::Relaxed},
-            Arc,
-        },
-    },
+use crate::btree::BTree;
+use crate::disk::{Disk, FileSystem};
+use crate::page::PageID;
+use crate::page_cache::SharedPageCache;
+use crate::table::{
+    list::{List as TableInner, SharedList as Table},
+    node::RID,
+    tuple::{fit_tuple_with_schema, Data as TupleData},
+};
+
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicU32, Ordering::Relaxed},
+    Arc,
 };
 
 #[derive(PartialEq, Clone, Copy, Debug)]

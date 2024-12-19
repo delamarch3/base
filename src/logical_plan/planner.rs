@@ -2,7 +2,7 @@ use crate::catalog::Catalog;
 use crate::disk::Disk;
 use crate::logical_plan::scan;
 use crate::sql::{
-    Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
+    FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
 use super::{Builder as LogicalPlanBuilder, LogicalPlan};
@@ -111,32 +111,61 @@ mod test {
     use crate::replacer::LRU;
     use crate::sql::Parser;
 
-    #[test]
-    fn test_plan_select() {
-        const MEMORY: usize = PAGE_SIZE * 1;
-        const K: usize = 2;
-        let disk = Memory::new::<MEMORY>();
-        let replacer = LRU::new(K);
-        let pc = PageCache::new(disk, replacer, 0);
+    macro_rules! test_plan_select {
+        ($name:ident, {$( $table:expr => $columns:expr )+}, $query:expr, $want:expr) => {
+            #[test]
+            fn $name() {
+                const MEMORY: usize = PAGE_SIZE * 2;
+                const K: usize = 2;
+                let disk = Memory::new::<MEMORY>();
+                let replacer = LRU::new(K);
+                let pc = PageCache::new(disk, replacer, 0);
 
-        let mut catalog = Catalog::new(pc);
-        catalog
-            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
-            .unwrap();
+                let mut catalog = Catalog::new(pc);
 
-        let query = "SELECT * FROM t1 where c1 = c2";
-        let mut parser = Parser::new(&query).unwrap();
-        let select = parser.parse_statements().unwrap().pop().unwrap();
-        let planner = Planner::new(catalog);
-        let plan = planner.plan_statement(select).unwrap();
+                $(
+                catalog
+                    .create_table($table, $columns)
+                    .unwrap();
+                )+
 
-        assert_eq!(
-            plan.to_string(),
-            "\
+                let query = $query;
+                let mut parser = Parser::new(&query).unwrap();
+                let select = parser.parse_statements().unwrap().pop().unwrap();
+                let planner = Planner::new(catalog);
+                let plan = planner.plan_statement(select).unwrap();
+
+                assert_eq!(plan.to_string(), $want);
+            }
+        };
+    }
+
+    test_plan_select!(
+        t1,
+        {
+            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+        },
+        "SELECT * FROM t1 WHERE c1 = c2",
+        "\
 Projection [c1, c2, c3]
     Filter [c1 = c2]
         Scan t1 0
 "
-        );
-    }
+    );
+
+    test_plan_select!(
+        t2,
+        {
+            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+            "t2" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+        },
+        "SELECT * FROM t1 JOIN t2 ON (t1.c1 = t2.c1) where t1.c1 > 5",
+        "\
+Projection [c1, c2, c3, c1, c2, c3]
+    Filter [t1.c1 > 5]
+        NestedLoopJoin [t1.c1 = t2.c1]
+            Scan t1 0
+            Scan t2 1
+"
+    );
 }
