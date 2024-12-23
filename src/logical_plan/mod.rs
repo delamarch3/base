@@ -10,17 +10,21 @@ mod filter;
 mod group;
 mod index_scan;
 mod join;
+mod limit;
 mod projection;
 mod scan;
+mod sort;
 
-pub use {
+use {
     aggregate::Aggregate,
     filter::Filter,
     group::Group,
     index_scan::IndexScan,
     join::{Join, JoinAlgorithm},
+    limit::Limit,
     projection::Projection,
     scan::Scan,
+    sort::Sort,
 };
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
@@ -56,6 +60,8 @@ pub enum LogicalPlan {
     Join(Join),
     Projection(Projection),
     Scan(Scan),
+    Limit(Limit),
+    Sort(Sort),
 }
 
 impl std::fmt::Display for LogicalPlan {
@@ -74,6 +80,8 @@ impl std::fmt::Display for LogicalPlan {
                 LogicalPlan::Join(join) => writeln!(f, "{join}"),
                 LogicalPlan::Projection(projection) => writeln!(f, "{projection}"),
                 LogicalPlan::Scan(scan) => writeln!(f, "{scan}"),
+                LogicalPlan::Limit(limit) => writeln!(f, "{limit}"),
+                LogicalPlan::Sort(sort) => writeln!(f, "{sort}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -103,6 +111,8 @@ impl LogicalPlan {
             }
             LogicalPlan::Projection(projection) => (Some(projection.input.as_ref()), None),
             LogicalPlan::Scan(_) => (None, None),
+            LogicalPlan::Limit(limit) => (Some(limit.input.as_ref()), None),
+            LogicalPlan::Sort(sort) => (Some(sort.input.as_ref()), None),
         }
     }
 
@@ -115,6 +125,8 @@ impl LogicalPlan {
             LogicalPlan::Join(join) => &join.schema,
             LogicalPlan::Projection(projection) => &projection.schema,
             LogicalPlan::Scan(scan) => &scan.schema,
+            LogicalPlan::Limit(limit) => &limit.input.schema(),
+            LogicalPlan::Sort(sort) => &sort.input.schema(),
         }
     }
 }
@@ -155,43 +167,56 @@ impl Builder {
         let input = self.root;
         let projection = Projection::new(projection, input);
 
-        Self { root: LogicalPlan::Projection(projection) }
+        Self { root: projection.into() }
     }
 
     pub fn filter(self, expr: Expr) -> Self {
         let input = self.root;
         let filter = Filter::new(expr, input);
 
-        Self { root: LogicalPlan::Filter(filter) }
+        Self { root: filter.into() }
     }
 
     pub fn join(self, rhs: impl Into<LogicalPlan>, predicate: Expr) -> Self {
         let lhs = self.root;
         let join = Join::new(JoinAlgorithm::NestedLoop, predicate, lhs, rhs);
 
-        Self { root: LogicalPlan::Join(join) }
+        Self { root: join.into() }
     }
 
     pub fn group(self, keys: Vec<Expr>) -> Self {
         let input = self.root;
         let group = Group::new(keys, input);
 
-        Self { root: LogicalPlan::Group(group) }
+        Self { root: group.into() }
     }
 
     pub fn aggregate(self, function: Function, keys: Vec<Expr>) -> Self {
         let input = self.root;
         let aggregate = Aggregate::new(function, keys, input);
 
-        Self { root: LogicalPlan::Aggregate(aggregate) }
+        Self { root: aggregate.into() }
     }
 
-    pub fn order_by(self, exprs: &[Expr], desc: bool) -> Self {
-        todo!()
+    pub fn sort(self, exprs: Vec<Expr>) -> Self {
+        let input = self.root;
+        let sort = Sort::new(exprs, false, input);
+
+        Self { root: sort.into() }
+    }
+
+    pub fn sort_desc(self, exprs: Vec<Expr>) -> Self {
+        let input = self.root;
+        let sort = Sort::new(exprs, true, input);
+
+        Self { root: sort.into() }
     }
 
     pub fn limit(self, expr: Expr) -> Self {
-        todo!()
+        let input = self.root;
+        let limit = Limit::new(expr, input);
+
+        Self { root: limit.into() }
     }
 
     pub fn build(self) -> LogicalPlan {
@@ -246,16 +271,20 @@ mod test {
                 alias(lit(1), "one"),
                 wildcard(),
             ])
+            .sort(vec![ident("c1")])
+            .limit(lit(5))
             .build();
 
         let have = plan.to_string();
         let want = "\
-Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, 1 AS one, *]
-    NestedLoopJoin [t1.c3 = t2.c3]
-        Filter [c1 IS NOT NULL]
-            Scan t1 0
-        Filter [1 = 1 AND \"1\" = \"1\"]
-            Scan t2 1
+Limit 5
+    Sort [c1] ASC
+        Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, 1 AS one, *]
+            NestedLoopJoin [t1.c3 = t2.c3]
+                Filter [c1 IS NOT NULL]
+                    Scan t1 0
+                Filter [1 = 1 AND \"1\" = \"1\"]
+                    Scan t2 1
 ";
 
         assert_eq!(want, have);

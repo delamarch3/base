@@ -42,8 +42,10 @@ impl<D: Disk> Planner<D> {
 
         let mut query = self.build_query(body)?;
 
-        if let Some(OrderByExpr { exprs, desc }) = order {
-            query = query.order_by(&exprs, desc)
+        match order {
+            Some(OrderByExpr { exprs, desc: false }) => query = query.sort(exprs),
+            Some(OrderByExpr { exprs, desc: true }) => query = query.sort_desc(exprs),
+            None => {}
         }
 
         if let Some(expr) = limit {
