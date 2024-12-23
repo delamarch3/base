@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use crate::catalog::Catalog;
 use crate::disk::Disk;
 use crate::logical_plan::scan;
 use crate::sql::{
-    FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
+    Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
 use super::{Builder as LogicalPlanBuilder, LogicalPlan};
@@ -71,14 +73,14 @@ impl<D: Disk> Planner<D> {
         }
 
         if let Some(filter) = filter {
-            query = query.filter(filter);
+            query = query.filter(filter)
         }
 
         if group.len() > 0 {
             todo!()
         }
 
-        query = query.project(&projection);
+        query = query.project(projection);
 
         Ok(query)
     }
@@ -92,10 +94,8 @@ impl<D: Disk> Planner<D> {
             Err(NotImplemented("multiple schema is not implemented yet".into()))?
         };
 
-        let table_info = self
-            .catalog
-            .get_table_by_name(&name)
-            .ok_or(UnknownTable(format!("unknown table `{name}`")))?;
+        let table_info =
+            self.catalog.get_table_by_name(&name).ok_or(UnknownTable(format!("`{name}`")))?;
 
         Ok(scan(&table_info))
     }
@@ -147,7 +147,7 @@ mod test {
         },
         "SELECT * FROM t1 WHERE c1 = c2",
         "\
-Projection [c1, c2, c3]
+Projection [*]
     Filter [c1 = c2]
         Scan t1 0
 "
@@ -161,11 +161,25 @@ Projection [c1, c2, c3]
         },
         "SELECT * FROM t1 JOIN t2 ON (t1.c1 = t2.c1) where t1.c1 > 5",
         "\
-Projection [c1, c2, c3, c1, c2, c3]
+Projection [*]
     Filter [t1.c1 > 5]
         NestedLoopJoin [t1.c1 = t2.c1]
             Scan t1 0
             Scan t2 1
+"
+    );
+
+    test_plan_select!(
+        t3,
+        {
+            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt),
+                     ("c4", Type::BigInt), ("c5", Type::BigInt)]
+        },
+        "SELECT c1, c2, c3, c4 AS column_four FROM t1 WHERE c5 = '' AND column_four > 10",
+        "\
+Projection [c1, c2, c3, c4 AS column_four]
+    Filter [c5 = \"\" AND column_four > 10]
+        Scan t1 0
 "
     );
 }

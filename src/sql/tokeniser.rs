@@ -222,6 +222,14 @@ impl<'a> Iterator for TokeniserIter<'a> {
                         have => Err(unexpected('"', have, self.tokeniser.location())),
                     }
                 }
+                '\'' => {
+                    self.tokeniser.next_char();
+                    let s = self.tokeniser.peeking_take_while(|c| c != '\'');
+                    match self.tokeniser.next_char() {
+                        Some('\'') => Ok((Token::StringLiteral(s), location)),
+                        have => Err(unexpected('"', have, self.tokeniser.location())),
+                    }
+                }
                 '`' => {
                     self.tokeniser.next_char();
                     let s = self.tokeniser.peeking_take_while(|c| {

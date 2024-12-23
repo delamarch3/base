@@ -151,7 +151,7 @@ impl Builder {
         self.root.schema()
     }
 
-    pub fn project(self, projection: &[SelectItem]) -> Self {
+    pub fn project(self, projection: Vec<SelectItem>) -> Self {
         let input = self.root;
         let projection = Projection::new(projection, input);
 
@@ -239,7 +239,7 @@ mod test {
                 scan(&t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
-            .project(&[
+            .project(vec![
                 ident("c1").into(),
                 concat(vec![lit(1), lit("2")]).into(),
                 ident("c5").is_null().into(),
@@ -250,7 +250,7 @@ mod test {
 
         let have = plan.to_string();
         let want = "\
-Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, one, c1, c2, c3, c3, c4, c5]
+Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, 1 AS one, *]
     NestedLoopJoin [t1.c3 = t2.c3]
         Filter [c1 IS NOT NULL]
             Scan t1 0
@@ -297,7 +297,7 @@ Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, one, c1, c2, c3, c3, c4, c5]
             filter_a,
             filter_b,
         );
-        let projection = Projection::new(&[ident("c1").into(), ident("c2").into()], join);
+        let projection = Projection::new(vec![ident("c1").into(), ident("c2").into()], join);
 
         let plan = LogicalPlan::Projection(projection);
 
