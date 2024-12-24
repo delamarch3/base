@@ -105,7 +105,7 @@ impl<D: Disk> Planner<D> {
 
 #[cfg(test)]
 mod test {
-    use crate::catalog::{Catalog, Type};
+    use crate::catalog::{schema::Type, Catalog};
     use crate::disk::Memory;
     use crate::logical_plan::planner::Planner;
     use crate::page::PAGE_SIZE;

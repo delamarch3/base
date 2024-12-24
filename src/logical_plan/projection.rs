@@ -1,6 +1,6 @@
-use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
-use crate::catalog::{Column, Schema, SchemaBuilder, Type};
-use crate::sql::{Expr, FunctionName, SelectItem};
+use super::{write_iter, LogicalPlan};
+use crate::catalog::schema::{Schema, SchemaBuilder, Type};
+use crate::sql::SelectItem;
 
 pub struct Projection {
     pub(super) schema: Schema,

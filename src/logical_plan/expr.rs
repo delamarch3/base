@@ -1,4 +1,4 @@
-use crate::catalog::Type;
+use crate::catalog::schema::Type;
 use crate::sql::{Expr, Function, FunctionName, Literal, Op, Parser, SelectItem};
 
 impl From<i32> for Literal {

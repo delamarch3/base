@@ -1,11 +1,7 @@
-use {
-    crate::catalog::{Column, Schema, Type},
-    bytes::{BufMut, BytesMut},
-    std::{
-        cmp::Ordering::{self, *},
-        mem::size_of,
-    },
-};
+use crate::catalog::schema::{Column, Schema, Type};
+use bytes::{BufMut, BytesMut};
+use std::cmp::Ordering::{self, *};
+use std::mem::size_of;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Value {
@@ -328,13 +324,10 @@ impl Builder {
 
 #[cfg(test)]
 mod test {
-    use {
-        crate::{
-            catalog::{Column, Schema, Type},
-            table::tuple::{fit_tuple_with_schema, Builder, Comparand},
-        },
-        std::cmp::Ordering::*,
-    };
+    use crate::catalog::schema::{Column, Schema, Type};
+    use crate::table::tuple::{fit_tuple_with_schema, Builder, Comparand};
+
+    use std::cmp::Ordering::*;
 
     macro_rules! test_fit_tuple_with_schema {
         ($name:tt, schema: $schema:expr, tuple: $tuple:expr, want: $want:expr) => {

@@ -1,6 +1,6 @@
 use {
     super::{Expr, LogicalPlan},
-    crate::catalog::Schema,
+    crate::catalog::schema::Schema,
 };
 
 pub enum JoinAlgorithm {

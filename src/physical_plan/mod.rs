@@ -1,4 +1,4 @@
-use crate::catalog::{Column, Schema, Type};
+use crate::catalog::schema::{Column, Schema, Type};
 use crate::get_value;
 use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op};
 use crate::table::tuple::{Data as TupleData, Value};
@@ -250,7 +250,7 @@ mod test {
     use {
         super::{eval, EvalError::*},
         crate::{
-            catalog::Type,
+            catalog::schema::Type,
             logical_plan::expr::{concat, contains, ident, lit},
             table::tuple::{Builder as TupleBuilder, Value},
         },

@@ -1,16 +1,14 @@
-use {
-    super::slot::Slot,
-    crate::{
-        btree::slot::Either,
-        catalog::Schema,
-        get_ptr,
-        page::{PageBuf, PageID, PAGE_SIZE},
-        storable::Storable,
-        table::tuple::{fit_tuple_with_schema, Comparand, Data as TupleData},
-    },
-    bytes::BytesMut,
-    std::ops::Range,
-};
+use crate::btree::slot::Either;
+use crate::catalog::schema::Schema;
+use crate::get_ptr;
+use crate::page::{PageBuf, PageID, PAGE_SIZE};
+use crate::storable::Storable;
+use crate::table::tuple::{fit_tuple_with_schema, Comparand, Data as TupleData};
+
+use super::slot::Slot;
+
+use bytes::BytesMut;
+use std::ops::Range;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum NodeType {
@@ -335,10 +333,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        btree::slot::Either,
-        catalog::{Column, Type},
-    };
+    use crate::btree::slot::Either;
+    use crate::catalog::schema::{Column, Type};
 
     use super::*;
 

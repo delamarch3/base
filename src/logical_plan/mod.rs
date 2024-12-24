@@ -1,4 +1,4 @@
-use crate::catalog::{IndexInfo, Schema, TableInfo};
+use crate::catalog::{schema::Schema, IndexInfo, TableInfo};
 use crate::disk::Disk;
 use crate::sql::{Expr, Function, Ident, SelectItem};
 
@@ -228,7 +228,7 @@ impl Builder {
 mod test {
     use super::*;
 
-    use crate::catalog::{Catalog, Type};
+    use crate::catalog::{schema::Type, Catalog};
     use crate::disk::Memory;
     use crate::logical_plan::{
         expr::{alias, concat, ident, lit, wildcard},

@@ -3,19 +3,17 @@ pub mod slot;
 
 use std::marker::PhantomData;
 
-use crate::{
-    btree::{
-        node::{Node, NodeType},
-        slot::{Either, Slot},
-    },
-    catalog::Schema,
-    disk::{Disk, FileSystem},
-    page::{PageBuf, PageID, PageReadGuard, PageWriteGuard},
-    page_cache::SharedPageCache,
-    storable::Storable,
-    table::tuple::{Comparand, Data as TupleData},
-    writep,
+use crate::btree::{
+    node::{Node, NodeType},
+    slot::{Either, Slot},
 };
+use crate::catalog::schema::Schema;
+use crate::disk::{Disk, FileSystem};
+use crate::page::{PageBuf, PageID, PageReadGuard, PageWriteGuard};
+use crate::page_cache::SharedPageCache;
+use crate::storable::Storable;
+use crate::table::tuple::{Comparand, Data as TupleData};
+use crate::writep;
 
 pub struct BTree<'s, V, D: Disk = FileSystem> {
     root: PageID,
@@ -430,17 +428,15 @@ where
 
 #[cfg(test)]
 mod test {
-    use {
-        super::*,
-        crate::{
-            catalog::{Column, Type},
-            disk::Memory,
-            page::PAGE_SIZE,
-            page_cache::PageCache,
-            replacer::LRU,
-        },
-        rand::{seq::SliceRandom, thread_rng, Rng},
-    };
+    use crate::catalog::schema::{Column, Type};
+    use crate::disk::Memory;
+    use crate::page::PAGE_SIZE;
+    use crate::page_cache::PageCache;
+    use crate::replacer::LRU;
+
+    use rand::{seq::SliceRandom, thread_rng, Rng};
+
+    use super::*;
 
     macro_rules! inserts {
         ($range:expr, $t:ty) => {{

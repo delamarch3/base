@@ -1,9 +1,8 @@
-use crate::{
-    catalog::{TableInfo, OID},
-    disk::Disk,
-};
+use crate::catalog::schema::Schema;
+use crate::catalog::{TableInfo, OID};
+use crate::disk::Disk;
 
-use {super::LogicalPlan, crate::catalog::Schema};
+use super::LogicalPlan;
 
 pub struct Scan {
     name: String,
