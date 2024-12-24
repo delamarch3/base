@@ -334,13 +334,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::btree::slot::Either;
-    use crate::catalog::schema::{Column, Type};
+    use crate::catalog::schema::Type;
 
     use super::*;
 
     #[test]
     fn test_from() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let node = Node {
             t: NodeType::Leaf,
@@ -371,7 +371,7 @@ mod test {
 
     #[test]
     fn test_split() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let mut node = Node {
             t: NodeType::Leaf,
@@ -434,7 +434,7 @@ mod test {
 
     #[test]
     fn test_get_separators_leaf() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let node = Node {
             t: NodeType::Leaf,
@@ -474,7 +474,7 @@ mod test {
 
     #[test]
     fn test_get_separators_internal() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -514,7 +514,7 @@ mod test {
 
     #[test]
     fn test_find_child() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -558,7 +558,7 @@ mod test {
 
     #[test]
     fn test_values() {
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
 
         let mut node: Node<i32> = Node {
             t: NodeType::Internal,

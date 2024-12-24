@@ -100,7 +100,7 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
 
     // `buf` could go extend beyond the tuple, use schema to read the correct amount of bytes
     // This assumes the tuple begins at the zeroth byte
-    for Column { name: _, ty, offset } in &schema.columns {
+    for Column { name: _, ty, offset, table: _ } in &schema.columns {
         let start = tuple.len();
         tuple.put(&data[*offset..*offset + ty.size()]);
 
@@ -356,8 +356,8 @@ mod test {
     test_fit_tuple_with_schema! (
         fit_last_columns,
         schema: Schema::new(vec![
-            Column { name: "col_b".into(), ty: Type::Varchar, offset: 4 },
-            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
+            Column { name: "col_b".into(), ty: Type::Varchar, offset: 4, table: None },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8, table: None },
         ]),
         tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
         want: Builder::new().varchar("row_a").big_int(20).build()
@@ -369,6 +369,7 @@ mod test {
             name: "col_b".into(),
             ty: Type::Varchar,
             offset: 4,
+            table: None
         }]),
         tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
         want: Builder::new().varchar("row_a").build()
@@ -377,8 +378,8 @@ mod test {
     test_fit_tuple_with_schema! (
         fit_outer_columns,
         schema: Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8 },
+            Column { name: "col_a".into(), ty: Type::Int, offset: 0, table: None },
+            Column { name: "col_c".into(), ty: Type::BigInt, offset: 8, table: None },
         ]),
         tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
         want: Builder::new().int(10).big_int(20).build()
@@ -388,7 +389,8 @@ mod test {
         ($name:tt, $schema:expr, lhs: $lhs:expr, rhs: $rhs:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let have = Comparand(&$schema, &$lhs).cmp(&Comparand(&$schema, &$rhs));
+                let schema = $schema.into();
+                let have = Comparand(&schema, &$lhs).cmp(&Comparand(&schema, &$rhs));
                 assert_eq!($want, have);
             }
         };
@@ -396,11 +398,7 @@ mod test {
 
     test_comparator!(
         t1,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-        ]),
+        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
         lhs: Builder::new().int(4).bool(false).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Equal
@@ -408,11 +406,7 @@ mod test {
 
     test_comparator!(
         t2,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-        ]),
+        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
         lhs: Builder::new().int(4).bool(true).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Greater
@@ -420,11 +414,7 @@ mod test {
 
     test_comparator!(
         t3,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Int, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::Bool, offset: 4 },
-            Column { name: "col_c".into(), ty: Type::BigInt, offset: 5 },
-        ]),
+        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
         lhs: Builder::new().int(4).bool(false).big_int(90).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Less
@@ -432,10 +422,7 @@ mod test {
 
     test_comparator!(
         t4,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::TinyInt, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::Varchar, offset: 1 },
-        ]),
+        [("c1", Type::TinyInt), ("c2", Type::Varchar)],
         lhs: Builder::new().tiny_int(1).varchar("Column").build(),
         rhs: Builder::new().tiny_int(1).varchar("Column").build(),
         Equal
@@ -443,10 +430,7 @@ mod test {
 
     test_comparator!(
         t5,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 4 },
-        ]),
+        [("c1", Type::Varchar), ("c2", Type::TinyInt)],
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
         Less
@@ -454,10 +438,7 @@ mod test {
 
     test_comparator!(
         t6,
-        Schema::new(vec![
-            Column { name: "col_a".into(), ty: Type::Varchar, offset: 0 },
-            Column { name: "col_b".into(), ty: Type::TinyInt, offset: 4 },
-        ]),
+        [("c1", Type::Varchar), ("c2", Type::TinyInt)],
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column").tiny_int(1).build(),
         Greater

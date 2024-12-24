@@ -396,7 +396,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::catalog::schema::{Column, Type};
+    use crate::catalog::schema::Type;
     use crate::disk::Memory;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
@@ -431,7 +431,7 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
+        let schema = [("", Type::Int)].into();
         let mut btree = BTree::new(pc.clone(), &schema);
 
         // Insert and get
@@ -507,8 +507,8 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
         let pc2 = pc.clone();
 
-        let schema = Schema::new(vec![Column { name: "".into(), ty: Type::Int, offset: 0 }]);
-        let mut btree = BTree::new(pc, &schema);
+        let schema = [("", Type::Int)].into();
+        let mut btree = BTree::new(pc.clone(), &schema);
 
         let range = -50..50;
         let mut want = inserts!(range, i32);

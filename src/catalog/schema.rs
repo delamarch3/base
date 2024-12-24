@@ -26,6 +26,7 @@ pub struct Column {
     pub name: String,
     pub ty: Type,
     pub offset: usize,
+    pub table: Option<String>,
 }
 
 impl Column {
@@ -46,7 +47,7 @@ impl<const N: usize> From<[(&str, Type); N]> for Schema {
 
         let mut offset = 0;
         for (name, ty) in fields {
-            columns.push(Column { name: name.to_string(), ty, offset });
+            columns.push(Column { name: name.to_string(), ty, offset, table: None });
             offset += ty.size();
         }
 
@@ -60,7 +61,7 @@ impl From<Vec<(String, Type)>> for Schema {
 
         let mut offset = 0;
         for (name, ty) in fields {
-            columns.push(Column { name, ty, offset });
+            columns.push(Column { name, ty, offset, table: None });
             offset += ty.size();
         }
 
