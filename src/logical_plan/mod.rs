@@ -1,6 +1,6 @@
 use crate::catalog::{schema::Schema, IndexInfo, TableInfo};
 use crate::disk::Disk;
-use crate::sql::{Expr, Function, Ident, SelectItem};
+use crate::sql::{Expr, Function, Ident, Op, SelectItem};
 
 pub mod expr;
 pub mod planner;
@@ -179,7 +179,11 @@ impl Builder {
 
     pub fn join(self, rhs: impl Into<LogicalPlan>, predicate: Expr) -> Self {
         let lhs = self.root;
-        let join = Join::new(JoinAlgorithm::NestedLoop, predicate, lhs, rhs);
+        let algo = match predicate {
+            Expr::BinaryOp { op: Op::Eq, .. } => JoinAlgorithm::Hash,
+            _ => JoinAlgorithm::NestedLoop,
+        };
+        let join = Join::new(algo, predicate, lhs, rhs);
 
         Self { root: join.into() }
     }
@@ -280,7 +284,7 @@ mod test {
 Limit 5
     Sort [c1] ASC
         Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, 1 AS one, *]
-            NestedLoopJoin [t1.c3 = t2.c3]
+            HashJoin [t1.c3 = t2.c3]
                 Filter [c1 IS NOT NULL]
                     Scan t1 0
                 Filter [1 = 1 AND \"1\" = \"1\"]

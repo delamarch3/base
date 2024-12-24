@@ -165,7 +165,7 @@ Projection [*]
         "\
 Projection [*]
     Filter [t1.c1 > 5]
-        NestedLoopJoin [t1.c1 = t2.c1]
+        HashJoin [t1.c1 = t2.c1]
             Scan t1 0
             Scan t2 1
 "
