@@ -41,10 +41,10 @@ where
 }
 
 pub struct IndexMeta {
-    name: String,
-    table_name: String,
-    column_ids: Vec<u32>,
-    schema: Schema,
+    pub name: String,
+    pub table_name: String,
+    pub column_ids: Vec<u32>,
+    pub schema: Schema,
 }
 
 pub enum IndexType {
@@ -71,11 +71,10 @@ pub struct IndexInfo {
 
 pub struct Catalog<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
-    // TODO: considering putting TableInfo (and IndexInfo) inside Arc
-    tables: HashMap<OID, TableInfo<D>>,
+    tables: HashMap<OID, Arc<TableInfo<D>>>,
     table_names: HashMap<String, OID>,
     next_table_oid: AtomicU32,
-    indexes: HashMap<OID, IndexInfo>,
+    indexes: HashMap<OID, Arc<IndexInfo>>,
     index_names: HashMap<String, HashMap<String, OID>>, // table -> index -> oid
     next_index_oid: AtomicU32,
 }
@@ -97,7 +96,7 @@ impl<D: Disk> Catalog<D> {
         &mut self,
         name: &str,
         schema: impl Into<Schema>,
-    ) -> crate::Result<Option<&TableInfo<D>>> {
+    ) -> crate::Result<Option<Arc<TableInfo<D>>>> {
         if self.table_names.contains_key(name) {
             return Ok(None);
         }
@@ -112,17 +111,17 @@ impl<D: Disk> Catalog<D> {
 
         self.table_names.insert(name.into(), oid);
         self.index_names.insert(name.into(), HashMap::new());
-        self.tables.insert(oid, info);
+        self.tables.insert(oid, Arc::new(info));
 
-        Ok(self.tables.get(&oid))
+        Ok(self.tables.get(&oid).map(|info| info.clone()))
     }
 
-    pub fn get_table_by_oid(&self, oid: OID) -> Option<&TableInfo<D>> {
-        self.tables.get(&oid)
+    pub fn get_table_by_oid(&self, oid: OID) -> Option<Arc<TableInfo<D>>> {
+        self.tables.get(&oid).map(|info| info.clone())
     }
 
-    pub fn get_table_by_name(&self, name: &str) -> Option<&TableInfo<D>> {
-        self.tables.get(self.table_names.get(name)?)
+    pub fn get_table_by_name(&self, name: &str) -> Option<Arc<TableInfo<D>>> {
+        self.tables.get(self.table_names.get(name)?).map(|info| info.clone())
     }
 
     pub fn list_tables(&self) -> Vec<&String> {
@@ -136,7 +135,7 @@ impl<D: Disk> Catalog<D> {
         index_ty: IndexType,
         schema: &Schema,
         key: &[&str],
-    ) -> Option<&IndexInfo> {
+    ) -> Option<Arc<IndexInfo>> {
         // TODO: verify key schema against table schema
 
         if self.index_names.contains_key(index_name) {
@@ -174,31 +173,32 @@ impl<D: Disk> Catalog<D> {
         let oid = self.next_index_oid.fetch_add(1, Relaxed);
         indexed_table.insert(index_name.into(), oid);
 
-        self.indexes.insert(
+        let info = IndexInfo {
+            name: index_name.into(),
+            schema: index_schema,
             oid,
-            IndexInfo {
-                name: index_name.into(),
-                schema: index_schema,
-                oid,
-                index_ty,
-                root_page_id,
-            },
-        );
+            index_ty,
+            root_page_id,
+        };
+
+        self.indexes.insert(oid, Arc::new(info));
         indexed_table.insert(index_name.into(), oid);
 
-        self.indexes.get(&oid)
+        self.indexes.get(&oid).map(|info| info.clone())
     }
 
-    pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<&IndexInfo> {
-        self.indexes.get(self.index_names.get(table_name)?.get(index_name)?)
+    pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<Arc<IndexInfo>> {
+        self.indexes
+            .get(self.index_names.get(table_name)?.get(index_name)?)
+            .map(|info| info.clone())
     }
 
-    pub fn get_index_by_oid(&self, oid: OID) -> Option<&IndexInfo> {
-        self.indexes.get(&oid)
+    pub fn get_index_by_oid(&self, oid: OID) -> Option<Arc<IndexInfo>> {
+        self.indexes.get(&oid).map(|info| info.clone())
     }
 
-    pub fn list_indexes(&self) -> Vec<&IndexInfo> {
-        self.indexes.values().collect()
+    pub fn list_indexes(&self) -> Vec<Arc<IndexInfo>> {
+        self.indexes.values().map(|info| info.clone()).collect()
     }
 }
 
