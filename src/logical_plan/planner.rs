@@ -68,7 +68,11 @@ impl<D: Disk> Planner<D> {
 
             let predicate = match constraint {
                 JoinConstraint::On(expr) => expr,
-                JoinConstraint::Using(_) => todo!(),
+                JoinConstraint::Using(_) => {
+                    // Look at the current schema, find columns, build Eq expr
+                    // Will need to use qualified identifiers
+                    todo!()
+                }
             };
 
             query = query.join(rhs.build(), predicate);
