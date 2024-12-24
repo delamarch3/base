@@ -202,7 +202,7 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(TupleData, V)>,
+        acc: &mut Vec<(TupleData, V)>,
     ) -> crate::Result<()> {
         let node: Node<V> = Node::from(&page.data, self.schema);
 
@@ -257,7 +257,7 @@ where
         &'a self,
         mut prev_page: Option<PageReadGuard<'a>>,
         page: PageReadGuard<'a>,
-        acc: &'a mut Vec<(TupleData, V)>,
+        acc: &mut Vec<(TupleData, V)>,
         from: &TupleData,
         to: &TupleData,
     ) -> crate::Result<()> {
@@ -350,38 +350,6 @@ where
                 Ok(rem)
             }
             None => Ok(false),
-        }
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    fn print(&self) {
-        if self.root == -1 {
-            return;
-        }
-
-        self._print(self.root);
-    }
-
-    #[cfg(test)]
-    fn _print(&self, ptr: PageID) {
-        let page = self.pc.fetch_page(ptr).unwrap();
-        let r = page.read();
-        let node: Node<V> = Node::from(&r.data, self.schema);
-
-        println!("BTreeNode {{");
-        println!("\tid: {}", node.id);
-        println!("\troot: {}", node.is_root);
-        println!("\ttype: {}", node.t);
-        println!("\tnext: {}", node.next);
-        println!("\tlen: {}", node.len());
-        println!("}}");
-
-        for slot in node.iter() {
-            match slot.1 {
-                Either::Value(_) => return,
-                Either::Pointer(ptr) => self._print(ptr),
-            }
         }
     }
 
