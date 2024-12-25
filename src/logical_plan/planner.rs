@@ -76,6 +76,11 @@ impl<D: Disk> Planner<D> {
                             Err(UnknownColumn(join_column[0].to_string()))?
                         };
 
+                        // TODO: improve error message
+                        if rhs.schema().find(&join_column[0]).is_none() {
+                            Err(UnknownColumn(join_column[0].to_string()))?
+                        }
+
                         let Some(table) = &column.table else { Err(Internal)? };
                         let expr = Expr::Ident(join_column.qualify(&rhs_table)).eq(Expr::Ident(
                             Ident::Compound(vec![table.clone(), column.name.clone()]),
@@ -209,23 +214,6 @@ Projection [*]
 
     test_plan_select!(
         t4,
-        {
-            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
-            "t2" => [("c2", Type::Int), ("c3", Type::Varchar), ("c4", Type::BigInt)]
-            "t3" => [("c1", Type::Int), ("c2", Type::Varchar), ("c4", Type::BigInt)]
-        },
-        "SELECT * FROM t1 JOIN t2 USING () where c1 > 5",
-        "\
-Projection [*]
-    Filter [c1 > 5]
-        HashJoin [t3.c1 = t1.c1 AND t3.c4 = t2.c4]
-            Scan t1 0
-            Scan t2 1
-"
-    );
-
-    test_plan_select!(
-        t5,
         {
             "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt),
                      ("c4", Type::BigInt), ("c5", Type::BigInt)]
