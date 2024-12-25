@@ -1,6 +1,5 @@
 use crate::catalog::Catalog;
 use crate::disk::Disk;
-use crate::logical_plan::expr::lit;
 use crate::logical_plan::scan;
 use crate::sql::{
     Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
@@ -71,27 +70,21 @@ impl<D: Disk> Planner<D> {
             let predicate = match constraint {
                 JoinConstraint::On(expr) => expr,
                 JoinConstraint::Using(join_columns) => {
-                    // TODO: verify lhs column names
-
-                    let mut predicate = lit(true);
+                    let mut predicate: Option<Expr> = None;
                     for join_column in join_columns {
                         let Some(column) = schema.find(&join_column[0]) else {
                             Err(UnknownColumn(join_column[0].to_string()))?
                         };
 
                         let Some(table) = &column.table else { Err(Internal)? };
-                        predicate = predicate.and(Expr::Ident(join_column.qualify(&rhs_table)).eq(
-                            Expr::Ident(Ident::Compound(vec![table.clone(), column.name.clone()])),
+                        let expr = Expr::Ident(join_column.qualify(&rhs_table)).eq(Expr::Ident(
+                            Ident::Compound(vec![table.clone(), column.name.clone()]),
                         ));
+
+                        predicate = Some(predicate.map_or(expr.clone(), |p| p.and(expr)));
                     }
 
-                    match predicate {
-                        Expr::BinaryOp { left, right, .. } => match *left {
-                            Expr::BinaryOp { right: keep, .. } => keep.and(*right),
-                            _ => unreachable!(),
-                        },
-                        _ => unreachable!(),
-                    }
+                    predicate.unwrap()
                 }
             };
 
@@ -216,6 +209,23 @@ Projection [*]
 
     test_plan_select!(
         t4,
+        {
+            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+            "t2" => [("c2", Type::Int), ("c3", Type::Varchar), ("c4", Type::BigInt)]
+            "t3" => [("c1", Type::Int), ("c2", Type::Varchar), ("c4", Type::BigInt)]
+        },
+        "SELECT * FROM t1 JOIN t2 USING () where c1 > 5",
+        "\
+Projection [*]
+    Filter [c1 > 5]
+        HashJoin [t3.c1 = t1.c1 AND t3.c4 = t2.c4]
+            Scan t1 0
+            Scan t2 1
+"
+    );
+
+    test_plan_select!(
+        t5,
         {
             "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt),
                      ("c4", Type::BigInt), ("c5", Type::BigInt)]

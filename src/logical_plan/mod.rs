@@ -158,38 +158,6 @@ pub fn index_scan(index_info: IndexInfo) -> Builder {
     Builder { root: LogicalPlan::IndexScan(IndexScan::new(index_info)) }
 }
 
-// TODO: for join using, we know we can use a hash join so this check can be skipped, would be
-// better to have as a param in that case. For join on, some things can be optimised out like `1
-// AND 1`. After that it will make sense to determine the join algorithm
-fn determine_join_algo(expr: &Expr) -> JoinAlgorithm {
-    fn is_eq(expr: &Expr) -> bool {
-        match expr {
-            Expr::BinaryOp { left, op: Op::And, right } => match (left.as_ref(), right.as_ref()) {
-                (Expr::Ident(_), Expr::Ident(_))
-                | (Expr::Ident(_), Expr::Literal(_))
-                | (Expr::Literal(_), Expr::Ident(_))
-                | (Expr::Literal(_), Expr::Literal(_)) => false,
-                _ => is_eq(left) && is_eq(left),
-            },
-            Expr::BinaryOp { left, op: Op::Eq, right } => match (left.as_ref(), right.as_ref()) {
-                (Expr::Ident(_), Expr::Literal(_))
-                | (Expr::Literal(_), Expr::Ident(_))
-                | (Expr::Literal(_), Expr::Literal(_)) => false,
-                _ => is_eq(left) && is_eq(right),
-            },
-            Expr::Ident(_) | Expr::Literal(_) => true,
-            _ => false,
-        }
-    }
-
-    // if the predicate consists only of eqs and ands we can use hash join
-    if is_eq(expr) {
-        JoinAlgorithm::Hash
-    } else {
-        JoinAlgorithm::NestedLoop
-    }
-}
-
 impl Builder {
     pub fn schema(&self) -> &Schema {
         self.root.schema()
@@ -254,6 +222,36 @@ impl Builder {
 
     pub fn build(self) -> LogicalPlan {
         self.root
+    }
+}
+
+// TODO: for join using, we know we can use a hash join so this check can be skipped, would be
+// better to have as a param in that case. For join on, some things can be optimised out like `1
+// AND 1`. After that it will make sense to determine the join algorithm
+fn determine_join_algo(expr: &Expr) -> JoinAlgorithm {
+    fn is_eq(expr: &Expr) -> bool {
+        match expr {
+            Expr::BinaryOp { left, op: Op::And, right } => match (left.as_ref(), right.as_ref()) {
+                (Expr::Ident(_), Expr::Ident(_))
+                | (Expr::Ident(_), Expr::Literal(_))
+                | (Expr::Literal(_), Expr::Ident(_))
+                | (Expr::Literal(_), Expr::Literal(_)) => false,
+                _ => is_eq(left) && is_eq(left),
+            },
+            Expr::BinaryOp { left, op: Op::Eq, right } => match (left.as_ref(), right.as_ref()) {
+                (Expr::Literal(_), Expr::Literal(_)) => false,
+                _ => is_eq(left) && is_eq(right),
+            },
+            Expr::Ident(_) | Expr::Literal(_) => true,
+            _ => false,
+        }
+    }
+
+    // if the predicate consists only of eqs and ands we can use hash join
+    if is_eq(expr) {
+        JoinAlgorithm::Hash
+    } else {
+        JoinAlgorithm::NestedLoop
     }
 }
 

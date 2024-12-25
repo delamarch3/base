@@ -9,7 +9,7 @@ pub enum Statement {
     Create(Create),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
     Number(String),
     Decimal(String),
@@ -79,7 +79,7 @@ impl std::ops::Index<usize> for Ident {
         match self {
             Ident::Single(ident) => {
                 if index > 0 {
-                    panic!("index {index} out of bounds")
+                    panic!("index out of bounds: the length is 1 but the index is {index}")
                 }
 
                 ident.as_str()
@@ -101,7 +101,7 @@ impl Ident {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum FunctionName {
     Min,
     Max,
@@ -127,7 +127,7 @@ impl std::fmt::Display for FunctionName {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Function {
     pub name: FunctionName,
     pub args: Vec<Expr>,
@@ -161,7 +161,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
     Wildcard,
     QualifiedWildcard(Ident),
@@ -212,7 +212,7 @@ impl std::fmt::Display for Expr {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Query {
     pub projection: Vec<SelectItem>,
     pub from: FromTable,
@@ -221,25 +221,25 @@ pub struct Query {
     pub group: Vec<Expr>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum FromTable {
     Table { name: Ident, alias: Option<String> },
     Derived { query: Box<Query>, alias: Option<String> },
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum JoinConstraint {
     On(Expr),
     Using(Vec<Ident>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum JoinType {
     Inner,
     // TODO: add more joins
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Join {
     pub from: FromTable,
     pub ty: JoinType,
@@ -252,7 +252,7 @@ pub struct OrderByExpr {
     pub desc: bool,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum SelectItem {
     Expr(Expr),
     AliasedExpr { expr: Expr, alias: String },
