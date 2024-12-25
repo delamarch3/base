@@ -113,6 +113,10 @@ impl Schema {
         schema
     }
 
+    pub fn qualify(&mut self, table: &str) {
+        self.columns.iter_mut().for_each(|column| column.table = Some(table.to_string()));
+    }
+
     pub fn find(&self, column_name: &str) -> Option<&Column> {
         self.columns.iter().find(|Column { name, .. }| name == column_name)
     }

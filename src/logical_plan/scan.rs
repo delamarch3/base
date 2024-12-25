@@ -26,7 +26,10 @@ impl From<Scan> for LogicalPlan {
 
 impl Scan {
     pub fn new<D: Disk>(table_info: &TableInfo<D>) -> Self {
+        // TODO: allow qualifiying with an alias
         let TableInfo { name, schema, oid, .. } = table_info;
-        Self { name: name.clone(), oid: *oid, schema: schema.clone() }
+        let mut schema = schema.clone();
+        schema.qualify(&name);
+        Self { name: name.clone(), oid: *oid, schema }
     }
 }

@@ -1,7 +1,6 @@
-use std::collections::HashSet;
-
 use crate::catalog::Catalog;
 use crate::disk::Disk;
+use crate::logical_plan::expr::lit;
 use crate::logical_plan::scan;
 use crate::sql::{
     Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
@@ -13,6 +12,8 @@ use super::{Builder as LogicalPlanBuilder, LogicalPlan};
 pub enum PlannerError {
     NotImplemented(String),
     UnknownTable(String),
+    UnknownColumn(String),
+    Internal,
 }
 use PlannerError::*;
 
@@ -42,11 +43,11 @@ impl<D: Disk> Planner<D> {
 
         let mut query = self.build_query(body)?;
 
-        match order {
-            Some(OrderByExpr { exprs, desc: false }) => query = query.sort(exprs),
-            Some(OrderByExpr { exprs, desc: true }) => query = query.sort_desc(exprs),
-            None => {}
-        }
+        query = match order {
+            Some(OrderByExpr { exprs, desc: false }) => query.sort(exprs),
+            Some(OrderByExpr { exprs, desc: true }) => query.sort_desc(exprs),
+            None => query,
+        };
 
         if let Some(expr) = limit {
             query = query.limit(expr)
@@ -58,20 +59,39 @@ impl<D: Disk> Planner<D> {
     fn build_query(&self, query: Query) -> Result<LogicalPlanBuilder, PlannerError> {
         let Query { projection, from, joins, filter, group } = query;
 
-        let mut query = self.build_from(from)?;
+        let (mut query, _) = self.build_from(from)?;
 
         for join in joins {
             let Join { from, ty, constraint } = join;
-            let rhs = self.build_from(from)?;
+            let (rhs, rhs_table) = self.build_from(from)?;
 
             let JoinType::Inner = ty;
 
+            let schema = query.schema();
             let predicate = match constraint {
                 JoinConstraint::On(expr) => expr,
-                JoinConstraint::Using(_) => {
-                    // Look at the current schema, find columns, build Eq expr
-                    // Will need to use qualified identifiers
-                    todo!()
+                JoinConstraint::Using(join_columns) => {
+                    // TODO: verify lhs column names
+
+                    let mut predicate = lit(true);
+                    for join_column in join_columns {
+                        let Some(column) = schema.find(&join_column[0]) else {
+                            Err(UnknownColumn(join_column[0].to_string()))?
+                        };
+
+                        let Some(table) = &column.table else { Err(Internal)? };
+                        predicate = predicate.and(Expr::Ident(join_column.qualify(&rhs_table)).eq(
+                            Expr::Ident(Ident::Compound(vec![table.clone(), column.name.clone()])),
+                        ));
+                    }
+
+                    match predicate {
+                        Expr::BinaryOp { left, right, .. } => match *left {
+                            Expr::BinaryOp { right: keep, .. } => keep.and(*right),
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
+                    }
                 }
             };
 
@@ -91,8 +111,9 @@ impl<D: Disk> Planner<D> {
         Ok(query)
     }
 
-    fn build_from(&self, from: FromTable) -> Result<LogicalPlanBuilder, PlannerError> {
-        let FromTable::Table { name, alias } = from else {
+    /// Creates a `Scan` operator and returns it along with the table alias
+    fn build_from(&self, from: FromTable) -> Result<(LogicalPlanBuilder, String), PlannerError> {
+        let FromTable::Table { name, alias: _ } = from else {
             Err(NotImplemented("derived tables are not implemented yet".into()))?
         };
 
@@ -100,10 +121,9 @@ impl<D: Disk> Planner<D> {
             Err(NotImplemented("multiple schema is not implemented yet".into()))?
         };
 
-        let table_info =
-            self.catalog.get_table_by_name(&name).ok_or(UnknownTable(format!("`{name}`")))?;
+        let table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name.clone()))?;
 
-        Ok(scan(&table_info))
+        Ok((scan(&table_info), name))
     }
 }
 
@@ -121,7 +141,7 @@ mod test {
         ($name:ident, {$( $table:expr => $columns:expr )+}, $query:expr, $want:expr) => {
             #[test]
             fn $name() {
-                const MEMORY: usize = PAGE_SIZE * 2;
+                const MEMORY: usize = PAGE_SIZE * 3;
                 const K: usize = 2;
                 let disk = Memory::new::<MEMORY>();
                 let replacer = LRU::new(K);
@@ -177,6 +197,25 @@ Projection [*]
 
     test_plan_select!(
         t3,
+        {
+            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+            "t2" => [("c2", Type::Int), ("c3", Type::Varchar), ("c4", Type::BigInt)]
+            "t3" => [("c1", Type::Int), ("c2", Type::Varchar), ("c4", Type::BigInt)]
+        },
+        "SELECT * FROM t1 JOIN t2 USING (c2, c3) JOIN t3 USING (c1, c4) where c1 > 5",
+        "\
+Projection [*]
+    Filter [c1 > 5]
+        HashJoin [t3.c1 = t1.c1 AND t3.c4 = t2.c4]
+            HashJoin [t2.c2 = t1.c2 AND t2.c3 = t1.c3]
+                Scan t1 0
+                Scan t2 1
+            Scan t3 2
+"
+    );
+
+    test_plan_select!(
+        t4,
         {
             "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt),
                      ("c4", Type::BigInt), ("c5", Type::BigInt)]

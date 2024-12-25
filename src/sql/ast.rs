@@ -1,3 +1,5 @@
+use core::panic;
+
 #[derive(PartialEq, Debug)]
 pub enum Statement {
     Select(Select),
@@ -66,6 +68,35 @@ impl std::fmt::Display for Ident {
         match self {
             Ident::Single(ident) => write!(f, "{ident}"),
             Ident::Compound(ident) => write_iter(f, &mut ident.iter(), "."),
+        }
+    }
+}
+
+impl std::ops::Index<usize> for Ident {
+    type Output = str;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            Ident::Single(ident) => {
+                if index > 0 {
+                    panic!("index {index} out of bounds")
+                }
+
+                ident.as_str()
+            }
+            Ident::Compound(vec) => vec[index].as_str(),
+        }
+    }
+}
+
+impl Ident {
+    pub fn qualify(self, with: &str) -> Self {
+        match self {
+            Ident::Single(ident) => Ident::Compound(vec![with.to_string(), ident]),
+            Ident::Compound(mut vec) => {
+                vec.insert(0, with.to_string());
+                Ident::Compound(vec)
+            }
         }
     }
 }
