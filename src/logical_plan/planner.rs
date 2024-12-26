@@ -9,7 +9,7 @@ use super::{Builder as LogicalPlanBuilder, LogicalPlan};
 
 #[derive(Debug)]
 pub enum PlannerError {
-    NotImplemented(String),
+    NotImplemented(&'static str),
     UnknownTable(String),
     UnknownColumn(String),
     Internal,
@@ -85,7 +85,6 @@ impl<D: Disk> Planner<D> {
                         let expr = Expr::Ident(join_column.qualify(&rhs_table)).eq(Expr::Ident(
                             Ident::Compound(vec![table.clone(), column.name.clone()]),
                         ));
-
                         predicate = Some(predicate.map_or(expr.clone(), |p| p.and(expr)));
                     }
 
@@ -111,29 +110,29 @@ impl<D: Disk> Planner<D> {
 
     /// Creates a `Scan` operator and returns it along with the table alias
     fn build_from(&self, from: FromTable) -> Result<(LogicalPlanBuilder, String), PlannerError> {
-        let FromTable::Table { name, alias: _ } = from else {
-            Err(NotImplemented("derived tables are not implemented yet".into()))?
-        };
+        match from {
+            FromTable::Table { name, alias } => {
+                let Ident::Single(name) = name else { Err(NotImplemented("multiple schema"))? };
+                let table_info =
+                    self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name.clone()))?;
 
-        let Ident::Single(name) = name else {
-            Err(NotImplemented("multiple schema is not implemented yet".into()))?
-        };
-
-        let table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name.clone()))?;
-
-        Ok((scan(&table_info), name))
+                Ok((scan(&table_info), alias.unwrap_or(name)))
+            }
+            FromTable::Derived { query, alias } => Ok((self.build_query(*query)?, alias.unwrap())),
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::catalog::{schema::Type, Catalog};
+    use crate::catalog::Catalog;
     use crate::disk::Memory;
     use crate::logical_plan::planner::Planner;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
     use crate::sql::Parser;
+    use crate::{column, schema};
 
     macro_rules! test_plan_select {
         ($name:ident, {$( $table:expr => $columns:expr )+}, $query:expr, $want:expr) => {
@@ -167,7 +166,7 @@ mod test {
     test_plan_select!(
         t1,
         {
-            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+            "t1" => schema!{ column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
         },
         "SELECT * FROM t1 WHERE c1 = c2",
         "\
@@ -180,8 +179,8 @@ Projection [*]
     test_plan_select!(
         t2,
         {
-            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
-            "t2" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
+            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
+            "t2" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
         },
         "SELECT * FROM t1 JOIN t2 ON (t1.c1 = t2.c1) where t1.c1 > 5",
         "\
@@ -196,9 +195,9 @@ Projection [*]
     test_plan_select!(
         t3,
         {
-            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)]
-            "t2" => [("c2", Type::Int), ("c3", Type::Varchar), ("c4", Type::BigInt)]
-            "t3" => [("c1", Type::Int), ("c2", Type::Varchar), ("c4", Type::BigInt)]
+            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
+            "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
+            "t3" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c4", BigInt) }
         },
         "SELECT * FROM t1 JOIN t2 USING (c2, c3) JOIN t3 USING (c1, c4) where c1 > 5",
         "\
@@ -215,14 +214,34 @@ Projection [*]
     test_plan_select!(
         t4,
         {
-            "t1" => [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt),
-                     ("c4", Type::BigInt), ("c5", Type::BigInt)]
+            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt),
+                     column!("c4", BigInt), column!("c5", BigInt)}
         },
         "SELECT c1, c2, c3, c4 AS column_four FROM t1 WHERE c5 = '' AND column_four > 10",
         "\
 Projection [c1, c2, c3, c4 AS column_four]
     Filter [c5 = \"\" AND column_four > 10]
         Scan t1 0
+"
+    );
+
+    test_plan_select!(
+        t5,
+        {
+            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
+            "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
+        },
+        "SELECT d1.*, d2.c3, d2.c4 FROM (SELECT * FROM t1 WHERE c1 IN (1, 2, 3)) d1
+        JOIN (SELECT c2, c3, c4 FROM t2 WHERE c2 != '') d2 USING(c2)",
+        "\
+Projection [d1.*, d2.c3, d2.c4]
+    HashJoin [d2.c2 = t1.c2]
+        Projection [*]
+            Filter [c1 IN [1,2,3]]
+                Scan t1 0
+        Projection [c2, c3, c4]
+            Filter [c2 != \"\"]
+                Scan t2 1
 "
     );
 }

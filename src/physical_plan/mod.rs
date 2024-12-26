@@ -247,27 +247,23 @@ fn varchar_op(lhs: &str, op: Op, rhs: &str) -> Result<bool, EvalError> {
 
 #[cfg(test)]
 mod test {
-    use {
-        super::{eval, EvalError::*},
-        crate::{
-            catalog::schema::Type,
-            logical_plan::expr::{concat, contains, ident, lit},
-            table::tuple::{Builder as TupleBuilder, Value},
-        },
-    };
+    use super::{eval, EvalError::*};
+    use crate::logical_plan::expr::{concat, contains, ident, lit};
+    use crate::table::tuple::{Builder as TupleBuilder, Value};
+    use crate::{column, schema};
 
     macro_rules! test_eval {
         ($name:tt, $expr:expr, $schema:expr, $tuple:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let have = eval(&$expr, &$schema.into(), &$tuple);
+                let have = eval(&$expr, &$schema, &$tuple);
                 assert_eq!($want, have);
             }
         };
         ($name:tt, $expr:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let have = eval(&$expr, &[].into(), &TupleBuilder::new().build());
+                let have = eval(&$expr, &crate::schema! {}, &TupleBuilder::new().build());
                 assert_eq!($want, have);
             }
         };
@@ -282,7 +278,7 @@ mod test {
     test_eval!(
         t6,
         ident("c1"),
-        [("c1", Type::Int)],
+        schema! {column!("c1", Int)},
         TupleBuilder::new().int(1).build(),
         Ok(Value::Int(1))
     );
@@ -290,7 +286,7 @@ mod test {
     test_eval!(
         t7,
         ident("c1").eq(lit(1)),
-        [("c1", Type::Int)],
+        schema! {column!("c1", Int)},
         TupleBuilder::new().int(1).build(),
         Ok(Value::Bool(true))
     );
@@ -298,7 +294,7 @@ mod test {
     test_eval!(
         t8,
         ident("c1").eq(lit("1")),
-        [("c1", Type::Int)],
+        schema! {column!("c1", Int)},
         TupleBuilder::new().int(1).build(),
         Err(UnsupportedOperation)
     );
@@ -306,7 +302,7 @@ mod test {
     test_eval!(
         t9,
         ident("c1").eq(lit("a")).and(ident("c2").between(lit(20), lit(30))),
-        [("c1", Type::Varchar), ("c2", Type::Int)],
+        schema! {column!("c1", Varchar), column!("c2", Int)},
         TupleBuilder::new().varchar("a").int(20).build(),
         Ok(Value::Bool(true))
     );
@@ -314,7 +310,7 @@ mod test {
     test_eval!(
         t10,
         contains(vec![ident("c1"), lit("sd")]),
-        [("c1", Type::Varchar)],
+        schema! {column!("c1", Varchar)},
         TupleBuilder::new().varchar("asdf").build(),
         Ok(Value::Bool(true))
     );
@@ -322,7 +318,7 @@ mod test {
     test_eval!(
         t11,
         concat(vec![ident("c1"), ident("c2"), lit("c"), lit(9)]),
-        [("c1", Type::Varchar), ("c2", Type::Varchar)],
+        schema! {column!("c1", Varchar), column!("c2", Varchar)},
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
     );
@@ -330,7 +326,7 @@ mod test {
     test_eval!(
         t12,
         concat(vec![concat(vec![ident("c1"), ident("c2")]), concat(vec![lit("c"), lit(9)])]),
-        [("c1", Type::Varchar), ("c2", Type::Varchar)],
+        schema! {column!("c1", Varchar), column!("c2", Varchar)},
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
     );

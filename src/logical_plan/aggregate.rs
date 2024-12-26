@@ -1,5 +1,6 @@
 use super::{write_iter, Expr, Function, LogicalPlan};
 
+#[derive(Debug)]
 pub struct Aggregate {
     function: Function,
     keys: Vec<Expr>,

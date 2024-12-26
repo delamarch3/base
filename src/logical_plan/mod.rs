@@ -52,6 +52,7 @@ impl std::fmt::Debug for LogicalPlanError {
     }
 }
 
+#[derive(Debug)]
 pub enum LogicalPlan {
     Aggregate(Aggregate),
     Filter(Filter),
@@ -146,6 +147,7 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct Builder {
     root: LogicalPlan,
 }
@@ -259,7 +261,7 @@ fn determine_join_algo(expr: &Expr) -> JoinAlgorithm {
 mod test {
     use super::*;
 
-    use crate::catalog::{schema::Type, Catalog};
+    use crate::catalog::Catalog;
     use crate::disk::Memory;
     use crate::logical_plan::{
         expr::{alias, concat, ident, lit, wildcard},
@@ -268,6 +270,7 @@ mod test {
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
+    use crate::{column, schema};
 
     #[test]
     fn test_builder() -> Result<(), LogicalPlanError> {
@@ -279,12 +282,18 @@ mod test {
 
         let mut catalog = Catalog::new(pc);
         let t1 = catalog
-            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
+            .create_table(
+                "t1",
+                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
+            )
             .unwrap()
             .unwrap()
             .clone();
         let t2 = catalog
-            .create_table("t2", [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)])
+            .create_table(
+                "t2",
+                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
+            )
             .unwrap()
             .unwrap()
             .clone();
@@ -333,12 +342,18 @@ Limit 5
 
         let mut catalog = Catalog::new(pc);
         let t1 = catalog
-            .create_table("t1", [("c1", Type::Int), ("c2", Type::Varchar), ("c3", Type::BigInt)])
+            .create_table(
+                "t1",
+                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
+            )
             .expect("could not create table")
             .expect("there is no table")
             .clone();
         let t2 = catalog
-            .create_table("t2", [("c3", Type::Int), ("c4", Type::Varchar), ("c5", Type::BigInt)])
+            .create_table(
+                "t2",
+                schema! {column!("c3", Int), column!("c4", Varchar), column!("c5", BigInt)},
+            )
             .expect("could not create table")
             .expect("there is no table")
             .clone();

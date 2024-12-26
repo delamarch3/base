@@ -1,7 +1,9 @@
 use super::{write_iter, LogicalPlan};
-use crate::catalog::schema::{Schema, SchemaBuilder, Type};
-use crate::sql::SelectItem;
+use crate::catalog::schema::{Column, Schema, SchemaBuilder};
+use crate::column;
+use crate::sql::{Expr, SelectItem};
 
+#[derive(Debug)]
 pub struct Projection {
     pub(super) schema: Schema,
     pub(super) input: Box<LogicalPlan>,
@@ -35,16 +37,31 @@ pub fn build_projection_schema(projection: &Vec<SelectItem>, input_schema: &Sche
     let mut schema = SchemaBuilder::new();
     for item in projection {
         match item {
+            // SelectItem::Expr(Expr::Ident(ident)) => {
+            // pick from schema and keep table ref
+
+            // expr.type()
+            // schema.append((expr.to_string(), Type::Bool))
+            // todo!()
+            // }
             SelectItem::Expr(expr) => {
                 // expr.type()
-                schema.append((expr.to_string(), Type::Bool))
+                schema.append(column!(expr.to_string(), Bool))
             }
             SelectItem::AliasedExpr { expr, alias } => {
                 // expr.type();
-                schema.append((alias.to_string(), Type::Bool))
+                schema.append(column!(alias.to_string(), Bool))
             }
-            SelectItem::Wildcard => schema.append_schema(input_schema),
-            SelectItem::QualifiedWildcard(_) => todo!(),
+            SelectItem::Wildcard => schema.append_n(input_schema.columns.clone()),
+            SelectItem::QualifiedWildcard(ident) => schema.append_n(
+                input_schema
+                    .columns
+                    .iter()
+                    .filter(|Column { table, .. }| {
+                        table.as_ref().map_or(false, |table| table.as_str() == &ident[0])
+                    })
+                    .cloned(),
+            ),
         };
     }
 

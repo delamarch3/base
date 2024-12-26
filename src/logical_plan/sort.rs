@@ -1,5 +1,6 @@
 use super::{write_iter, Expr, LogicalPlan};
 
+#[derive(Debug)]
 pub struct Sort {
     exprs: Vec<Expr>,
     desc: bool,

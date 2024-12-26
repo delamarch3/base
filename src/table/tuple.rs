@@ -326,11 +326,12 @@ impl Builder {
 mod test {
     use crate::catalog::schema::{Column, Schema, Type};
     use crate::table::tuple::{fit_tuple_with_schema, Builder, Comparand};
+    use crate::{column, schema};
 
     use std::cmp::Ordering::*;
 
     macro_rules! test_fit_tuple_with_schema {
-        ($name:tt, schema: $schema:expr, tuple: $tuple:expr, want: $want:expr) => {
+        ($name:tt, $schema:expr, tuple: $tuple:expr, want: $want:expr) => {
             #[test]
             fn $name() {
                 let have = fit_tuple_with_schema(&$tuple.as_bytes(), &$schema.into());
@@ -341,21 +342,21 @@ mod test {
 
     test_fit_tuple_with_schema! (
         fit_same_schema_2_columns,
-        schema: [("col_b", Type::Varchar), ("col_c", Type::Int)],
+        schema! {column!("col_b", Varchar), column!("col_c", Int)},
         tuple: Builder::new().varchar("row_a").int(20).build(),
         want: Builder::new().varchar("row_a").int(20).build()
     );
 
     test_fit_tuple_with_schema! (
         fit_same_schema_3_columns,
-        schema: [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)],
+        schema! {column!("col_a", Int), column!("col_b", Varchar), column!("col_c", BigInt)},
         tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
         want: Builder::new().int(10).varchar("row_a").big_int(20).build()
     );
 
     test_fit_tuple_with_schema! (
         fit_last_columns,
-        schema: Schema::new(vec![
+        Schema::new(vec![
             Column { name: "col_b".into(), ty: Type::Varchar, offset: 4, table: None },
             Column { name: "col_c".into(), ty: Type::BigInt, offset: 8, table: None },
         ]),
@@ -365,7 +366,7 @@ mod test {
 
     test_fit_tuple_with_schema! (
         fit_middle_column,
-        schema: Schema::new(vec![Column {
+        Schema::new(vec![Column {
             name: "col_b".into(),
             ty: Type::Varchar,
             offset: 4,
@@ -377,7 +378,7 @@ mod test {
 
     test_fit_tuple_with_schema! (
         fit_outer_columns,
-        schema: Schema::new(vec![
+        Schema::new(vec![
             Column { name: "col_a".into(), ty: Type::Int, offset: 0, table: None },
             Column { name: "col_c".into(), ty: Type::BigInt, offset: 8, table: None },
         ]),
@@ -389,7 +390,7 @@ mod test {
         ($name:tt, $schema:expr, lhs: $lhs:expr, rhs: $rhs:expr, $want:expr) => {
             #[test]
             fn $name() {
-                let schema = $schema.into();
+                let schema = $schema;
                 let have = Comparand(&schema, &$lhs).cmp(&Comparand(&schema, &$rhs));
                 assert_eq!($want, have);
             }
@@ -398,7 +399,7 @@ mod test {
 
     test_comparator!(
         t1,
-        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
+        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
         lhs: Builder::new().int(4).bool(false).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Equal
@@ -406,7 +407,7 @@ mod test {
 
     test_comparator!(
         t2,
-        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
+        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
         lhs: Builder::new().int(4).bool(true).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Greater
@@ -414,7 +415,7 @@ mod test {
 
     test_comparator!(
         t3,
-        [("c1", Type::Int), ("c2", Type::Bool), ("c1", Type::BigInt)],
+        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
         lhs: Builder::new().int(4).bool(false).big_int(90).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Less
@@ -422,7 +423,7 @@ mod test {
 
     test_comparator!(
         t4,
-        [("c1", Type::TinyInt), ("c2", Type::Varchar)],
+        schema! {column!("c1", TinyInt), column!("c2", Varchar)},
         lhs: Builder::new().tiny_int(1).varchar("Column").build(),
         rhs: Builder::new().tiny_int(1).varchar("Column").build(),
         Equal
@@ -430,7 +431,7 @@ mod test {
 
     test_comparator!(
         t5,
-        [("c1", Type::Varchar), ("c2", Type::TinyInt)],
+        schema! {column!("c1", Varchar), column!("c2", TinyInt)},
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
         Less
@@ -438,7 +439,7 @@ mod test {
 
     test_comparator!(
         t6,
-        [("c1", Type::Varchar), ("c2", Type::TinyInt)],
+        schema! {column!("c1", Varchar), column!("c2", TinyInt)},
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column").tiny_int(1).build(),
         Greater

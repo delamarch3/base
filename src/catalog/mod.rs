@@ -47,6 +47,7 @@ pub struct IndexMeta {
     pub schema: Schema,
 }
 
+#[derive(Debug)]
 pub enum IndexType {
     HashTable,
     BTree,
@@ -61,6 +62,7 @@ impl std::fmt::Display for IndexType {
     }
 }
 
+#[derive(Debug)]
 pub struct IndexInfo {
     pub name: String,
     pub schema: Schema,
@@ -205,10 +207,7 @@ impl<D: Disk> Catalog<D> {
 #[cfg(test)]
 mod test {
     use crate::btree::BTree;
-    use crate::catalog::{
-        schema::{Schema, Type},
-        Catalog, IndexType,
-    };
+    use crate::catalog::{Catalog, IndexType};
     use crate::disk::Memory;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
@@ -217,6 +216,7 @@ mod test {
         node::{TupleMeta, RID},
         tuple::Builder as TupleBuilder,
     };
+    use crate::{column, schema};
 
     macro_rules! test_btree_index {
         ($test:tt, $schema:expr, $key:expr, $tuples:expr, $want:expr) => {
@@ -228,7 +228,7 @@ mod test {
                 let replacer = LRU::new(K);
                 let pc = PageCache::new(memory, replacer, 0);
 
-                let schema: Schema = $schema.into();
+                let schema = $schema;
 
                 const TABLE_A: &str = "table_a";
                 const INDEX_A: &str = "index_a";
@@ -259,19 +259,11 @@ mod test {
 
     test_btree_index!(
         test_int_big_int_key,
-        [("col_a", Type::Int), ("col_b", Type::Varchar), ("col_c", Type::BigInt)],
-        ["col_a", "col_c"],
+        schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) },
+        ["c1", "c3"],
         [
-            TupleBuilder::new()
-                .int(10)
-                .varchar("row_a") // TODO: slot panics when this is the last column?
-                .big_int(20)
-                .build(),
-            TupleBuilder::new()
-                .int(20)
-                .varchar("row_b") // TODO: slot panics when this is the last column?
-                .big_int(30)
-                .build()
+            TupleBuilder::new().int(10).varchar("row_a").big_int(20).build(),
+            TupleBuilder::new().int(20).varchar("row_b").big_int(30).build()
         ],
         vec![
             (TupleBuilder::new().int(10).big_int(20).build(), RID { page_id: 0, slot_id: 0 },),
@@ -281,8 +273,8 @@ mod test {
 
     test_btree_index!(
         test_int_varchar_key,
-        [("col_a", Type::Int), ("col_b", Type::BigInt), ("col_c", Type::Varchar)],
-        ["col_a", "col_c"],
+        schema! { column!("c1", Int), column!("c2", BigInt), column!("c3", Varchar) },
+        ["c1", "c3"],
         [
             TupleBuilder::new().int(20).big_int(20).varchar("row_a").build(),
             TupleBuilder::new().int(20).big_int(30).varchar("row_b").build()

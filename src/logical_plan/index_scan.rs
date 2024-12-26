@@ -2,6 +2,7 @@ use crate::catalog::IndexInfo;
 
 use super::LogicalPlan;
 
+#[derive(Debug)]
 pub struct IndexScan {
     pub(super) index: IndexInfo,
 }

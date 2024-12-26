@@ -1,5 +1,6 @@
 use super::{write_iter, Expr, LogicalPlan};
 
+#[derive(Debug)]
 pub struct Group {
     keys: Vec<Expr>,
     pub(super) input: Box<LogicalPlan>,

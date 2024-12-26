@@ -41,34 +41,6 @@ pub struct Schema {
     tuple_size: usize,
 }
 
-impl<const N: usize> From<[(&str, Type); N]> for Schema {
-    fn from(fields: [(&str, Type); N]) -> Self {
-        let mut columns = Vec::new();
-
-        let mut offset = 0;
-        for (name, ty) in fields {
-            columns.push(Column { name: name.to_string(), ty, offset, table: None });
-            offset += ty.size();
-        }
-
-        Self { tuple_size: offset, columns }
-    }
-}
-
-impl From<Vec<(String, Type)>> for Schema {
-    fn from(fields: Vec<(String, Type)>) -> Self {
-        let mut columns = Vec::new();
-
-        let mut offset = 0;
-        for (name, ty) in fields {
-            columns.push(Column { name, ty, offset, table: None });
-            offset += ty.size();
-        }
-
-        Self { tuple_size: offset, columns }
-    }
-}
-
 impl Schema {
     // TODO: support nullable columns
     pub fn new(columns: Vec<Column>) -> Self {
@@ -135,7 +107,7 @@ impl Schema {
 }
 
 pub struct SchemaBuilder {
-    columns: Vec<(String, Type)>,
+    columns: Vec<Column>,
 }
 
 impl SchemaBuilder {
@@ -143,23 +115,56 @@ impl SchemaBuilder {
         Self { columns: vec![] }
     }
 
-    pub fn append(&mut self, column: (String, Type)) -> &mut Self {
+    pub fn append(&mut self, column: Column) -> &mut Self {
         self.columns.push(column);
         self
     }
 
-    pub fn append_n(&mut self, column: &[(String, Type)]) -> &mut Self {
-        self.columns.extend(column.iter().cloned());
-        self
-    }
-
-    pub fn append_schema(&mut self, schema: &Schema) -> &mut Self {
-        self.columns
-            .extend(schema.columns.iter().cloned().map(|Column { name, ty, .. }| (name, ty)));
+    pub fn append_n(&mut self, column: impl IntoIterator<Item = Column>) -> &mut Self {
+        self.columns.extend(column.into_iter());
         self
     }
 
     pub fn build(self) -> Schema {
-        self.columns.into()
+        Schema::new(self.columns)
     }
+}
+
+#[macro_export]
+macro_rules! schema {
+    () => {
+        {
+            let columns = Vec::new();
+            crate::catalog::schema::Schema::new(columns).compact()
+        }
+    };
+    ( $( $column:expr ),* ) => {
+        {
+            let mut columns = Vec::new();
+            $(
+                columns.push($column);
+            )*
+            crate::catalog::schema::Schema::new(columns).compact()
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! column {
+    ($name:expr, $ty:tt, $table:expr) => {
+        crate::catalog::schema::Column {
+            name: $name.into(),
+            ty: crate::catalog::schema::Type::$ty,
+            offset: 0,
+            table: Some($table.into()),
+        }
+    };
+    ($name:expr, $ty:tt) => {
+        crate::catalog::schema::Column {
+            name: $name.into(),
+            ty: crate::catalog::schema::Type::$ty,
+            offset: 0,
+            table: None,
+        }
+    };
 }

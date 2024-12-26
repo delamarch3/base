@@ -3,6 +3,7 @@ use {
     crate::catalog::schema::Schema,
 };
 
+#[derive(Debug)]
 pub enum JoinAlgorithm {
     NestedLoop,
     Hash,
@@ -19,6 +20,7 @@ impl std::fmt::Display for JoinAlgorithm {
     }
 }
 
+#[derive(Debug)]
 pub struct Join {
     algo: JoinAlgorithm,
     predicate: Expr,

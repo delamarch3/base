@@ -1,5 +1,6 @@
 use super::{Expr, LogicalPlan};
 
+#[derive(Debug)]
 pub struct Filter {
     expr: Expr,
     pub(super) input: Box<LogicalPlan>,

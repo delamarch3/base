@@ -4,6 +4,7 @@ use crate::disk::Disk;
 
 use super::LogicalPlan;
 
+#[derive(Debug)]
 pub struct Scan {
     name: String,
     oid: OID,
