@@ -23,7 +23,7 @@ impl std::fmt::Display for Literal {
         match self {
             Literal::Number(number) => write!(f, "{number}"),
             Literal::Decimal(decimal) => write!(f, "{decimal}"),
-            Literal::String(string) => write!(f, "\"{string}\""),
+            Literal::String(string) => write!(f, "'{string}'"),
             Literal::Bool(bool) => write!(f, "{}", if *bool { "TRUE" } else { "FALSE" }),
             Literal::Null => write!(f, "NULL"),
         }
@@ -141,7 +141,7 @@ impl std::fmt::Display for Function {
         if *distinct {
             write!(f, "DISTINCT ")?;
         }
-        write_iter(f, &mut args.iter(), ",")?;
+        write_iter(f, &mut args.iter(), ", ")?;
         write!(f, ")")
     }
 }
@@ -188,14 +188,14 @@ impl std::fmt::Display for Expr {
                 write!(f, "NULL")
             }
             Expr::InList { expr, list, negated: false } => {
-                write!(f, "{expr} IN [")?;
-                write_iter(f, &mut list.iter(), ",")?;
-                write!(f, "]")
+                write!(f, "{expr} IN (")?;
+                write_iter(f, &mut list.iter(), ", ")?;
+                write!(f, ")")
             }
             Expr::InList { expr, list, negated: true } => {
-                write!(f, "{expr} NOT IN [")?;
-                write_iter(f, &mut list.iter(), ",")?;
-                write!(f, "]")
+                write!(f, "{expr} NOT IN (")?;
+                write_iter(f, &mut list.iter(), ", ")?;
+                write!(f, ")")
             }
             Expr::Between { expr, negated: false, low, high } => {
                 write!(f, "{expr} BETWEEN {low} AND {high}")

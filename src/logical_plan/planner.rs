@@ -233,7 +233,7 @@ Projection [*]
         "SELECT c1, c2, c3, c4 AS column_four FROM t1 WHERE c5 = '' AND column_four > 10",
         "\
 Projection [c1, c2, c3, c4 AS column_four]
-    Filter [c5 = \"\" AND column_four > 10]
+    Filter [c5 = '' AND column_four > 10]
         Scan t1 0
 "
     );
@@ -250,10 +250,10 @@ Projection [c1, c2, c3, c4 AS column_four]
 Projection [d1.*, d2.c3, d2.c4]
     HashJoin [d2.c2 = d1.c2]
         Projection [*]
-            Filter [c1 IN [1,2,3]]
+            Filter [c1 IN (1, 2, 3)]
                 Scan t1 0
         Projection [c2, c3, c4]
-            Filter [c2 != \"\"]
+            Filter [c2 != '']
                 Scan t2 1
 "
     );

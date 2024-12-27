@@ -341,11 +341,11 @@ mod test {
         let want = "\
 Limit 5
     Sort [c1] ASC
-        Projection [c1, CONCAT(1,\"2\"), c5 IS NULL, 1 AS one, *]
+        Projection [c1, CONCAT(1, '2'), c5 IS NULL, 1 AS one, *]
             HashJoin [t1.c3 = t2.c3]
                 Filter [c1 IS NOT NULL]
                     Scan t1 0
-                Filter [1 = 1 AND \"1\" = \"1\"]
+                Filter [1 = 1 AND '1' = '1']
                     Scan t2 1
 ";
 
