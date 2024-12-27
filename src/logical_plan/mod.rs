@@ -1,6 +1,7 @@
-use crate::catalog::{schema::Schema, IndexInfo, TableInfo};
+use crate::catalog::schema::{Schema, Type};
+use crate::catalog::{IndexInfo, TableInfo};
 use crate::disk::Disk;
-use crate::sql::{Expr, Function, Op, SelectItem};
+use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
 pub mod expr;
 pub mod planner;
@@ -16,15 +17,8 @@ mod scan;
 mod sort;
 
 use {
-    aggregate::Aggregate,
-    filter::Filter,
-    group::Group,
-    index_scan::IndexScan,
-    join::{Join, JoinAlgorithm},
-    limit::Limit,
-    projection::Projection,
-    scan::Scan,
-    sort::Sort,
+    aggregate::Aggregate, filter::Filter, group::Group, index_scan::IndexScan, join::Join,
+    limit::Limit, projection::Projection, scan::Scan, sort::Sort,
 };
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
@@ -37,6 +31,7 @@ pub enum LogicalPlanError {
     NotImplemented(&'static str),
     Internal,
 }
+use LogicalPlanError::*;
 
 impl std::error::Error for LogicalPlanError {}
 
@@ -47,7 +42,7 @@ impl std::fmt::Display for LogicalPlanError {
             LogicalPlanError::UnknownTable(table) => write!(f, "unknown table: {table}"),
             LogicalPlanError::UnknownColumn(column) => write!(f, "unknown column: {column}"),
             LogicalPlanError::NotImplemented(msg) => write!(f, "not implemented: {msg}"),
-            LogicalPlanError::Internal => todo!(),
+            LogicalPlanError::Internal => write!(f, "internal"),
         }
     }
 }
@@ -167,6 +162,46 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
+fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
+    let ty = match expr {
+        Expr::Ident(ident @ Ident::Single(column)) => {
+            schema.find_column_by_name(column).ok_or(UnknownColumn(ident.to_string()))?.ty
+        }
+        Expr::Ident(ident @ Ident::Compound(idents)) => {
+            schema
+                .find_column_by_name_and_table(&idents[0], &idents[1])
+                .ok_or(UnknownColumn(ident.to_string()))?
+                .ty
+        }
+        Expr::Literal(literal) => match literal {
+            Literal::Number(_) => Type::Int,
+            Literal::Decimal(_) => todo!(),
+            Literal::String(_) => Type::Varchar,
+            Literal::Bool(_) => Type::Bool,
+            Literal::Null => todo!(),
+        },
+        Expr::IsNull { .. } | Expr::InList { .. } | Expr::Between { .. } => Type::Bool,
+        Expr::BinaryOp { left: _, op, right: _ } => match op {
+            Op::Eq | Op::Neq | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::And | Op::Or => Type::Bool,
+        },
+        Expr::Function(function) => match function.name {
+            FunctionName::Min => Type::Int,
+            FunctionName::Max => Type::Int,
+            FunctionName::Sum => Type::Int,
+            FunctionName::Avg => Type::Int,
+            FunctionName::Count => Type::Int,
+            FunctionName::Contains => Type::Bool,
+            FunctionName::Concat => Type::Varchar,
+        },
+
+        Expr::SubQuery(_) => todo!(),
+        Expr::Wildcard => todo!(),
+        Expr::QualifiedWildcard(_) => todo!(),
+    };
+
+    Ok(ty)
+}
+
 #[derive(Debug)]
 pub struct Builder {
     root: LogicalPlan,
@@ -209,8 +244,7 @@ impl Builder {
 
     pub fn join(self, rhs: impl Into<LogicalPlan>, predicate: Expr) -> Self {
         let lhs = self.root;
-        let algo = determine_join_algo(&predicate);
-        let join = Join::new(algo, predicate, lhs, rhs);
+        let join = Join::new(predicate, lhs, rhs);
 
         Self { root: join.into() }
     }
@@ -252,36 +286,6 @@ impl Builder {
 
     pub fn build(self) -> LogicalPlan {
         self.root
-    }
-}
-
-// TODO: for join using, we know we can use a hash join so this check can be skipped, would be
-// better to have as a param in that case. For join on, some things can be optimised out like `1
-// AND 1`. After that it will make sense to determine the join algorithm
-fn determine_join_algo(expr: &Expr) -> JoinAlgorithm {
-    fn is_eq(expr: &Expr) -> bool {
-        match expr {
-            Expr::BinaryOp { left, op: Op::And, right } => match (left.as_ref(), right.as_ref()) {
-                (Expr::Ident(_), Expr::Ident(_))
-                | (Expr::Ident(_), Expr::Literal(_))
-                | (Expr::Literal(_), Expr::Ident(_))
-                | (Expr::Literal(_), Expr::Literal(_)) => false,
-                _ => is_eq(left) && is_eq(left),
-            },
-            Expr::BinaryOp { left, op: Op::Eq, right } => match (left.as_ref(), right.as_ref()) {
-                (Expr::Literal(_), Expr::Literal(_)) => false,
-                _ => is_eq(left) && is_eq(right),
-            },
-            Expr::Ident(_) | Expr::Literal(_) => true,
-            _ => false,
-        }
-    }
-
-    // if the predicate consists only of eqs and ands we can use hash join
-    if is_eq(expr) {
-        JoinAlgorithm::Hash
-    } else {
-        JoinAlgorithm::NestedLoop
     }
 }
 
@@ -394,12 +398,7 @@ Limit 5
         let filter_expr_b = ident("c5").is_not_null();
         let filter_b = Filter::new(filter_expr_b, scan_b);
 
-        let join = Join::new(
-            JoinAlgorithm::NestedLoop,
-            ident("t1.c3").eq(ident("t2.c3")),
-            filter_a,
-            filter_b,
-        );
+        let join = Join::new(ident("t1.c3").eq(ident("t2.c3")), filter_a, filter_b);
         let projection = Projection::new(vec![ident("c1").into(), ident("c2").into()], join)?;
 
         let plan = LogicalPlan::Projection(projection);
@@ -407,7 +406,7 @@ Limit 5
         let have = plan.to_string();
         let want = "\
 Projection [c1, c2]
-    NestedLoopJoin [t1.c3 = t2.c3]
+    HashJoin [t1.c3 = t2.c3]
         Filter [c1 IS NULL AND 5 < c2]
             Scan t1 0
         Filter [c5 IS NOT NULL]

@@ -82,7 +82,7 @@ impl Schema {
         schema.columns.extend(other.columns.iter().cloned());
         schema.tuple_size += other.tuple_size;
 
-        schema
+        schema.compact()
     }
 
     pub fn qualify(&mut self, table: &str) {

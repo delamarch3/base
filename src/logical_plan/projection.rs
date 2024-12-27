@@ -1,7 +1,7 @@
-use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
-use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
+use super::{expr_type, write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::catalog::schema::{Column, Schema, SchemaBuilder};
 use crate::column;
-use crate::sql::{Expr, FunctionName, Ident, Literal, Op, SelectItem};
+use crate::sql::{Expr, Ident, SelectItem};
 
 #[derive(Debug)]
 pub struct Projection {
@@ -75,44 +75,4 @@ fn build_projection_schema(
     }
 
     Ok(schema.build())
-}
-
-fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
-    let ty = match expr {
-        Expr::Ident(ident @ Ident::Single(column)) => {
-            schema.find_column_by_name(column).ok_or(UnknownColumn(ident.to_string()))?.ty
-        }
-        Expr::Ident(ident @ Ident::Compound(idents)) => {
-            schema
-                .find_column_by_name_and_table(&idents[0], &idents[1])
-                .ok_or(UnknownColumn(ident.to_string()))?
-                .ty
-        }
-        Expr::Literal(literal) => match literal {
-            Literal::Number(_) => Type::Int,
-            Literal::Decimal(_) => todo!(),
-            Literal::String(_) => Type::Varchar,
-            Literal::Bool(_) => Type::Bool,
-            Literal::Null => todo!(),
-        },
-        Expr::IsNull { .. } | Expr::InList { .. } | Expr::Between { .. } => Type::Bool,
-        Expr::BinaryOp { left: _, op, right: _ } => match op {
-            Op::Eq | Op::Neq | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::And | Op::Or => Type::Bool,
-        },
-        Expr::Function(function) => match function.name {
-            FunctionName::Min => Type::Int,
-            FunctionName::Max => Type::Int,
-            FunctionName::Sum => Type::Int,
-            FunctionName::Avg => Type::Int,
-            FunctionName::Count => Type::Int,
-            FunctionName::Contains => Type::Bool,
-            FunctionName::Concat => Type::Varchar,
-        },
-
-        Expr::SubQuery(_) => todo!(),
-        Expr::Wildcard => todo!(),
-        Expr::QualifiedWildcard(_) => todo!(),
-    };
-
-    Ok(ty)
 }

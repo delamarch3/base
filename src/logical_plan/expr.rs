@@ -118,53 +118,53 @@ impl Expr {
         Expr::InList { expr: Box::new(self), list, negated: true }
     }
 
-    pub fn between(self, low: Expr, high: Expr) -> Self {
+    pub fn between(self, low: impl Into<Expr>, high: impl Into<Expr>) -> Self {
         Expr::Between {
             expr: Box::new(self),
             negated: false,
-            low: Box::new(low),
-            high: Box::new(high),
+            low: Box::new(low.into()),
+            high: Box::new(high.into()),
         }
     }
 
-    pub fn not_between(self, low: Expr, high: Expr) -> Self {
+    pub fn not_between(self, low: impl Into<Expr>, high: impl Into<Expr>) -> Self {
         Expr::Between {
             expr: Box::new(self),
             negated: true,
-            low: Box::new(low),
-            high: Box::new(high),
+            low: Box::new(low.into()),
+            high: Box::new(high.into()),
         }
     }
 
-    pub fn eq(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Eq, right: Box::new(rhs) }
+    pub fn eq(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Eq, right: Box::new(rhs.into()) }
     }
 
-    pub fn neq(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Neq, right: Box::new(rhs) }
+    pub fn neq(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Neq, right: Box::new(rhs.into()) }
     }
 
-    pub fn lt(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Lt, right: Box::new(rhs) }
+    pub fn lt(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Lt, right: Box::new(rhs.into()) }
     }
 
-    pub fn le(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Le, right: Box::new(rhs) }
+    pub fn le(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Le, right: Box::new(rhs.into()) }
     }
 
-    pub fn gt(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Gt, right: Box::new(rhs) }
+    pub fn gt(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Gt, right: Box::new(rhs.into()) }
     }
 
-    pub fn ge(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Ge, right: Box::new(rhs) }
+    pub fn ge(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Ge, right: Box::new(rhs.into()) }
     }
 
-    pub fn and(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::And, right: Box::new(rhs) }
+    pub fn and(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::And, right: Box::new(rhs.into()) }
     }
 
-    pub fn or(self, rhs: Expr) -> Self {
-        Expr::BinaryOp { left: Box::new(self), op: Op::Or, right: Box::new(rhs) }
+    pub fn or(self, rhs: impl Into<Expr>) -> Self {
+        Expr::BinaryOp { left: Box::new(self), op: Op::Or, right: Box::new(rhs.into()) }
     }
 }

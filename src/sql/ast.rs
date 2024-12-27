@@ -30,6 +30,12 @@ impl std::fmt::Display for Literal {
     }
 }
 
+impl From<Literal> for Expr {
+    fn from(literal: Literal) -> Self {
+        Expr::Literal(literal)
+    }
+}
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Op {
     Eq,

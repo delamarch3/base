@@ -64,18 +64,18 @@ impl<D: Disk> Planner<D> {
                     let mut predicate: Option<Expr> = None;
                     for join_column in join_columns {
                         let Some(column) = schema.find_column_by_name(&join_column[0]) else {
-                            Err(UnknownColumn(join_column[0].to_string()))?
+                            Err(UnknownColumn(join_column.to_string()))?
                         };
 
-                        // TODO: improve error message
-                        if rhs.schema().find_column_by_name(&join_column[0]).is_none() {
-                            Err(UnknownColumn(join_column[0].to_string()))?
+                        let rhs_column = join_column.qualify(&rhs_table);
+                        if rhs.schema().find_column_by_name(&rhs_column[1]).is_none() {
+                            Err(UnknownColumn(rhs_column.to_string()))?
                         }
 
                         let Some(table) = &column.table else { Err(Internal)? };
-                        let expr = Expr::Ident(join_column.qualify(&rhs_table)).eq(Expr::Ident(
-                            Ident::Compound(vec![table.clone(), column.name.clone()]),
-                        ));
+                        let lhs_column =
+                            Expr::Ident(Ident::Compound(vec![table.clone(), column.name.clone()]));
+                        let expr = Expr::Ident(rhs_column).eq(lhs_column);
                         predicate = Some(predicate.map_or(expr.clone(), |p| p.and(expr)));
                     }
 
@@ -121,7 +121,7 @@ impl<D: Disk> Planner<D> {
                 let mut query = self.build_query(*query)?;
 
                 // Alias applies to all columns in the query, all tables
-                let Some(alias) = alias else { todo!() };
+                let Some(alias) = alias else { Err(Internal)? };
                 query.schema_mut().qualify(&alias);
 
                 Ok((query, alias))
