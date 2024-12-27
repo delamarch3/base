@@ -5,16 +5,7 @@ use crate::sql::{
     Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
-use super::{Builder as LogicalPlanBuilder, LogicalPlan};
-
-#[derive(Debug)]
-pub enum PlannerError {
-    NotImplemented(&'static str),
-    UnknownTable(String),
-    UnknownColumn(String),
-    Internal,
-}
-use PlannerError::*;
+use super::{Builder as LogicalPlanBuilder, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 
 pub struct Planner<D: Disk> {
     catalog: Catalog<D>,
@@ -25,7 +16,7 @@ impl<D: Disk> Planner<D> {
         Self { catalog }
     }
 
-    pub fn plan_statement(&self, statement: Statement) -> Result<LogicalPlan, PlannerError> {
+    pub fn plan_statement(&self, statement: Statement) -> Result<LogicalPlan, LogicalPlanError> {
         let statement = match statement {
             Statement::Select(select) => self.build_select(select)?,
             Statement::Insert(_) => todo!(),
@@ -37,7 +28,7 @@ impl<D: Disk> Planner<D> {
         Ok(statement.build())
     }
 
-    fn build_select(&self, select: Select) -> Result<LogicalPlanBuilder, PlannerError> {
+    fn build_select(&self, select: Select) -> Result<LogicalPlanBuilder, LogicalPlanError> {
         let Select { body, order, limit } = select;
 
         let mut query = self.build_query(body)?;
@@ -55,7 +46,7 @@ impl<D: Disk> Planner<D> {
         Ok(query)
     }
 
-    fn build_query(&self, query: Query) -> Result<LogicalPlanBuilder, PlannerError> {
+    fn build_query(&self, query: Query) -> Result<LogicalPlanBuilder, LogicalPlanError> {
         let Query { projection, from, joins, filter, group } = query;
 
         let (mut query, _) = self.build_from(from)?;
@@ -96,20 +87,23 @@ impl<D: Disk> Planner<D> {
         }
 
         if let Some(filter) = filter {
-            query = query.filter(filter)
+            query = query.filter(filter);
         }
 
         if group.len() > 0 {
             todo!()
         }
 
-        query = query.project(projection);
+        query = query.project(projection)?;
 
         Ok(query)
     }
 
     /// Creates a `Scan` operator and returns it along with the table alias
-    fn build_from(&self, from: FromTable) -> Result<(LogicalPlanBuilder, String), PlannerError> {
+    fn build_from(
+        &self,
+        from: FromTable,
+    ) -> Result<(LogicalPlanBuilder, String), LogicalPlanError> {
         match from {
             FromTable::Table { name, alias } => {
                 let Ident::Single(name) = name else { Err(NotImplemented("multiple schema"))? };

@@ -1,4 +1,4 @@
-use super::{write_iter, LogicalPlan};
+use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
 use crate::column;
 use crate::sql::{Expr, FunctionName, Ident, Literal, Op, SelectItem};
@@ -25,32 +25,41 @@ impl From<Projection> for LogicalPlan {
 }
 
 impl Projection {
-    pub fn new(projection: Vec<SelectItem>, input: impl Into<LogicalPlan>) -> Self {
+    pub fn new(
+        projection: Vec<SelectItem>,
+        input: impl Into<LogicalPlan>,
+    ) -> Result<Self, LogicalPlanError> {
         let input = Box::new(input.into());
-        let schema = build_projection_schema(&projection, input.schema());
+        let schema = build_projection_schema(&projection, input.schema())?;
 
-        Self { schema, input, projection }
+        Ok(Self { schema, input, projection })
     }
 }
 
-fn build_projection_schema(projection: &Vec<SelectItem>, input_schema: &Schema) -> Schema {
+fn build_projection_schema(
+    projection: &Vec<SelectItem>,
+    input_schema: &Schema,
+) -> Result<Schema, LogicalPlanError> {
     let mut schema = SchemaBuilder::new();
     for item in projection {
         match item {
-            SelectItem::Expr(Expr::Ident(Ident::Single(column))) => {
-                schema.append(input_schema.find_column_by_name(column).cloned().expect("todo"))
-            }
-            SelectItem::Expr(Expr::Ident(Ident::Compound(idents))) => schema.append(
+            SelectItem::Expr(Expr::Ident(ident @ Ident::Single(column))) => schema.append(
+                input_schema
+                    .find_column_by_name(column)
+                    .cloned()
+                    .ok_or(UnknownColumn(ident.to_string()))?,
+            ),
+            SelectItem::Expr(Expr::Ident(ident @ Ident::Compound(idents))) => schema.append(
                 input_schema
                     .find_column_by_name_and_table(&idents[0], &idents[1])
                     .cloned()
-                    .expect("todo"),
+                    .ok_or(UnknownColumn(ident.to_string()))?,
             ),
             SelectItem::Expr(expr) => {
-                schema.append(column!(expr.to_string() => expr_type(expr, input_schema)))
+                schema.append(column!(expr.to_string() => expr_type(expr, input_schema)?))
             }
             SelectItem::AliasedExpr { expr, alias } => {
-                schema.append(column!(alias.to_string() => expr_type(expr, input_schema)))
+                schema.append(column!(alias.to_string() => expr_type(expr, input_schema)?))
             }
             SelectItem::Wildcard => schema.append_n(input_schema.columns.clone()),
             SelectItem::QualifiedWildcard(ident) => schema.append_n(
@@ -65,14 +74,19 @@ fn build_projection_schema(projection: &Vec<SelectItem>, input_schema: &Schema) 
         };
     }
 
-    schema.build()
+    Ok(schema.build())
 }
 
-fn expr_type(expr: &Expr, schema: &Schema) -> Type {
-    match expr {
-        Expr::Ident(Ident::Single(column)) => schema.find_column_by_name(column).expect("todo").ty,
-        Expr::Ident(Ident::Compound(idents)) => {
-            schema.find_column_by_name_and_table(&idents[0], &idents[1]).expect("todo").ty
+fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
+    let ty = match expr {
+        Expr::Ident(ident @ Ident::Single(column)) => {
+            schema.find_column_by_name(column).ok_or(UnknownColumn(ident.to_string()))?.ty
+        }
+        Expr::Ident(ident @ Ident::Compound(idents)) => {
+            schema
+                .find_column_by_name_and_table(&idents[0], &idents[1])
+                .ok_or(UnknownColumn(ident.to_string()))?
+                .ty
         }
         Expr::Literal(literal) => match literal {
             Literal::Number(_) => Type::Int,
@@ -98,5 +112,7 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Type {
         Expr::SubQuery(_) => todo!(),
         Expr::Wildcard => todo!(),
         Expr::QualifiedWildcard(_) => todo!(),
-    }
+    };
+
+    Ok(ty)
 }

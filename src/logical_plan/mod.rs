@@ -1,6 +1,6 @@
 use crate::catalog::{schema::Schema, IndexInfo, TableInfo};
 use crate::disk::Disk;
-use crate::sql::{Expr, Function, Ident, Op, SelectItem};
+use crate::sql::{Expr, Function, Op, SelectItem};
 
 pub mod expr;
 pub mod planner;
@@ -32,7 +32,10 @@ use {
 pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
 
 pub enum LogicalPlanError {
-    InvalidIdent(Ident),
+    UnknownTable(String),
+    UnknownColumn(String),
+    NotImplemented(&'static str),
+    Internal,
 }
 
 impl std::error::Error for LogicalPlanError {}
@@ -41,7 +44,10 @@ impl std::fmt::Display for LogicalPlanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "logical plan error: ")?;
         match self {
-            LogicalPlanError::InvalidIdent(ident) => write!(f, "invalid identifier: {}", ident),
+            LogicalPlanError::UnknownTable(table) => write!(f, "unknown table: {table}"),
+            LogicalPlanError::UnknownColumn(column) => write!(f, "unknown column: {column}"),
+            LogicalPlanError::NotImplemented(msg) => write!(f, "not implemented: {msg}"),
+            LogicalPlanError::Internal => todo!(),
         }
     }
 }
@@ -187,11 +193,11 @@ impl Builder {
         self.root.schema_mut()
     }
 
-    pub fn project(self, projection: Vec<SelectItem>) -> Self {
+    pub fn project(self, projection: Vec<SelectItem>) -> Result<Self, LogicalPlanError> {
         let input = self.root;
-        let projection = Projection::new(projection, input);
+        let projection = Projection::new(projection, input)?;
 
-        Self { root: projection.into() }
+        Ok(Self { root: projection.into() })
     }
 
     pub fn filter(self, expr: Expr) -> Self {
@@ -332,7 +338,7 @@ mod test {
                 ident("c5").is_null().into(),
                 alias(lit(1), "one"),
                 wildcard(),
-            ])
+            ])?
             .sort(vec![ident("c1")])
             .limit(lit(5))
             .build();
@@ -394,7 +400,7 @@ Limit 5
             filter_a,
             filter_b,
         );
-        let projection = Projection::new(vec![ident("c1").into(), ident("c2").into()], join);
+        let projection = Projection::new(vec![ident("c1").into(), ident("c2").into()], join)?;
 
         let plan = LogicalPlan::Projection(projection);
 
