@@ -1,6 +1,6 @@
 use crate::catalog::Catalog;
 use crate::disk::Disk;
-use crate::logical_plan::scan;
+use crate::logical_plan::{scan, scan_with_alias};
 use crate::sql::{
     Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
@@ -72,12 +72,12 @@ impl<D: Disk> Planner<D> {
                 JoinConstraint::Using(join_columns) => {
                     let mut predicate: Option<Expr> = None;
                     for join_column in join_columns {
-                        let Some(column) = schema.find(&join_column[0]) else {
+                        let Some(column) = schema.find_column_by_name(&join_column[0]) else {
                             Err(UnknownColumn(join_column[0].to_string()))?
                         };
 
                         // TODO: improve error message
-                        if rhs.schema().find(&join_column[0]).is_none() {
+                        if rhs.schema().find_column_by_name(&join_column[0]).is_none() {
                             Err(UnknownColumn(join_column[0].to_string()))?
                         }
 
@@ -116,9 +116,22 @@ impl<D: Disk> Planner<D> {
                 let table_info =
                     self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name.clone()))?;
 
-                Ok((scan(&table_info), alias.unwrap_or(name)))
+                if let Some(alias) = alias {
+                    // Alias is applied at the `Scan` node, single table
+                    Ok((scan_with_alias(&table_info, alias.clone()), alias))
+                } else {
+                    Ok((scan(&table_info), name))
+                }
             }
-            FromTable::Derived { query, alias } => Ok((self.build_query(*query)?, alias.unwrap())),
+            FromTable::Derived { query, alias } => {
+                let mut query = self.build_query(*query)?;
+
+                // Alias applies to all columns in the query, all tables
+                let Some(alias) = alias else { todo!() };
+                query.schema_mut().qualify(&alias);
+
+                Ok((query, alias))
+            }
         }
     }
 }
@@ -235,7 +248,7 @@ Projection [c1, c2, c3, c4 AS column_four]
         JOIN (SELECT c2, c3, c4 FROM t2 WHERE c2 != '') d2 USING(c2)",
         "\
 Projection [d1.*, d2.c3, d2.c4]
-    HashJoin [d2.c2 = t1.c2]
+    HashJoin [d2.c2 = d1.c2]
         Projection [*]
             Filter [c1 IN [1,2,3]]
                 Scan t1 0

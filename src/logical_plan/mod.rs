@@ -126,8 +126,22 @@ impl LogicalPlan {
             LogicalPlan::Join(join) => &join.schema,
             LogicalPlan::Projection(projection) => &projection.schema,
             LogicalPlan::Scan(scan) => &scan.schema,
-            LogicalPlan::Limit(limit) => &limit.input.schema(),
-            LogicalPlan::Sort(sort) => &sort.input.schema(),
+            LogicalPlan::Limit(limit) => limit.input.schema(),
+            LogicalPlan::Sort(sort) => sort.input.schema(),
+        }
+    }
+
+    pub fn schema_mut(&mut self) -> &mut Schema {
+        match self {
+            LogicalPlan::Aggregate(aggregate) => aggregate.input.schema_mut(),
+            LogicalPlan::Filter(filter) => filter.input.schema_mut(),
+            LogicalPlan::Group(group) => group.input.schema_mut(),
+            LogicalPlan::IndexScan(index_scan) => &mut index_scan.index.schema,
+            LogicalPlan::Join(join) => &mut join.schema,
+            LogicalPlan::Projection(projection) => &mut projection.schema,
+            LogicalPlan::Scan(scan) => &mut scan.schema,
+            LogicalPlan::Limit(limit) => limit.input.schema_mut(),
+            LogicalPlan::Sort(sort) => sort.input.schema_mut(),
         }
     }
 }
@@ -156,6 +170,10 @@ pub fn scan<D: Disk>(table_info: &TableInfo<D>) -> Builder {
     Builder { root: LogicalPlan::Scan(Scan::new(table_info)) }
 }
 
+pub fn scan_with_alias<D: Disk>(table_info: &TableInfo<D>, alias: String) -> Builder {
+    Builder { root: LogicalPlan::Scan(Scan::new_with_alias(table_info, alias)) }
+}
+
 pub fn index_scan(index_info: IndexInfo) -> Builder {
     Builder { root: LogicalPlan::IndexScan(IndexScan::new(index_info)) }
 }
@@ -163,6 +181,10 @@ pub fn index_scan(index_info: IndexInfo) -> Builder {
 impl Builder {
     pub fn schema(&self) -> &Schema {
         self.root.schema()
+    }
+
+    pub fn schema_mut(&mut self) -> &mut Schema {
+        self.root.schema_mut()
     }
 
     pub fn project(self, projection: Vec<SelectItem>) -> Self {

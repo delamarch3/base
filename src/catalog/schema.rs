@@ -89,8 +89,18 @@ impl Schema {
         self.columns.iter_mut().for_each(|column| column.table = Some(table.to_string()));
     }
 
-    pub fn find(&self, column_name: &str) -> Option<&Column> {
+    pub fn find_column_by_name(&self, column_name: &str) -> Option<&Column> {
         self.columns.iter().find(|Column { name, .. }| name == column_name)
+    }
+
+    pub fn find_column_by_name_and_table(
+        &self,
+        table_name: &str,
+        column_name: &str,
+    ) -> Option<&Column> {
+        self.columns.iter().find(|Column { name, table, .. }| {
+            table.as_ref().map_or(false, |table| table == table_name) && name == column_name
+        })
     }
 
     pub fn tuple_size(&self) -> usize {
@@ -126,7 +136,7 @@ impl SchemaBuilder {
     }
 
     pub fn build(self) -> Schema {
-        Schema::new(self.columns)
+        Schema::new(self.columns).compact()
     }
 }
 

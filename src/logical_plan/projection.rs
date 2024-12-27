@@ -1,7 +1,7 @@
 use super::{write_iter, LogicalPlan};
 use crate::catalog::schema::{Column, Schema, SchemaBuilder};
 use crate::column;
-use crate::sql::{Expr, SelectItem};
+use crate::sql::{Expr, Ident, SelectItem};
 
 #[derive(Debug)]
 pub struct Projection {
@@ -37,13 +37,15 @@ pub fn build_projection_schema(projection: &Vec<SelectItem>, input_schema: &Sche
     let mut schema = SchemaBuilder::new();
     for item in projection {
         match item {
-            // SelectItem::Expr(Expr::Ident(ident)) => {
-            // pick from schema and keep table ref
-
-            // expr.type()
-            // schema.append((expr.to_string(), Type::Bool))
-            // todo!()
-            // }
+            SelectItem::Expr(Expr::Ident(Ident::Single(column))) => {
+                schema.append(input_schema.find_column_by_name(column).cloned().expect("todo"))
+            }
+            SelectItem::Expr(Expr::Ident(Ident::Compound(idents))) => schema.append(
+                input_schema
+                    .find_column_by_name_and_table(&idents[0], &idents[1])
+                    .cloned()
+                    .expect("todo"),
+            ),
             SelectItem::Expr(expr) => {
                 // expr.type()
                 schema.append(column!(expr.to_string(), Bool))
