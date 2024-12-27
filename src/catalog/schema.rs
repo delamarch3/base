@@ -177,4 +177,7 @@ macro_rules! column {
             table: None,
         }
     };
+    ($name:expr => $ty:expr) => {
+        crate::catalog::schema::Column { name: $name.into(), ty: $ty, offset: 0, table: None }
+    };
 }
