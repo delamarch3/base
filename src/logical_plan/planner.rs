@@ -57,6 +57,7 @@ impl<D: Disk> Planner<D> {
 
             let JoinType::Inner = ty;
 
+            // USING verifies the columns but ON doesn't. This should be made consistent
             let schema = query.schema();
             let predicate = match constraint {
                 JoinConstraint::On(expr) => expr,
@@ -87,13 +88,20 @@ impl<D: Disk> Planner<D> {
         }
 
         if let Some(filter) = filter {
+            // This filter might reference some aliased columns in the projection, we may need to
+            // build the projection schema first and replace any aliases with table.column
+            // references.
             query = query.filter(filter);
         }
 
+        // There may or may not be a aggregate function in the projection. If there isn't, then it
+        // should still group by, where the last processed tuple columns are in the result
         if group.len() > 0 {
             todo!()
         }
 
+        // The projection may have some aggregate functions. If they exist then the projection is
+        // followed by a aggregate step.
         query = query.project(projection)?;
 
         Ok(query)
