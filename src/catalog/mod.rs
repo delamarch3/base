@@ -6,7 +6,7 @@ use crate::disk::{Disk, FileSystem};
 use crate::page::PageID;
 use crate::page_cache::SharedPageCache;
 use crate::table::{
-    list::{List as TableInner, SharedList as Table},
+    list::{List as TableInner, ListRef as TableRef},
     node::RID,
     tuple::{fit_tuple_with_schema, Data as TupleData},
 };
@@ -23,7 +23,7 @@ pub struct TableInfo<D: Disk = FileSystem> {
     pub name: String,
     pub schema: Schema,
     pub oid: OID,
-    pub table: Table<D>,
+    pub table: TableRef<D>,
 }
 
 impl<D> Clone for TableInfo<D>

@@ -29,12 +29,6 @@ pub struct Column {
     pub table: Option<String>,
 }
 
-impl Column {
-    pub fn value_size(&self) -> usize {
-        self.ty.size()
-    }
-}
-
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct Schema {
     pub columns: Vec<Column>,
@@ -44,7 +38,7 @@ pub struct Schema {
 impl Schema {
     // TODO: support nullable columns
     pub fn new(columns: Vec<Column>) -> Self {
-        Self { tuple_size: columns.iter().fold(0, |acc, c| acc + c.value_size()), columns }
+        Self { tuple_size: columns.iter().fold(0, |acc, column| acc + column.ty.size()), columns }
     }
 
     /// Returns a new `Schema` which has been filtered to include the specified columns

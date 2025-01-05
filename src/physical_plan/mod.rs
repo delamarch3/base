@@ -1,333 +1,136 @@
-use crate::catalog::schema::{Column, Schema, Type};
-use crate::get_value;
-use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op};
-use crate::table::tuple::{Data as TupleData, Value};
+use eval::eval;
 
-macro_rules! get_value {
-    ($value:ident, $type:tt) => {
-        match $value {
-            Value::$type(value) => value,
-            _ => unreachable!(),
-        }
-    };
+use crate::catalog::schema::{Column, Schema};
+use crate::disk::{Disk, FileSystem};
+use crate::sql::{Expr, Ident, SelectItem};
+use crate::table::list::Iter as TableIter;
+use crate::table::tuple::Data as TupleData;
+use crate::table::tuple::{Builder as TupleBuilder, Value};
+
+mod eval;
+
+pub trait PhysicalPlan {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>>;
+    fn schema(&self) -> &Schema;
 }
 
-#[derive(Debug, PartialEq)]
-enum EvalError {
-    UnknownIdentifier,
-    UnsupportedOperation,
-    UnsupportedFunction,
-    InvalidNumber,
-    IncorrectNumberOfArguments,
+pub struct Scan<D: Disk = FileSystem> {
+    iter: TableIter<D>,
+    schema: Schema,
 }
-use EvalError::*;
 
-fn eval(expr: &Expr, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    match &expr {
-        Expr::Ident(ident) => eval_ident(ident, schema, tuple),
-        Expr::Literal(literal) => eval_literal(literal),
-        Expr::IsNull { expr, negated } => eval_is_null(expr, *negated, schema, tuple),
-        Expr::InList { expr, list, negated } => eval_in_list(expr, list, *negated, schema, tuple),
-        Expr::Between { expr, negated, low, high } => {
-            eval_between(expr, low, high, *negated, schema, tuple)
-        }
-        Expr::BinaryOp { left, op, right } => eval_binary_op(left, *op, right, schema, tuple),
-        Expr::Function(function) => eval_function(function, schema, tuple),
-        Expr::Wildcard => todo!(),
-        Expr::QualifiedWildcard(_) => todo!(),
-        Expr::SubQuery(_) => todo!(),
+impl<D: Disk> Scan<D> {
+    pub fn new(iter: TableIter<D>, schema: Schema) -> Self {
+        Self { iter, schema }
     }
 }
 
-fn eval_ident(ident: &Ident, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    let Some(column) = schema
-        .columns
-        .iter()
-        .find(|Column { name, .. }| name.as_str() == ident.to_string().as_str())
-    else {
-        Err(UnknownIdentifier)?
-    };
-
-    Ok(tuple.get_value(column))
-}
-
-fn eval_literal(literal: &Literal) -> Result<Value, EvalError> {
-    let value = match literal {
-        Literal::Number(number) => {
-            let int = number.parse::<i32>().map_err(|_| InvalidNumber)?;
-            Value::Int(int)
-        }
-        Literal::Decimal(_) => {
-            todo!()
-        }
-        Literal::String(string) => Value::Varchar(string.to_owned()),
-        Literal::Bool(bool) => Value::Bool(*bool),
-        Literal::Null => todo!(),
-    };
-
-    Ok(value)
-}
-
-// TODO: implement these once NULL has been implemented
-fn eval_is_null(
-    expr: &Expr,
-    negated: bool,
-    schema: &Schema,
-    tuple: &TupleData,
-) -> Result<Value, EvalError> {
-    let value = eval(expr, schema, tuple)?;
-    todo!("value == null?")
-}
-
-fn eval_is_not_null(expr: &Expr, schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    let value = eval(expr, schema, tuple)?;
-    todo!("value != null?")
-}
-
-fn eval_in_list(
-    expr: &Expr,
-    list: &[Expr],
-    negated: bool,
-    schema: &Schema,
-    tuple: &TupleData,
-) -> Result<Value, EvalError> {
-    let search = eval(expr, schema, tuple)?;
-    let mut found = false;
-    for expr in list {
-        let value = eval(expr, schema, tuple)?;
-        if value == search {
-            found = true;
-            break;
-        }
-    }
-
-    Ok(Value::Bool(found && !negated))
-}
-
-fn eval_between(
-    expr: &Expr,
-    low: &Expr,
-    high: &Expr,
-    negated: bool,
-    schema: &Schema,
-    tuple: &TupleData,
-) -> Result<Value, EvalError> {
-    let value = eval(expr, schema, tuple)?;
-    let low = eval(low, schema, tuple)?;
-    let high = eval(high, schema, tuple)?;
-
-    if Value::Bool(true) != value_op(&value, Op::Ge, &low)?
-        && Value::Bool(true) != value_op(&value, Op::Le, &high)?
-    {
-        return Ok(Value::Bool(false));
-    }
-
-    Ok(Value::Bool(true && !negated))
-}
-
-fn eval_binary_op(
-    lhs: &Expr,
-    op: Op,
-    rhs: &Expr,
-    schema: &Schema,
-    tuple: &TupleData,
-) -> Result<Value, EvalError> {
-    let lhs = eval(lhs, schema, tuple)?;
-    let rhs = eval(rhs, schema, tuple)?;
-
-    value_op(&lhs, op, &rhs)
-}
-
-fn eval_function(
-    function: &Function,
-    schema: &Schema,
-    tuple: &TupleData,
-) -> Result<Value, EvalError> {
-    match function.name {
-        FunctionName::Min
-        | FunctionName::Max
-        | FunctionName::Sum
-        | FunctionName::Avg
-        | FunctionName::Count => Err(UnsupportedFunction),
-        FunctionName::Contains => eval_contains(&function.args, schema, tuple),
-        FunctionName::Concat => eval_concat(&function.args, schema, tuple),
-    }
-}
-
-fn eval_concat(args: &[Expr], schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    let mut result = String::new();
-    for arg in args {
-        let value = eval(arg, schema, tuple)?;
-        match value {
-            Value::TinyInt(v) => result.push_str(&v.to_string()),
-            Value::Bool(v) => result.push_str(&v.to_string()),
-            Value::Int(v) => result.push_str(&v.to_string()),
-            Value::BigInt(v) => result.push_str(&v.to_string()),
-            Value::Varchar(v) => result.push_str(&v),
-        }
-    }
-
-    Ok(Value::Varchar(result))
-}
-
-fn eval_contains(args: &[Expr], schema: &Schema, tuple: &TupleData) -> Result<Value, EvalError> {
-    if args.len() > 2 {
-        Err(IncorrectNumberOfArguments)?
-    }
-
-    let arg0 = eval(&args[0], schema, tuple)?;
-    let arg1 = eval(&args[1], schema, tuple)?;
-
-    if arg0.ty() != Type::Varchar && arg1.ty() != Type::Varchar {
-        return Ok(Value::Bool(false));
-    }
-
-    Ok(Value::Bool(get_value!(arg0, Varchar).contains(get_value!(arg1, Varchar).as_str())))
-}
-
-fn value_op(lhs: &Value, op: Op, rhs: &Value) -> Result<Value, EvalError> {
-    if lhs.ty() != rhs.ty() {
-        Err(UnsupportedOperation)?
-    }
-
-    // TODO: currently just supports comparisons but can support math too
-    let result = match lhs {
-        Value::TinyInt(lhs) => numeric_op(*lhs, op, *get_value!(rhs, TinyInt)),
-        Value::Bool(lhs) => bool_op(*lhs, op, *get_value!(rhs, Bool)),
-        Value::Int(lhs) => numeric_op(*lhs, op, *get_value!(rhs, Int)),
-        Value::BigInt(lhs) => numeric_op(*lhs, op, *get_value!(rhs, BigInt)),
-        Value::Varchar(lhs) => varchar_op(lhs, op, get_value!(rhs, Varchar).as_str()),
-    }?;
-
-    Ok(Value::Bool(result))
-}
-
-fn numeric_op<T: PartialEq + PartialOrd>(lhs: T, op: Op, rhs: T) -> Result<bool, EvalError> {
-    let result = match op {
-        Op::Eq => lhs == rhs,
-        Op::Neq => lhs != rhs,
-        Op::Lt => lhs < rhs,
-        Op::Le => lhs <= rhs,
-        Op::Gt => lhs > rhs,
-        Op::Ge => lhs >= rhs,
-        Op::And | Op::Or => Err(UnsupportedOperation)?,
-    };
-
-    Ok(result)
-}
-
-fn bool_op(lhs: bool, op: Op, rhs: bool) -> Result<bool, EvalError> {
-    let result = match op {
-        Op::Eq => lhs == rhs,
-        Op::Neq => lhs != rhs,
-        Op::Lt => !lhs & rhs,
-        Op::Le => lhs <= rhs,
-        Op::Gt => lhs & !rhs,
-        Op::Ge => lhs >= rhs,
-        Op::And => lhs && rhs,
-        Op::Or => lhs || rhs,
-    };
-
-    Ok(result)
-}
-
-fn varchar_op(lhs: &str, op: Op, rhs: &str) -> Result<bool, EvalError> {
-    let result = match op {
-        Op::Eq => lhs == rhs,
-        Op::Neq => lhs != rhs,
-        Op::Lt => lhs < rhs,
-        Op::Le => lhs <= rhs,
-        Op::Gt => lhs > rhs,
-        Op::Ge => lhs >= rhs,
-        Op::And | Op::Or => Err(UnsupportedOperation)?,
-    };
-
-    Ok(result)
-}
-
-#[cfg(test)]
-mod test {
-    use super::{eval, EvalError::*};
-    use crate::logical_plan::expr::{concat, contains, ident, lit};
-    use crate::table::tuple::{Builder as TupleBuilder, Value};
-    use crate::{column, schema};
-
-    macro_rules! test_eval {
-        ($name:tt, $expr:expr, $schema:expr, $tuple:expr, $want:expr) => {
-            #[test]
-            fn $name() {
-                let have = eval(&$expr, &$schema, &$tuple);
-                assert_eq!($want, have);
+impl<D: Disk> PhysicalPlan for Scan<D> {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        let next = match self.iter.next() {
+            Some(result) => {
+                let (_meta, data, _rid) = result.unwrap();
+                Some(data)
             }
+            None => None,
         };
-        ($name:tt, $expr:expr, $want:expr) => {
-            #[test]
-            fn $name() {
-                let have = eval(&$expr, &crate::schema! {}, &TupleBuilder::new().build());
-                assert_eq!($want, have);
-            }
-        };
+
+        Ok(next)
     }
 
-    test_eval!(t1, lit("test").eq(lit("test")), Ok(Value::Bool(true)));
-    test_eval!(t2, lit(22).eq(lit(23)), Ok(Value::Bool(false)));
-    test_eval!(t3, lit(22).lt(lit(23)), Ok(Value::Bool(true)));
-    test_eval!(t4, lit(22).and(lit(23)), Err(UnsupportedOperation));
-    test_eval!(t5, ident("c1"), Err(UnknownIdentifier));
+    fn schema(&self) -> &Schema {
+        &self.schema
+    }
+}
 
-    test_eval!(
-        t6,
-        ident("c1"),
-        schema! {column!("c1", Int)},
-        TupleBuilder::new().int(1).build(),
-        Ok(Value::Int(1))
-    );
+pub struct Filter {
+    expr: Expr,
+    input: Box<dyn PhysicalPlan>,
+}
 
-    test_eval!(
-        t7,
-        ident("c1").eq(lit(1)),
-        schema! {column!("c1", Int)},
-        TupleBuilder::new().int(1).build(),
-        Ok(Value::Bool(true))
-    );
+impl Filter {
+    pub fn new(input: Box<dyn PhysicalPlan>, expr: Expr) -> Self {
+        Self { input, expr }
+    }
+}
 
-    test_eval!(
-        t8,
-        ident("c1").eq(lit("1")),
-        schema! {column!("c1", Int)},
-        TupleBuilder::new().int(1).build(),
-        Err(UnsupportedOperation)
-    );
+impl PhysicalPlan for Filter {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        loop {
+            let Some(input_tuple) = self.input.next()? else { break Ok(None) };
+            let value = eval(&self.expr, self.input.schema(), &input_tuple).unwrap();
+            match value {
+                Value::TinyInt(0) | Value::Bool(false) | Value::Int(0) | Value::BigInt(0) => {
+                    continue
+                }
+                Value::Varchar(s) if s.len() == 0 => continue,
+                _ => break Ok(Some(input_tuple)),
+            }
+        }
+    }
 
-    test_eval!(
-        t9,
-        ident("c1").eq(lit("a")).and(ident("c2").between(lit(20), lit(30))),
-        schema! {column!("c1", Varchar), column!("c2", Int)},
-        TupleBuilder::new().varchar("a").int(20).build(),
-        Ok(Value::Bool(true))
-    );
+    fn schema(&self) -> &Schema {
+        self.input.schema()
+    }
+}
 
-    test_eval!(
-        t10,
-        contains(vec![ident("c1"), lit("sd")]),
-        schema! {column!("c1", Varchar)},
-        TupleBuilder::new().varchar("asdf").build(),
-        Ok(Value::Bool(true))
-    );
+pub struct Projection {
+    schema: Schema,
+    projection: Vec<SelectItem>,
+    input: Box<dyn PhysicalPlan>,
+}
 
-    test_eval!(
-        t11,
-        concat(vec![ident("c1"), ident("c2"), lit("c"), lit(9)]),
-        schema! {column!("c1", Varchar), column!("c2", Varchar)},
-        TupleBuilder::new().varchar("a").varchar("b").build(),
-        Ok(Value::Varchar("abc9".to_string()))
-    );
+impl Projection {
+    pub fn new(input: Box<dyn PhysicalPlan>, projection: Vec<SelectItem>, schema: Schema) -> Self {
+        assert_eq!(schema.len(), projection.len());
+        Self { schema, projection, input }
+    }
+}
 
-    test_eval!(
-        t12,
-        concat(vec![concat(vec![ident("c1"), ident("c2")]), concat(vec![lit("c"), lit(9)])]),
-        schema! {column!("c1", Varchar), column!("c2", Varchar)},
-        TupleBuilder::new().varchar("a").varchar("b").build(),
-        Ok(Value::Varchar("abc9".to_string()))
-    );
+impl PhysicalPlan for Projection {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        let Some(input_tuple) = self.input.next()? else { return Ok(None) };
+        let input_schema = self.input.schema();
+        let mut tuple = TupleBuilder::new();
+        for select_item in &self.projection {
+            // TODO: use ProjectionAttributes
+            match select_item {
+                SelectItem::Expr(Expr::Ident(Ident::Single(column))) => {
+                    let column = input_schema.find_column_by_name(column).unwrap();
+                    let value = input_tuple.get_value(column.offset, column.ty);
+                    tuple = tuple.add(&value);
+                }
+                SelectItem::Expr(Expr::Ident(Ident::Compound(idents))) => {
+                    let column =
+                        input_schema.find_column_by_name_and_table(&idents[0], &idents[1]).unwrap();
+                    let value = input_tuple.get_value(column.offset, column.ty);
+                    tuple = tuple.add(&value);
+                }
+                SelectItem::Expr(expr) | SelectItem::AliasedExpr { expr, alias: _ } => {
+                    let value = eval(expr, input_schema, &input_tuple).unwrap();
+                    tuple = tuple.add(&value);
+                }
+                SelectItem::Wildcard => {
+                    for column in input_schema.iter() {
+                        let value = input_tuple.get_value(column.offset, column.ty);
+                        tuple = tuple.add(&value);
+                    }
+                }
+                SelectItem::QualifiedWildcard(ident) => {
+                    for column in input_schema.columns.iter().filter(|Column { table, .. }| {
+                        table.as_ref().map_or(false, |table| table.as_str() == &ident[0])
+                    }) {
+                        let value = input_tuple.get_value(column.offset, column.ty);
+                        tuple = tuple.add(&value);
+                    }
+                }
+            }
+        }
+
+        Ok(Some(tuple.build()))
+    }
+
+    fn schema(&self) -> &Schema {
+        &self.schema
+    }
 }

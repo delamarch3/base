@@ -1,19 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use {
-    crate::{
-        disk::{Disk, FileSystem},
-        page::{PageBuf, PageID},
-        page_cache::{Result, SharedPageCache},
-        table::node::Node,
-        table::{
-            node::{TupleMeta, RID},
-            tuple::Data as TupleData,
-        },
-        writep,
-    },
-    std::sync::Mutex,
-};
+use crate::disk::{Disk, FileSystem};
+use crate::page::{PageBuf, PageID};
+use crate::page_cache::{Result, SharedPageCache};
+use crate::table::node::Node;
+use crate::table::node::{TupleMeta, RID};
+use crate::table::tuple::Data as TupleData;
+use crate::writep;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TableMeta {
@@ -27,7 +20,7 @@ impl Default for TableMeta {
     }
 }
 
-pub type SharedList<D> = Arc<List<D>>;
+pub type ListRef<D> = Arc<List<D>>;
 
 pub struct List<D: Disk = FileSystem> {
     pc: SharedPageCache<D>,
@@ -39,7 +32,7 @@ impl<D: Disk> List<D> {
     pub fn new(
         pc: SharedPageCache<D>,
         TableMeta { mut first_page_id, mut last_page_id }: TableMeta,
-    ) -> crate::Result<List<D>> {
+    ) -> crate::Result<ListRef<D>> {
         assert!(
             (first_page_id == -1 && last_page_id == -1)
                 || (first_page_id != -1 && last_page_id != -1)
@@ -51,7 +44,7 @@ impl<D: Disk> List<D> {
             last_page_id = page.id;
         }
 
-        Ok(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) })
+        Ok(Arc::new(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) }))
     }
 
     pub fn default(pc: SharedPageCache<D>) -> crate::Result<List<D>> {
@@ -71,14 +64,14 @@ impl<D: Disk> List<D> {
         self.last_page_id.lock().expect("todo")
     }
 
-    pub fn iter(&self) -> Result<Iter<'_, D>> {
+    pub fn iter(self: &Arc<Self>) -> Result<Iter<D>> {
         let last_page_id = self.last_page_id();
         let page = self.pc.fetch_page(last_page_id)?;
         let page_r = page.read();
         let node = Node::from(&page_r.data);
 
         Ok(Iter {
-            list: self,
+            list: Arc::clone(self),
             rid: RID { page_id: self.first_page_id, slot_id: 0 },
             end: RID { page_id: last_page_id, slot_id: node.len() },
         })
@@ -133,13 +126,13 @@ impl<D: Disk> List<D> {
 }
 
 // Iter should hold a read lock and deserialised page?
-pub struct Iter<'a, D: Disk = FileSystem> {
-    list: &'a List<D>,
+pub struct Iter<D: Disk = FileSystem> {
+    list: ListRef<D>,
     rid: RID,
     end: RID,
 }
 
-impl<'a, D: Disk> Iterator for Iter<'a, D> {
+impl<D: Disk> Iterator for Iter<D> {
     type Item = Result<(TupleMeta, TupleData, RID)>;
 
     fn next(&mut self) -> Option<Self::Item> {

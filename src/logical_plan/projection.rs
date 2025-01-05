@@ -1,5 +1,5 @@
 use super::{expr_type, write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
-use crate::catalog::schema::{Column, Schema, SchemaBuilder};
+use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
 use crate::column;
 use crate::sql::{Expr, Ident, SelectItem};
 
@@ -8,6 +8,15 @@ pub struct Projection {
     pub(super) schema: Schema,
     pub(super) input: Box<LogicalPlan>,
     projection: Vec<SelectItem>,
+}
+
+/// `schema`, `projection` and `idents` have the same length
+/// Each field has a corresponding field at the matching index
+/// If the `SelectItem` is an `Ident`, then the corresponding index in `idents` is `Some`
+struct ProjectionAttributes {
+    schema: Schema,
+    projection: Vec<SelectItem>,
+    idents: Vec<Option<(usize, Type)>>,
 }
 
 impl std::fmt::Display for Projection {
