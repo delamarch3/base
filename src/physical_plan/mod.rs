@@ -2,6 +2,7 @@ use eval::eval;
 
 use crate::catalog::schema::{Column, Schema};
 use crate::disk::{Disk, FileSystem};
+use crate::logical_plan::ProjectionAttributes;
 use crate::sql::{Expr, Ident, SelectItem};
 use crate::table::list::Iter as TableIter;
 use crate::table::tuple::Data as TupleData;
@@ -75,15 +76,13 @@ impl PhysicalPlan for Filter {
 }
 
 pub struct Projection {
-    schema: Schema,
-    projection: Vec<SelectItem>,
+    attributes: ProjectionAttributes,
     input: Box<dyn PhysicalPlan>,
 }
 
 impl Projection {
-    pub fn new(input: Box<dyn PhysicalPlan>, projection: Vec<SelectItem>, schema: Schema) -> Self {
-        assert_eq!(schema.len(), projection.len());
-        Self { schema, projection, input }
+    pub fn new(input: Box<dyn PhysicalPlan>, attributes: ProjectionAttributes) -> Self {
+        Self { attributes, input }
     }
 }
 
@@ -91,19 +90,13 @@ impl PhysicalPlan for Projection {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         let Some(input_tuple) = self.input.next()? else { return Ok(None) };
         let input_schema = self.input.schema();
+        let mut input_idents = self.attributes.input_idents().iter();
         let mut tuple = TupleBuilder::new();
-        for select_item in &self.projection {
-            // TODO: use ProjectionAttributes
+        for select_item in self.attributes.projection() {
             match select_item {
-                SelectItem::Expr(Expr::Ident(Ident::Single(column))) => {
-                    let column = input_schema.find_column_by_name(column).unwrap();
-                    let value = input_tuple.get_value(column.offset, column.ty);
-                    tuple = tuple.add(&value);
-                }
-                SelectItem::Expr(Expr::Ident(Ident::Compound(idents))) => {
-                    let column =
-                        input_schema.find_column_by_name_and_table(&idents[0], &idents[1]).unwrap();
-                    let value = input_tuple.get_value(column.offset, column.ty);
+                SelectItem::Expr(Expr::Ident(_)) => {
+                    let (ty, offset) = input_idents.next().unwrap();
+                    let value = input_tuple.get_value(*offset, *ty);
                     tuple = tuple.add(&value);
                 }
                 SelectItem::Expr(expr) | SelectItem::AliasedExpr { expr, alias: _ } => {
@@ -131,6 +124,6 @@ impl PhysicalPlan for Projection {
     }
 
     fn schema(&self) -> &Schema {
-        &self.schema
+        &self.attributes.schema()
     }
 }

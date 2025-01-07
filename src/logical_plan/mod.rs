@@ -21,6 +21,8 @@ use {
     limit::Limit, projection::Projection, scan::Scan, sort::Sort,
 };
 
+pub use projection::ProjectionAttributes;
+
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
 pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
@@ -125,7 +127,7 @@ impl LogicalPlan {
             LogicalPlan::Group(group) => group.input.schema(),
             LogicalPlan::IndexScan(index_scan) => &index_scan.index.schema,
             LogicalPlan::Join(join) => &join.schema,
-            LogicalPlan::Projection(projection) => &projection.schema,
+            LogicalPlan::Projection(projection) => &projection.attributes.schema(),
             LogicalPlan::Scan(scan) => &scan.schema,
             LogicalPlan::Limit(limit) => limit.input.schema(),
             LogicalPlan::Sort(sort) => sort.input.schema(),
@@ -139,7 +141,7 @@ impl LogicalPlan {
             LogicalPlan::Group(group) => group.input.schema_mut(),
             LogicalPlan::IndexScan(index_scan) => &mut index_scan.index.schema,
             LogicalPlan::Join(join) => &mut join.schema,
-            LogicalPlan::Projection(projection) => &mut projection.schema,
+            LogicalPlan::Projection(projection) => projection.attributes.schema_mut(),
             LogicalPlan::Scan(scan) => &mut scan.schema,
             LogicalPlan::Limit(limit) => limit.input.schema_mut(),
             LogicalPlan::Sort(sort) => sort.input.schema_mut(),
