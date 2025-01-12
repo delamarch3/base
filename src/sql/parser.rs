@@ -197,7 +197,7 @@ impl Parser {
 
         let mut query = None;
         let mut rows = Vec::new();
-        if self.parse_keywords(&[Keyword::Values]).is_ok() {
+        if self.check_keywords(&[Keyword::Values]) {
             while {
                 self.parse_tokens(&[Token::LParen])?;
                 let mut exprs = Vec::new();
@@ -210,7 +210,9 @@ impl Parser {
                 self.check_tokens(&[Token::Comma])
             } {}
         } else {
+            self.parse_tokens(&[Token::LParen])?;
             query = Some(self.parse_query()?);
+            self.parse_tokens(&[Token::RParen])?;
         };
 
         Ok(Insert { table, rows, query })
