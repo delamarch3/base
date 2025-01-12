@@ -193,24 +193,27 @@ impl Parser {
 
         let table = self.parse_ident()?;
 
-        self.parse_keywords(&[Keyword::Values])?;
+        // TODO: parse columns too, currently assuming all columns in each insert
 
-        self.parse_tokens(&[Token::LParen])?;
+        let mut query = None;
         let mut rows = Vec::new();
-        while {
-            self.parse_tokens(&[Token::LParen])?;
-            let mut exprs = Vec::new();
+        if self.parse_keywords(&[Keyword::Values]).is_ok() {
             while {
-                exprs.push(self.parse_expr(0)?);
+                self.parse_tokens(&[Token::LParen])?;
+                let mut exprs = Vec::new();
+                while {
+                    exprs.push(self.parse_expr(0)?);
+                    self.check_tokens(&[Token::Comma])
+                } {}
+                rows.push(exprs);
+                self.parse_tokens(&[Token::RParen])?;
                 self.check_tokens(&[Token::Comma])
             } {}
-            rows.push(exprs);
-            self.parse_tokens(&[Token::RParen])?;
-            self.check_tokens(&[Token::Comma])
-        } {}
-        self.parse_tokens(&[Token::RParen])?;
+        } else {
+            query = Some(self.parse_query()?);
+        };
 
-        Ok(Insert { table, rows })
+        Ok(Insert { table, rows, query })
     }
 
     fn parse_update(&mut self) -> Result<Update> {
@@ -969,7 +972,7 @@ mod test {
 
     #[test]
     fn test_parse_insert() {
-        let input = "insert into t1 values ((1, 2), (\"1\", \"2\"))";
+        let input = "insert into t1 values (1, 2), (\"1\", \"2\")";
 
         let want = Insert {
             table: Ident::Single("t1".into()),
@@ -983,6 +986,27 @@ mod test {
                     Expr::Literal(Literal::String("2".into())),
                 ],
             ],
+            query: None,
+        };
+        let have = Parser::new(input).unwrap().parse_insert().unwrap();
+
+        assert_eq!(want, have)
+    }
+
+    #[test]
+    fn test_parse_insert_with_query() {
+        let input = "insert into t1 (select * from t2)";
+
+        let want = Insert {
+            table: Ident::Single("t1".into()),
+            rows: vec![],
+            query: Some(Query {
+                projection: vec![SelectItem::Wildcard],
+                from: FromTable::Table { name: Ident::Single("t2".into()), alias: None },
+                joins: vec![],
+                filter: None,
+                group: vec![],
+            }),
         };
         let have = Parser::new(input).unwrap().parse_insert().unwrap();
 

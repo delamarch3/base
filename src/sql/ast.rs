@@ -288,6 +288,7 @@ pub struct Select {
 pub struct Insert {
     pub table: Ident,
     pub rows: Vec<Vec<Expr>>,
+    pub query: Option<Query>,
 }
 
 #[derive(PartialEq, Debug)]
