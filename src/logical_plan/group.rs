@@ -1,9 +1,8 @@
 use super::{write_iter, Expr, LogicalPlan};
 
-#[derive(Debug)]
 pub struct Group {
-    keys: Vec<Expr>,
-    pub(super) input: Box<LogicalPlan>,
+    pub keys: Vec<Expr>,
+    pub input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Group {

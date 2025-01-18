@@ -1,6 +1,5 @@
 use super::{Expr, LogicalPlan};
 
-#[derive(Debug)]
 pub struct Limit {
     expr: Expr,
     pub(super) input: Box<LogicalPlan>,

@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use crate::catalog::schema::{Schema, Type};
 use crate::catalog::{IndexInfo, TableInfo};
-use crate::disk::Disk;
 use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
 pub mod expr;
@@ -55,7 +56,6 @@ impl std::fmt::Debug for LogicalPlanError {
     }
 }
 
-#[derive(Debug)]
 pub enum LogicalPlan {
     Aggregate(Aggregate),
     Filter(Filter),
@@ -204,16 +204,15 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
     Ok(ty)
 }
 
-#[derive(Debug)]
 pub struct Builder {
     root: LogicalPlan,
 }
 
-pub fn scan<D: Disk>(table_info: &TableInfo<D>) -> Builder {
+pub fn scan(table_info: Arc<TableInfo>) -> Builder {
     Builder { root: LogicalPlan::Scan(Scan::new(table_info)) }
 }
 
-pub fn scan_with_alias<D: Disk>(table_info: &TableInfo<D>, alias: String) -> Builder {
+pub fn scan_with_alias(table_info: Arc<TableInfo>, alias: String) -> Builder {
     Builder { root: LogicalPlan::Scan(Scan::new_with_alias(table_info, alias)) }
 }
 
@@ -332,10 +331,10 @@ mod test {
             .unwrap()
             .clone();
 
-        let plan = scan(&t1)
+        let plan = scan(t1)
             .filter(ident("c1").is_not_null())
             .join(
-                scan(&t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
+                scan(t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
             )
             .project(vec![
@@ -356,9 +355,9 @@ Limit 5
         Projection [c1, CONCAT(1, '2'), c5 IS NULL, 1 AS one, *]
             HashJoin [t1.c3 = t2.c3]
                 Filter [c1 IS NOT NULL]
-                    Scan t1 0
+                    Scan table=t1 alias= oid=0
                 Filter [1 = 1 AND '1' = '1']
-                    Scan t2 1
+                    Scan table=t2 alias= oid=1
 ";
 
         assert_eq!(want, have);
@@ -392,11 +391,11 @@ Limit 5
             .expect("there is no table")
             .clone();
 
-        let scan_a = Scan::new(&t1);
+        let scan_a = Scan::new(t1);
         let filter_expr_a = ident("c1").is_null().and(lit(5).lt(ident("c2")));
         let filter_a = Filter::new(filter_expr_a, scan_a);
 
-        let scan_b = Scan::new(&t2);
+        let scan_b = Scan::new(t2);
         let filter_expr_b = ident("c5").is_not_null();
         let filter_b = Filter::new(filter_expr_b, scan_b);
 
@@ -410,9 +409,9 @@ Limit 5
 Projection [c1, c2]
     HashJoin [t1.c3 = t2.c3]
         Filter [c1 IS NULL AND 5 < c2]
-            Scan t1 0
+            Scan table=t1 alias= oid=0
         Filter [c5 IS NOT NULL]
-            Scan t2 1
+            Scan table=t2 alias= oid=1
 ";
 
         assert_eq!(want, have);

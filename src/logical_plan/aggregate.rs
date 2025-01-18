@@ -1,10 +1,9 @@
 use super::{write_iter, Expr, Function, LogicalPlan};
 
-#[derive(Debug)]
 pub struct Aggregate {
-    function: Function,
-    keys: Vec<Expr>,
-    pub(super) input: Box<LogicalPlan>,
+    pub function: Function,
+    pub keys: Vec<Expr>,
+    pub input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Aggregate {

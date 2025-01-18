@@ -2,7 +2,6 @@ pub mod schema;
 use schema::Schema;
 
 use crate::btree::BTree;
-use crate::disk::{Disk, FileSystem};
 use crate::page::PageID;
 use crate::page_cache::SharedPageCache;
 use crate::table::{
@@ -19,17 +18,14 @@ use std::sync::{
 
 pub type OID = u32;
 
-pub struct TableInfo<D: Disk = FileSystem> {
+pub struct TableInfo {
     pub name: String,
     pub schema: Schema,
     pub oid: OID,
-    pub table: TableRef<D>,
+    pub table: TableRef,
 }
 
-impl<D> Clone for TableInfo<D>
-where
-    D: Disk,
-{
+impl Clone for TableInfo {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -71,9 +67,9 @@ pub struct IndexInfo {
     pub root_page_id: PageID,
 }
 
-pub struct Catalog<D: Disk = FileSystem> {
-    pc: SharedPageCache<D>,
-    tables: HashMap<OID, Arc<TableInfo<D>>>,
+pub struct Catalog {
+    pc: SharedPageCache,
+    tables: HashMap<OID, Arc<TableInfo>>,
     table_names: HashMap<String, OID>,
     next_table_oid: AtomicU32,
     indexes: HashMap<OID, Arc<IndexInfo>>,
@@ -81,8 +77,8 @@ pub struct Catalog<D: Disk = FileSystem> {
     next_index_oid: AtomicU32,
 }
 
-impl<D: Disk> Catalog<D> {
-    pub fn new(pc: SharedPageCache<D>) -> Self {
+impl Catalog {
+    pub fn new(pc: SharedPageCache) -> Self {
         Self {
             pc,
             tables: HashMap::new(),
@@ -98,7 +94,7 @@ impl<D: Disk> Catalog<D> {
         &mut self,
         name: &str,
         schema: impl Into<Schema>,
-    ) -> crate::Result<Option<Arc<TableInfo<D>>>> {
+    ) -> crate::Result<Option<Arc<TableInfo>>> {
         if self.table_names.contains_key(name) {
             return Ok(None);
         }
@@ -118,11 +114,11 @@ impl<D: Disk> Catalog<D> {
         Ok(self.tables.get(&oid).map(|info| info.clone()))
     }
 
-    pub fn get_table_by_oid(&self, oid: OID) -> Option<Arc<TableInfo<D>>> {
+    pub fn get_table_by_oid(&self, oid: OID) -> Option<Arc<TableInfo>> {
         self.tables.get(&oid).map(|info| info.clone())
     }
 
-    pub fn get_table_by_name(&self, name: &str) -> Option<Arc<TableInfo<D>>> {
+    pub fn get_table_by_name(&self, name: &str) -> Option<Arc<TableInfo>> {
         self.tables.get(self.table_names.get(name)?).map(|info| info.clone())
     }
 
@@ -159,7 +155,7 @@ impl<D: Disk> Catalog<D> {
         let root_page_id = match index_ty {
             IndexType::HashTable => todo!(),
             IndexType::BTree => {
-                let mut btree = BTree::<RID, _>::new(self.pc.clone(), &index_schema);
+                let mut btree = BTree::<RID>::new(self.pc.clone(), &index_schema);
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
@@ -246,7 +242,7 @@ mod test {
 
                 catalog.create_index(INDEX_A, TABLE_A, IndexType::BTree, &schema, &$key);
                 let index = catalog.get_index(TABLE_A, INDEX_A).expect("index_a should exist");
-                let index: BTree<RID, _> =
+                let index: BTree<RID> =
                     BTree::new_with_root(pc.clone(), index.root_page_id, &index_schema);
                 let have = index.scan()?;
 

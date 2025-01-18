@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use crate::disk::{Disk, FileSystem};
 use crate::page::{PageBuf, PageID};
 use crate::page_cache::{Result, SharedPageCache};
 use crate::table::node::Node;
@@ -20,19 +19,19 @@ impl Default for TableMeta {
     }
 }
 
-pub type ListRef<D> = Arc<List<D>>;
+pub type ListRef = Arc<List>;
 
-pub struct List<D: Disk = FileSystem> {
-    pc: SharedPageCache<D>,
+pub struct List {
+    pc: SharedPageCache,
     first_page_id: PageID,
     last_page_id: Mutex<PageID>,
 }
 
-impl<D: Disk> List<D> {
+impl List {
     pub fn new(
-        pc: SharedPageCache<D>,
+        pc: SharedPageCache,
         TableMeta { mut first_page_id, mut last_page_id }: TableMeta,
-    ) -> crate::Result<ListRef<D>> {
+    ) -> crate::Result<ListRef> {
         assert!(
             (first_page_id == -1 && last_page_id == -1)
                 || (first_page_id != -1 && last_page_id != -1)
@@ -47,7 +46,7 @@ impl<D: Disk> List<D> {
         Ok(Arc::new(Self { pc, first_page_id, last_page_id: Mutex::new(last_page_id) }))
     }
 
-    pub fn default(pc: SharedPageCache<D>) -> crate::Result<List<D>> {
+    pub fn default(pc: SharedPageCache) -> crate::Result<List> {
         let page = pc.new_page()?;
         let first_page_id = page.id;
         let last_page_id = page.id;
@@ -64,7 +63,7 @@ impl<D: Disk> List<D> {
         self.last_page_id.lock().expect("todo")
     }
 
-    pub fn iter(self: &Arc<Self>) -> Result<Iter<D>> {
+    pub fn iter(self: &Arc<Self>) -> Result<Iter> {
         let last_page_id = self.last_page_id();
         let page = self.pc.fetch_page(last_page_id)?;
         let page_r = page.read();
@@ -126,13 +125,13 @@ impl<D: Disk> List<D> {
 }
 
 // Iter should hold a read lock and deserialised page?
-pub struct Iter<D: Disk = FileSystem> {
-    list: ListRef<D>,
+pub struct Iter {
+    list: ListRef,
     rid: RID,
     end: RID,
 }
 
-impl<D: Disk> Iterator for Iter<D> {
+impl Iterator for Iter {
     type Item = Result<(TupleMeta, TupleData, RID)>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -19,7 +19,6 @@ impl std::fmt::Display for JoinAlgorithm {
     }
 }
 
-#[derive(Debug)]
 pub struct Join {
     algo: JoinAlgorithm,
     predicate: Expr,

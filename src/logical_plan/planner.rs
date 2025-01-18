@@ -1,5 +1,4 @@
 use crate::catalog::Catalog;
-use crate::disk::Disk;
 use crate::logical_plan::{scan, scan_with_alias};
 use crate::sql::{
     Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
@@ -7,12 +6,12 @@ use crate::sql::{
 
 use super::{Builder as LogicalPlanBuilder, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 
-pub struct Planner<D: Disk> {
-    catalog: Catalog<D>,
+pub struct Planner {
+    catalog: Catalog,
 }
 
-impl<D: Disk> Planner<D> {
-    pub fn new(catalog: Catalog<D>) -> Self {
+impl Planner {
+    pub fn new(catalog: Catalog) -> Self {
         Self { catalog }
     }
 
@@ -120,9 +119,9 @@ impl<D: Disk> Planner<D> {
 
                 if let Some(alias) = alias {
                     // Alias is applied at the `Scan` node, single table
-                    Ok((scan_with_alias(&table_info, alias.clone()), alias))
+                    Ok((scan_with_alias(table_info, alias.clone()), alias))
                 } else {
-                    Ok((scan(&table_info), name))
+                    Ok((scan(table_info), name))
                 }
             }
             FromTable::Derived { query, alias } => {
@@ -187,7 +186,7 @@ mod test {
         "\
 Projection [*]
     Filter [c1 = c2]
-        Scan t1 0
+        Scan table=t1 alias= oid=0
 "
     );
 
@@ -202,8 +201,8 @@ Projection [*]
 Projection [*]
     Filter [t1.c1 > 5]
         HashJoin [t1.c1 = t2.c1]
-            Scan t1 0
-            Scan t2 1
+            Scan table=t1 alias= oid=0
+            Scan table=t2 alias= oid=1
 "
     );
 
@@ -220,9 +219,9 @@ Projection [*]
     Filter [c1 > 5]
         HashJoin [t3.c1 = t1.c1 AND t3.c4 = t2.c4]
             HashJoin [t2.c2 = t1.c2 AND t2.c3 = t1.c3]
-                Scan t1 0
-                Scan t2 1
-            Scan t3 2
+                Scan table=t1 alias= oid=0
+                Scan table=t2 alias= oid=1
+            Scan table=t3 alias= oid=2
 "
     );
 
@@ -236,7 +235,7 @@ Projection [*]
         "\
 Projection [c1, c2, c3, c4 AS column_four]
     Filter [c5 = '' AND column_four > 10]
-        Scan t1 0
+        Scan table=t1 alias= oid=0
 "
     );
 
@@ -253,10 +252,10 @@ Projection [d1.*, d2.c3, d2.c4]
     HashJoin [d2.c2 = d1.c2]
         Projection [*]
             Filter [c1 IN (1, 2, 3)]
-                Scan t1 0
+                Scan table=t1 alias= oid=0
         Projection [c2, c3, c4]
             Filter [c2 != '']
-                Scan t2 1
+                Scan table=t2 alias= oid=1
 "
     );
 }

@@ -1,17 +1,11 @@
-use std::{
-    cell::UnsafeCell,
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicI32, AtomicUsize, Ordering::*},
-        Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
-    },
-};
+use std::cell::UnsafeCell;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering::*};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::{
-    disk::{Disk, FileSystem},
-    page::{Page, PageID, PageInner},
-    replacer::{AccessType, LRU},
-};
+use crate::disk::Disk;
+use crate::page::{Page, PageID, PageInner};
+use crate::replacer::{AccessType, LRU};
 
 pub const CACHE_SIZE: usize = 64;
 
@@ -114,22 +108,23 @@ pub enum PageCacheError {
 }
 pub type Result<T> = std::result::Result<T, PageCacheError>;
 
-pub struct PageCache<D: Disk = FileSystem> {
+pub struct PageCache {
     pages: Box<[Page; CACHE_SIZE]>,
     page_table: RwLock<HashMap<PageID, FrameID>>,
     free: FreeList<CACHE_SIZE>,
-    disk: D,
+    disk: Box<dyn Disk>,
     next_page_id: AtomicI32,
     replacer: Arc<LRU>,
 }
-pub type SharedPageCache<D> = Arc<PageCache<D>>;
+pub type SharedPageCache = Arc<PageCache>;
 
-impl<D: Disk> PageCache<D> {
-    pub fn new(disk: D, replacer: Arc<LRU>, next_page_id: PageID) -> Arc<Self> {
+impl PageCache {
+    pub fn new<D: Disk + 'static>(disk: D, replacer: Arc<LRU>, next_page_id: PageID) -> Arc<Self> {
         let pages = Box::new(std::array::from_fn(|_| Page::default()));
         let page_table = RwLock::new(HashMap::new());
         let free = FreeList::default();
         let next_page_id = AtomicI32::new(next_page_id);
+        let disk = Box::new(disk);
 
         Arc::new(Self { pages, page_table, free, disk, next_page_id, replacer })
     }

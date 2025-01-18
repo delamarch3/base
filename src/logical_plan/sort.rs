@@ -1,10 +1,9 @@
 use super::{write_iter, Expr, LogicalPlan};
 
-#[derive(Debug)]
 pub struct Sort {
-    exprs: Vec<Expr>,
-    desc: bool,
-    pub(super) input: Box<LogicalPlan>,
+    pub exprs: Vec<Expr>,
+    pub desc: bool,
+    pub input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Sort {

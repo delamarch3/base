@@ -77,7 +77,6 @@ impl ProjectionAttributes {
     }
 }
 
-#[derive(Debug)]
 pub struct Projection {
     pub input: Box<LogicalPlan>,
     pub attributes: ProjectionAttributes,

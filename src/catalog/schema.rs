@@ -29,6 +29,13 @@ pub struct Column {
     pub table: Option<String>,
 }
 
+// TODO
+struct ValueAttributes {
+    nullable: bool,
+    ty: Type,
+    offset: usize,
+}
+
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct Schema {
     pub columns: Vec<Column>,
@@ -70,7 +77,7 @@ impl Schema {
         schema
     }
 
-    /// Returns a new `Schema` where another `Schema` is appended
+    /// Returns a new `Schema` where `other` is appended
     pub fn join(&self, other: &Schema) -> Self {
         let mut schema = self.clone();
         schema.columns.extend(other.columns.iter().cloned());

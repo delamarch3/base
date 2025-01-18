@@ -1,32 +1,59 @@
 use eval::eval;
 
 use crate::catalog::schema::{Column, Schema};
-use crate::disk::{Disk, FileSystem};
+use crate::logical_plan::LogicalPlan;
 use crate::logical_plan::ProjectionAttributes;
-use crate::sql::{Expr, Ident, SelectItem};
+use crate::sql::{Expr, SelectItem};
 use crate::table::list::Iter as TableIter;
 use crate::table::tuple::Data as TupleData;
 use crate::table::tuple::{Builder as TupleBuilder, Value};
 
 mod eval;
 
-pub trait PhysicalPlan {
+pub fn logical_to_physical(
+    logical_plan: LogicalPlan,
+) -> Result<Box<dyn Executor>, Box<dyn std::error::Error>> {
+    let exec: Box<dyn Executor> = match logical_plan {
+        LogicalPlan::Aggregate(aggregate) => todo!(),
+        LogicalPlan::Filter(filter) => {
+            let input = logical_to_physical(*filter.input)?;
+            Box::new(Filter::new(input, filter.expr))
+        }
+        LogicalPlan::Group(group) => todo!(),
+        LogicalPlan::IndexScan(index_scan) => todo!(),
+        LogicalPlan::Join(join) => todo!(),
+        LogicalPlan::Projection(projection) => {
+            let input = logical_to_physical(*projection.input)?;
+            Box::new(Projection::new(input, projection.attributes))
+        }
+        LogicalPlan::Scan(scan) => {
+            let iter = scan.table.table.iter().unwrap();
+            Box::new(Scan::new(iter, scan.schema))
+        }
+        LogicalPlan::Limit(limit) => todo!(),
+        LogicalPlan::Sort(sort) => todo!(),
+    };
+
+    Ok(exec)
+}
+
+pub trait Executor {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>>;
     fn schema(&self) -> &Schema;
 }
 
-pub struct Scan<D: Disk = FileSystem> {
-    iter: TableIter<D>,
+pub struct Scan {
+    iter: TableIter,
     schema: Schema,
 }
 
-impl<D: Disk> Scan<D> {
-    pub fn new(iter: TableIter<D>, schema: Schema) -> Self {
+impl Scan {
+    pub fn new(iter: TableIter, schema: Schema) -> Self {
         Self { iter, schema }
     }
 }
 
-impl<D: Disk> PhysicalPlan for Scan<D> {
+impl Executor for Scan {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         let next = match self.iter.next() {
             Some(result) => {
@@ -46,16 +73,16 @@ impl<D: Disk> PhysicalPlan for Scan<D> {
 
 pub struct Filter {
     expr: Expr,
-    input: Box<dyn PhysicalPlan>,
+    input: Box<dyn Executor>,
 }
 
 impl Filter {
-    pub fn new(input: Box<dyn PhysicalPlan>, expr: Expr) -> Self {
+    pub fn new(input: Box<dyn Executor>, expr: Expr) -> Self {
         Self { input, expr }
     }
 }
 
-impl PhysicalPlan for Filter {
+impl Executor for Filter {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         loop {
             let Some(input_tuple) = self.input.next()? else { break Ok(None) };
@@ -77,16 +104,16 @@ impl PhysicalPlan for Filter {
 
 pub struct Projection {
     attributes: ProjectionAttributes,
-    input: Box<dyn PhysicalPlan>,
+    input: Box<dyn Executor>,
 }
 
 impl Projection {
-    pub fn new(input: Box<dyn PhysicalPlan>, attributes: ProjectionAttributes) -> Self {
+    pub fn new(input: Box<dyn Executor>, attributes: ProjectionAttributes) -> Self {
         Self { attributes, input }
     }
 }
 
-impl PhysicalPlan for Projection {
+impl Executor for Projection {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         let Some(input_tuple) = self.input.next()? else { return Ok(None) };
         let input_schema = self.input.schema();

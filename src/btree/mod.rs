@@ -8,30 +8,28 @@ use crate::btree::{
     slot::{Either, Slot},
 };
 use crate::catalog::schema::Schema;
-use crate::disk::{Disk, FileSystem};
 use crate::page::{PageBuf, PageID, PageReadGuard, PageWriteGuard};
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::{Comparand, Data as TupleData};
 use crate::writep;
 
-pub struct BTree<'s, V, D: Disk = FileSystem> {
+pub struct BTree<'s, V> {
     root: PageID,
-    pc: SharedPageCache<D>,
+    pc: SharedPageCache,
     schema: &'s Schema,
     _data: PhantomData<V>,
 }
 
-impl<'s, V, D> BTree<'s, V, D>
+impl<'s, V> BTree<'s, V>
 where
     V: Storable + Clone + Eq,
-    D: Disk,
 {
-    pub fn new(pc: SharedPageCache<D>, schema: &'s Schema) -> Self {
+    pub fn new(pc: SharedPageCache, schema: &'s Schema) -> Self {
         Self { root: -1, pc, schema, _data: PhantomData }
     }
 
-    pub fn new_with_root(pc: SharedPageCache<D>, root: PageID, schema: &'s Schema) -> Self {
+    pub fn new_with_root(pc: SharedPageCache, root: PageID, schema: &'s Schema) -> Self {
         Self { root, pc, schema, _data: PhantomData }
     }
 
@@ -396,7 +394,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::catalog::schema::Type;
     use crate::disk::Memory;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;

@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::{
-    disk::{Disk, FileSystem},
     hash_table::bucket_page::Bucket,
     hash_table::dir_page::{self, Directory},
     page::{PageBuf, PageID},
@@ -14,19 +13,18 @@ use crate::{
     writep,
 };
 
-pub struct ExtendibleHashTable<K, V, D: Disk = FileSystem> {
+pub struct ExtendibleHashTable<K, V> {
     dir_page_id: PageID,
-    pc: SharedPageCache<D>,
+    pc: SharedPageCache,
     _data: PhantomData<(K, V)>,
 }
 
-impl<K, V, D> ExtendibleHashTable<K, V, D>
+impl<K, V> ExtendibleHashTable<K, V>
 where
     K: Storable + Copy + Eq + Hash,
     V: Storable + Copy + Eq,
-    D: Disk,
 {
-    pub fn new(dir_page_id: PageID, pc: SharedPageCache<D>) -> Self {
+    pub fn new(dir_page_id: PageID, pc: SharedPageCache) -> Self {
         Self { dir_page_id, pc, _data: PhantomData }
     }
 
@@ -215,7 +213,7 @@ mod test {
         pm.flush_all_pages()?;
 
         // Make sure it reads back ok
-        let ht: ExtendibleHashTable<i32, i32, _> = ExtendibleHashTable::new(0, pm.clone());
+        let ht: ExtendibleHashTable<i32, i32> = ExtendibleHashTable::new(0, pm.clone());
 
         let rem = ht.get(&inserts[remove].0)?;
         assert!(rem.is_empty());
