@@ -243,11 +243,26 @@ impl Builder {
         Self { root: filter.into() }
     }
 
-    pub fn join(self, rhs: impl Into<LogicalPlan>, predicate: Expr) -> Self {
+    pub fn join_on(
+        self,
+        rhs: impl Into<LogicalPlan>,
+        expr: Expr,
+    ) -> Result<Self, LogicalPlanError> {
         let lhs = self.root;
-        let join = Join::new(predicate, lhs, rhs);
+        let join = Join::on(expr, lhs, rhs)?;
 
-        Self { root: join.into() }
+        Ok(Self { root: join.into() })
+    }
+
+    pub fn join_using(
+        self,
+        rhs: impl Into<LogicalPlan>,
+        columns: Vec<Ident>,
+    ) -> Result<Self, LogicalPlanError> {
+        let lhs = self.root;
+        let join = Join::using(columns, lhs, rhs)?;
+
+        Ok(Self { root: join.into() })
     }
 
     pub fn group(self, keys: Vec<Expr>) -> Self {
@@ -333,10 +348,10 @@ mod test {
 
         let plan = scan(t1)
             .filter(ident("c1").is_not_null())
-            .join(
+            .join_on(
                 scan(t2).filter(lit(1).eq(lit(1).and(lit("1").eq(lit("1"))))).build(),
                 ident("t1.c3").eq(ident("t2.c3")),
-            )
+            )?
             .project(vec![
                 ident("c1").into(),
                 concat(vec![lit(1), lit("2")]).into(),
@@ -353,65 +368,11 @@ mod test {
 Limit 5
     Sort [c1] ASC
         Projection [c1, CONCAT(1, '2'), c5 IS NULL, 1 AS one, *]
-            HashJoin [t1.c3 = t2.c3]
+            Join ON t1.c3 = t2.c3
                 Filter [c1 IS NOT NULL]
                     Scan table=t1 alias= oid=0
                 Filter [1 = 1 AND '1' = '1']
                     Scan table=t2 alias= oid=1
-";
-
-        assert_eq!(want, have);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_format_logical_plan() -> Result<(), LogicalPlanError> {
-        const MEMORY: usize = PAGE_SIZE * 8;
-        const K: usize = 2;
-        let disk = Memory::new::<MEMORY>();
-        let replacer = LRU::new(K);
-        let pc = PageCache::new(disk, replacer, 0);
-
-        let mut catalog = Catalog::new(pc);
-        let t1 = catalog
-            .create_table(
-                "t1",
-                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
-            )
-            .expect("could not create table")
-            .expect("there is no table")
-            .clone();
-        let t2 = catalog
-            .create_table(
-                "t2",
-                schema! {column!("c3", Int), column!("c4", Varchar), column!("c5", BigInt)},
-            )
-            .expect("could not create table")
-            .expect("there is no table")
-            .clone();
-
-        let scan_a = Scan::new(t1);
-        let filter_expr_a = ident("c1").is_null().and(lit(5).lt(ident("c2")));
-        let filter_a = Filter::new(filter_expr_a, scan_a);
-
-        let scan_b = Scan::new(t2);
-        let filter_expr_b = ident("c5").is_not_null();
-        let filter_b = Filter::new(filter_expr_b, scan_b);
-
-        let join = Join::new(ident("t1.c3").eq(ident("t2.c3")), filter_a, filter_b);
-        let projection = Projection::new(vec![ident("c1").into(), ident("c2").into()], join)?;
-
-        let plan = LogicalPlan::Projection(projection);
-
-        let have = plan.to_string();
-        let want = "\
-Projection [c1, c2]
-    HashJoin [t1.c3 = t2.c3]
-        Filter [c1 IS NULL AND 5 < c2]
-            Scan table=t1 alias= oid=0
-        Filter [c5 IS NOT NULL]
-            Scan table=t2 alias= oid=1
 ";
 
         assert_eq!(want, have);

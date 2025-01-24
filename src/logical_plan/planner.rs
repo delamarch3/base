@@ -52,38 +52,16 @@ impl Planner {
 
         for join in joins {
             let Join { from, ty, constraint } = join;
-            let (rhs, rhs_table) = self.build_from(from)?;
+            let (rhs, _) = self.build_from(from)?;
 
             let JoinType::Inner = ty;
 
-            // USING verifies the columns but ON doesn't. This should be made consistent
-            let schema = query.schema();
-            let predicate = match constraint {
-                JoinConstraint::On(expr) => expr,
-                JoinConstraint::Using(join_columns) => {
-                    let mut predicate: Option<Expr> = None;
-                    for join_column in join_columns {
-                        let Some(column) = schema.find_column_by_name(&join_column[0]) else {
-                            Err(UnknownColumn(join_column.to_string()))?
-                        };
-
-                        let rhs_column = join_column.qualify(&rhs_table);
-                        if rhs.schema().find_column_by_name(&rhs_column[1]).is_none() {
-                            Err(UnknownColumn(rhs_column.to_string()))?
-                        }
-
-                        let Some(table) = &column.table else { Err(Internal)? };
-                        let lhs_column =
-                            Expr::Ident(Ident::Compound(vec![table.clone(), column.name.clone()]));
-                        let expr = Expr::Ident(rhs_column).eq(lhs_column);
-                        predicate = Some(predicate.map_or(expr.clone(), |p| p.and(expr)));
-                    }
-
-                    predicate.unwrap()
-                }
+            query = match constraint {
+                JoinConstraint::On(expr) => query.join_on(rhs.build(), expr)?,
+                JoinConstraint::Using(columns) => query.join_using(rhs.build(), columns)?,
             };
 
-            query = query.join(rhs.build(), predicate);
+            // query = query.join_on(rhs.build(), predicate);
         }
 
         if let Some(filter) = filter {
@@ -201,7 +179,7 @@ Projection [*]
         "\
 Projection [*]
     Filter [t1.c1 > 5]
-        HashJoin [t1.c1 = t2.c1]
+        Join ON t1.c1 = t2.c1
             Scan table=t1 alias= oid=0
             Scan table=t2 alias= oid=1
 "
@@ -218,8 +196,8 @@ Projection [*]
         "\
 Projection [*]
     Filter [c1 > 5]
-        HashJoin [t3.c1 = t1.c1 AND t3.c4 = t2.c4]
-            HashJoin [t2.c2 = t1.c2 AND t2.c3 = t1.c3]
+        Join USING (c1, c4)
+            Join USING (c2, c3)
                 Scan table=t1 alias= oid=0
                 Scan table=t2 alias= oid=1
             Scan table=t3 alias= oid=2
@@ -247,10 +225,10 @@ Projection [c1, c2, c3, c4 AS column_four]
             "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
         },
         "SELECT d1.*, d2.c3, d2.c4 FROM (SELECT * FROM t1 WHERE c1 IN (1, 2, 3)) d1
-        JOIN (SELECT c2, c3, c4 FROM t2 WHERE c2 != '') d2 USING(c2)",
+        JOIN (SELECT c2, c3, c4 FROM t2 WHERE c2 != '') d2 USING (c2)",
         "\
 Projection [d1.*, d2.c3, d2.c4]
-    HashJoin [d2.c2 = d1.c2]
+    Join USING (c2)
         Projection [*]
             Filter [c1 IN (1, 2, 3)]
                 Scan table=t1 alias= oid=0
