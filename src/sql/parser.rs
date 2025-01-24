@@ -122,43 +122,21 @@ impl Parser {
         let from = match token {
             Token::Keyword(Keyword::Values) => {
                 let values = self.parse_values()?;
-
-                let mut alias = None;
-                if self.check_keywords(&[Keyword::As]) {
-                    let (token, location) = self.next();
-                    match token {
-                        Token::Ident(a) => alias = Some(a),
-                        _ => Err(Unexpected(&token, &location))?,
-                    }
-                }
+                let alias = self.parse_alias()?;
 
                 FromTable::Values { values, alias }
             }
             Token::Ident(_) => {
                 self.index -= 1;
                 let name = self.parse_ident()?;
-
-                let mut alias = None;
-                if self.check_keywords(&[Keyword::As]) {
-                    let (token, location) = self.next();
-                    match token {
-                        Token::Ident(a) => alias = Some(a),
-                        _ => Err(Unexpected(&token, &location))?,
-                    }
-                }
+                let alias = self.parse_alias()?;
 
                 FromTable::Table { name, alias }
             }
             Token::LParen => {
                 let query = self.parse_query().map(Box::new)?;
                 self.parse_tokens(&[Token::RParen])?;
-
-                let alias = if let (Token::Ident(alias), _) = self.peek() {
-                    self.next();
-                    Some(alias)
-                } else {
-                    None
-                };
+                let alias = self.parse_alias()?;
 
                 FromTable::Derived { query, alias }
             }
@@ -166,6 +144,23 @@ impl Parser {
         };
 
         Ok(from)
+    }
+
+    fn parse_alias(&mut self) -> Result<Option<String>> {
+        let alias = if self.check_keywords(&[Keyword::As]) {
+            let (token, location) = self.next();
+            match token {
+                Token::Ident(a) => Some(a),
+                _ => Err(Unexpected(&token, &location))?,
+            }
+        } else if let (Token::Ident(alias), _) = self.peek() {
+            self.next();
+            Some(alias)
+        } else {
+            None
+        };
+
+        Ok(alias)
     }
 
     fn parse_joins(&mut self) -> Result<Vec<Join>> {
