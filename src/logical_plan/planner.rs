@@ -133,6 +133,7 @@ impl Planner {
 
                 Ok((query, alias))
             }
+            FromTable::Values { values, alias } => todo!(),
         }
     }
 }

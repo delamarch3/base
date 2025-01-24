@@ -231,6 +231,7 @@ pub struct Query {
 pub enum FromTable {
     Table { name: Ident, alias: Option<String> },
     Derived { query: Box<Query>, alias: Option<String> },
+    Values { values: Vec<Vec<Expr>>, alias: Option<String> },
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -287,7 +288,7 @@ pub struct Select {
 #[derive(PartialEq, Debug)]
 pub struct Insert {
     pub table: Ident,
-    pub rows: Vec<Vec<Expr>>,
+    pub values: Vec<Vec<Expr>>,
     pub query: Option<Query>,
 }
 

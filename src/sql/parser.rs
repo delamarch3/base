@@ -120,6 +120,20 @@ impl Parser {
     fn parse_from(&mut self) -> Result<FromTable> {
         let (token, location) = self.next();
         let from = match token {
+            Token::Keyword(Keyword::Values) => {
+                let values = self.parse_values()?;
+
+                let mut alias = None;
+                if self.check_keywords(&[Keyword::As]) {
+                    let (token, location) = self.next();
+                    match token {
+                        Token::Ident(a) => alias = Some(a),
+                        _ => Err(Unexpected(&token, &location))?,
+                    }
+                }
+
+                FromTable::Values { values, alias }
+            }
             Token::Ident(_) => {
                 self.index -= 1;
                 let name = self.parse_ident()?;
@@ -196,26 +210,33 @@ impl Parser {
         // TODO: parse columns too, currently assuming all columns in each insert
 
         let mut query = None;
-        let mut rows = Vec::new();
+        let mut values = Vec::new();
         if self.check_keywords(&[Keyword::Values]) {
-            while {
-                self.parse_tokens(&[Token::LParen])?;
-                let mut exprs = Vec::new();
-                while {
-                    exprs.push(self.parse_expr(0)?);
-                    self.check_tokens(&[Token::Comma])
-                } {}
-                rows.push(exprs);
-                self.parse_tokens(&[Token::RParen])?;
-                self.check_tokens(&[Token::Comma])
-            } {}
+            values = self.parse_values()?;
         } else {
             self.parse_tokens(&[Token::LParen])?;
             query = Some(self.parse_query()?);
             self.parse_tokens(&[Token::RParen])?;
         };
 
-        Ok(Insert { table, rows, query })
+        Ok(Insert { table, values, query })
+    }
+
+    fn parse_values(&mut self) -> Result<Vec<Vec<Expr>>> {
+        let mut values = Vec::new();
+        while {
+            self.parse_tokens(&[Token::LParen])?;
+            let mut exprs = Vec::new();
+            while {
+                exprs.push(self.parse_expr(0)?);
+                self.check_tokens(&[Token::Comma])
+            } {}
+            values.push(exprs);
+            self.parse_tokens(&[Token::RParen])?;
+            self.check_tokens(&[Token::Comma])
+        } {}
+
+        Ok(values)
     }
 
     fn parse_update(&mut self) -> Result<Update> {
@@ -924,6 +945,21 @@ mod test {
     }
 
     #[test]
+    fn test_parse_from_values() {
+        let input = "values (1), (2)";
+
+        let want = FromTable::Values {
+            values: vec![
+                vec![Expr::Literal(Literal::Number("1".into()))],
+                vec![Expr::Literal(Literal::Number("2".into()))],
+            ],
+            alias: None,
+        };
+        let have = Parser::new(input).unwrap().parse_from().unwrap();
+        assert_eq!(want, have)
+    }
+
+    #[test]
     fn test_parse_join() {
         let input = "join t2 on t1.c1 = t2.c1 join t3 using (c2, c3)";
 
@@ -978,7 +1014,7 @@ mod test {
 
         let want = Insert {
             table: Ident::Single("t1".into()),
-            rows: vec![
+            values: vec![
                 vec![
                     Expr::Literal(Literal::Number("1".into())),
                     Expr::Literal(Literal::Number("2".into())),
@@ -1001,7 +1037,7 @@ mod test {
 
         let want = Insert {
             table: Ident::Single("t1".into()),
-            rows: vec![],
+            values: vec![],
             query: Some(Query {
                 projection: vec![SelectItem::Wildcard],
                 from: FromTable::Table { name: Ident::Single("t2".into()), alias: None },
