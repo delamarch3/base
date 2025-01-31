@@ -16,10 +16,11 @@ mod limit;
 mod projection;
 mod scan;
 mod sort;
+mod values;
 
 use {
     aggregate::Aggregate, filter::Filter, group::Group, index_scan::IndexScan, join::Join,
-    limit::Limit, projection::Projection, scan::Scan, sort::Sort,
+    limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
 };
 
 pub use projection::ProjectionAttributes;
@@ -66,6 +67,7 @@ pub enum LogicalPlan {
     Scan(Scan),
     Limit(Limit),
     Sort(Sort),
+    Values(Values),
 }
 
 impl std::fmt::Display for LogicalPlan {
@@ -86,6 +88,7 @@ impl std::fmt::Display for LogicalPlan {
                 LogicalPlan::Scan(scan) => writeln!(f, "{scan}"),
                 LogicalPlan::Limit(limit) => writeln!(f, "{limit}"),
                 LogicalPlan::Sort(sort) => writeln!(f, "{sort}"),
+                LogicalPlan::Values(values) => writeln!(f, "{values}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -117,6 +120,7 @@ impl LogicalPlan {
             LogicalPlan::Scan(_) => (None, None),
             LogicalPlan::Limit(limit) => (Some(limit.input.as_ref()), None),
             LogicalPlan::Sort(sort) => (Some(sort.input.as_ref()), None),
+            LogicalPlan::Values(_) => (None, None),
         }
     }
 
@@ -131,6 +135,7 @@ impl LogicalPlan {
             LogicalPlan::Scan(scan) => &scan.schema,
             LogicalPlan::Limit(limit) => limit.input.schema(),
             LogicalPlan::Sort(sort) => sort.input.schema(),
+            LogicalPlan::Values(values) => values.schema(),
         }
     }
 
@@ -145,6 +150,7 @@ impl LogicalPlan {
             LogicalPlan::Scan(scan) => &mut scan.schema,
             LogicalPlan::Limit(limit) => limit.input.schema_mut(),
             LogicalPlan::Sort(sort) => sort.input.schema_mut(),
+            LogicalPlan::Values(values) => values.schema_mut(),
         }
     }
 }
@@ -177,10 +183,9 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
         }
         Expr::Literal(literal) => match literal {
             Literal::Number(_) => Type::Int,
-            Literal::Decimal(_) => todo!(),
             Literal::String(_) => Type::Varchar,
             Literal::Bool(_) => Type::Bool,
-            Literal::Null => todo!(),
+            Literal::Null | Literal::Decimal(_) => todo!(),
         },
         Expr::IsNull { .. } | Expr::InList { .. } | Expr::Between { .. } => Type::Bool,
         Expr::BinaryOp { left: _, op, right: _ } => match op {
@@ -218,6 +223,17 @@ pub fn scan_with_alias(table_info: Arc<TableInfo>, alias: String) -> Builder {
 
 pub fn index_scan(index_info: IndexInfo) -> Builder {
     Builder { root: LogicalPlan::IndexScan(IndexScan::new(index_info)) }
+}
+
+pub fn values(values: Vec<Vec<Expr>>) -> Result<Builder, LogicalPlanError> {
+    Ok(Builder { root: LogicalPlan::Values(Values::new(values)?) })
+}
+
+pub fn values_with_alias(
+    values: Vec<Vec<Expr>>,
+    alias: String,
+) -> Result<Builder, LogicalPlanError> {
+    Ok(Builder { root: LogicalPlan::Values(Values::new_with_alias(values, alias)?) })
 }
 
 impl Builder {

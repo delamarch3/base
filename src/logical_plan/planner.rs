@@ -1,10 +1,13 @@
 use crate::catalog::Catalog;
-use crate::logical_plan::{scan, scan_with_alias};
+use crate::logical_plan::{scan, scan_with_alias, values, values_with_alias};
 use crate::sql::{
-    Expr, FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
+    FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
-use super::{Builder as LogicalPlanBuilder, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use super::{
+    Builder as LogicalPlanBuilder, LogicalPlan,
+    LogicalPlanError::{self, *},
+};
 
 pub struct Planner {
     catalog: Catalog,
@@ -72,7 +75,7 @@ impl Planner {
         }
 
         // There may or may not be a aggregate function in the projection. If there isn't, then it
-        // should still group by, where the last processed tuple columns are in the result
+        // should still group by, where the first processed tuple columns are in the result
         if group.len() > 0 {
             todo!()
         }
@@ -111,7 +114,13 @@ impl Planner {
 
                 Ok((query, alias))
             }
-            FromTable::Values { values, alias } => todo!(),
+            FromTable::Values { values: input_values, alias } => {
+                if let Some(alias) = alias {
+                    Ok((values_with_alias(input_values, alias.clone())?, alias))
+                } else {
+                    Ok((values(input_values)?, "".into()))
+                }
+            }
         }
     }
 }
@@ -144,6 +153,27 @@ mod test {
                     .create_table($table, $columns)
                     .unwrap();
                 )+
+
+                let query = $query;
+                let mut parser = Parser::new(&query).unwrap();
+                let select = parser.parse_statements().unwrap().pop().unwrap();
+                let planner = Planner::new(catalog);
+                let plan = planner.plan_statement(select).unwrap();
+
+                assert_eq!(plan.to_string(), $want);
+            }
+        };
+
+        ($name:ident, $query:expr, $want:expr) => {
+            #[test]
+            fn $name() {
+                const MEMORY: usize = PAGE_SIZE * 3;
+                const K: usize = 2;
+                let disk = Memory::new::<MEMORY>();
+                let replacer = LRU::new(K);
+                let pc = PageCache::new(disk, replacer, 0);
+
+                let catalog = Catalog::new(pc);
 
                 let query = $query;
                 let mut parser = Parser::new(&query).unwrap();
@@ -235,6 +265,15 @@ Projection [d1.*, d2.c3, d2.c4]
         Projection [c2, c3, c4]
             Filter [c2 != '']
                 Scan table=t2 alias= oid=1
+"
+    );
+
+    test_plan_select!(
+        t6,
+        "SELECT * FROM VALUES (1, 2, 3), (4, 5, 6)",
+        "\
+Projection [*]
+    Values [(1, 2, 3), (4, 5, 6)]
 "
     );
 }
