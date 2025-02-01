@@ -1,7 +1,7 @@
 use crate::catalog::Catalog;
 use crate::logical_plan::{scan, scan_with_alias, values, values_with_alias};
 use crate::sql::{
-    FromTable, Ident, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
+    FromTable, Ident, Insert, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
 };
 
 use super::{
@@ -21,7 +21,7 @@ impl Planner {
     pub fn plan_statement(&self, statement: Statement) -> Result<LogicalPlan, LogicalPlanError> {
         let statement = match statement {
             Statement::Select(select) => self.build_select(select)?,
-            Statement::Insert(_) => todo!(),
+            Statement::Insert(insert) => self.build_insert(insert)?,
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
             Statement::Create(_) => todo!(),
@@ -48,9 +48,10 @@ impl Planner {
         Ok(query)
     }
 
-    fn build_query(&self, query: Query) -> Result<LogicalPlanBuilder, LogicalPlanError> {
-        let Query { projection, from, joins, filter, group } = query;
-
+    fn build_query(
+        &self,
+        Query { projection, from, joins, filter, group }: Query,
+    ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
         let (mut query, _) = self.build_from(from)?;
 
         for join in joins {
@@ -122,6 +123,13 @@ impl Planner {
                 }
             }
         }
+    }
+
+    fn build_insert(
+        &self,
+        Insert { table, input }: Insert,
+    ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
+        todo!()
     }
 }
 

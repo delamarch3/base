@@ -1,11 +1,9 @@
-use super::{
-    ast::{
-        Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
-        Ident, Insert, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr, Query, Select,
-        SelectItem, Statement, Update,
-    },
-    tokeniser::{Keyword, Location, Token, Tokeniser},
+use super::ast::{
+    Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
+    Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr, Query,
+    Select, SelectItem, Statement, Update,
 };
+use super::tokeniser::{Keyword, Location, Token, Tokeniser};
 
 #[derive(Debug)]
 pub enum ParserError {
@@ -204,17 +202,16 @@ impl Parser {
 
         // TODO: parse columns too, currently assuming all columns in each insert
 
-        let mut query = None;
-        let mut values = Vec::new();
         if self.check_keywords(&[Keyword::Values]) {
-            values = self.parse_values()?;
+            let values = self.parse_values()?;
+            Ok(Insert { table, input: InsertInput::Values(values) })
         } else {
             self.parse_tokens(&[Token::LParen])?;
-            query = Some(self.parse_query()?);
+            let query = self.parse_query()?;
             self.parse_tokens(&[Token::RParen])?;
-        };
 
-        Ok(Insert { table, values, query })
+            Ok(Insert { table, input: InsertInput::Query(query) })
+        }
     }
 
     fn parse_values(&mut self) -> Result<Vec<Vec<Expr>>> {
@@ -696,8 +693,8 @@ impl Parser {
 mod test {
     use super::{
         Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
-        Ident, Insert, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr, Parser, Query,
-        Select, SelectItem, Statement, Update,
+        Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr,
+        Parser, Query, Select, SelectItem, Statement, Update,
     };
 
     #[test]
@@ -1009,7 +1006,7 @@ mod test {
 
         let want = Insert {
             table: Ident::Single("t1".into()),
-            values: vec![
+            input: InsertInput::Values(vec![
                 vec![
                     Expr::Literal(Literal::Number("1".into())),
                     Expr::Literal(Literal::Number("2".into())),
@@ -1018,8 +1015,7 @@ mod test {
                     Expr::Literal(Literal::String("1".into())),
                     Expr::Literal(Literal::String("2".into())),
                 ],
-            ],
-            query: None,
+            ]),
         };
         let have = Parser::new(input).unwrap().parse_insert().unwrap();
 
@@ -1032,8 +1028,7 @@ mod test {
 
         let want = Insert {
             table: Ident::Single("t1".into()),
-            values: vec![],
-            query: Some(Query {
+            input: InsertInput::Query(Query {
                 projection: vec![SelectItem::Wildcard],
                 from: FromTable::Table { name: Ident::Single("t2".into()), alias: None },
                 joins: vec![],
