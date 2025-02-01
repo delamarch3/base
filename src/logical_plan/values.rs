@@ -33,14 +33,20 @@ impl Values {
 
 impl std::fmt::Display for Values {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const LIMIT: usize = 3;
+
         write!(f, "Values [")?;
         let mut tmp = "";
-        for values in &self.values {
+        for values in self.values.iter().take(LIMIT) {
             write!(f, "{tmp}")?;
             write!(f, "(")?;
             write_iter(f, &mut values.iter(), ", ")?;
             write!(f, ")")?;
             tmp = ", ";
+        }
+
+        if self.values.len() > LIMIT {
+            write!(f, ", ... ")?;
         }
 
         write!(f, "]")
