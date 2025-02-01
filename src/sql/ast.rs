@@ -231,7 +231,7 @@ pub struct Query {
 pub enum FromTable {
     Table { name: Ident, alias: Option<String> },
     Derived { query: Box<Query>, alias: Option<String> },
-    Values { values: Vec<Vec<Expr>>, alias: Option<String> },
+    Values { rows: Vec<Vec<Expr>>, alias: Option<String> },
 }
 
 #[derive(PartialEq, Debug, Clone)]

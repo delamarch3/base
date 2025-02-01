@@ -1,7 +1,8 @@
 use crate::catalog::Catalog;
 use crate::logical_plan::{scan, scan_with_alias, values, values_with_alias};
 use crate::sql::{
-    FromTable, Ident, Insert, Join, JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
+    FromTable, Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, OrderByExpr, Query,
+    Select, Statement,
 };
 
 use super::{
@@ -93,7 +94,7 @@ impl Planner {
         &self,
         from: FromTable,
     ) -> Result<(LogicalPlanBuilder, String), LogicalPlanError> {
-        match from {
+        let builder = match from {
             FromTable::Table { name, alias } => {
                 let Ident::Single(name) = name else { Err(NotImplemented("multiple schema"))? };
                 let table_info =
@@ -101,9 +102,9 @@ impl Planner {
 
                 if let Some(alias) = alias {
                     // Alias is applied at the `Scan` node, single table
-                    Ok((scan_with_alias(table_info, alias.clone()), alias))
+                    (scan_with_alias(table_info, alias.clone()), alias)
                 } else {
-                    Ok((scan(table_info), name))
+                    (scan(table_info), name)
                 }
             }
             FromTable::Derived { query, alias } => {
@@ -113,23 +114,41 @@ impl Planner {
                 let Some(alias) = alias else { Err(Internal)? };
                 query.schema_mut().qualify(&alias);
 
-                Ok((query, alias))
+                (query, alias)
             }
-            FromTable::Values { values: input_values, alias } => {
+            FromTable::Values { rows, alias } => {
                 if let Some(alias) = alias {
-                    Ok((values_with_alias(input_values, alias.clone())?, alias))
+                    (values_with_alias(rows, alias.clone())?, alias)
                 } else {
-                    Ok((values(input_values)?, "".into()))
+                    (values(rows)?, "".into())
                 }
             }
-        }
+        };
+
+        Ok(builder)
     }
 
     fn build_insert(
         &self,
         Insert { table, input }: Insert,
     ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
-        todo!()
+        let Ident::Single(name) = table else { Err(NotImplemented("multiple schema"))? };
+        let _table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name))?;
+
+        let builder = match input {
+            InsertInput::Values(rows) => {
+                let values = values(rows)?;
+                // TODO: values.insert(table_info)?;
+                values
+            }
+            InsertInput::Query(query) => {
+                let query = self.build_query(query)?;
+                // TODO: query.insert(table_info)?;
+                query
+            }
+        };
+
+        Ok(builder)
     }
 }
 

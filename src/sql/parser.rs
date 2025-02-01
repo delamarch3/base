@@ -119,10 +119,10 @@ impl Parser {
         let (token, location) = self.next();
         let from = match token {
             Token::Keyword(Keyword::Values) => {
-                let values = self.parse_values()?;
+                let rows = self.parse_values()?;
                 let alias = self.parse_alias()?;
 
-                FromTable::Values { values, alias }
+                FromTable::Values { rows, alias }
             }
             Token::Ident(_) => {
                 self.index -= 1;
@@ -203,8 +203,8 @@ impl Parser {
         // TODO: parse columns too, currently assuming all columns in each insert
 
         if self.check_keywords(&[Keyword::Values]) {
-            let values = self.parse_values()?;
-            Ok(Insert { table, input: InsertInput::Values(values) })
+            let rows = self.parse_values()?;
+            Ok(Insert { table, input: InsertInput::Values(rows) })
         } else {
             self.parse_tokens(&[Token::LParen])?;
             let query = self.parse_query()?;
@@ -941,7 +941,7 @@ mod test {
         let input = "values (1), (2)";
 
         let want = FromTable::Values {
-            values: vec![
+            rows: vec![
                 vec![Expr::Literal(Literal::Number("1".into()))],
                 vec![Expr::Literal(Literal::Number("2".into()))],
             ],
