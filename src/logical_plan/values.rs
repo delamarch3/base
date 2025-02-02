@@ -1,34 +1,12 @@
 use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::catalog::schema::{Schema, SchemaBuilder};
 use crate::column;
-use crate::sql::{Expr, Ident, Literal};
+use crate::sql::{Expr, Literal};
 
 pub struct Values {
     schema: Schema,
     values: Vec<Vec<Expr>>,
     alias: Option<String>,
-}
-
-impl Values {
-    pub fn new(values: Vec<Vec<Expr>>) -> Result<Self, LogicalPlanError> {
-        let schema = infer_schema(&values)?;
-
-        Ok(Self { schema, values, alias: None })
-    }
-
-    pub fn new_with_alias(values: Vec<Vec<Expr>>, alias: String) -> Result<Self, LogicalPlanError> {
-        let mut values = Self::new(values)?;
-        values.alias = Some(alias);
-        Ok(values)
-    }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn schema_mut(&mut self) -> &mut Schema {
-        &mut self.schema
-    }
 }
 
 impl std::fmt::Display for Values {
@@ -56,6 +34,28 @@ impl std::fmt::Display for Values {
 impl From<Values> for LogicalPlan {
     fn from(values: Values) -> Self {
         Self::Values(values)
+    }
+}
+
+impl Values {
+    pub fn new(values: Vec<Vec<Expr>>) -> Result<Self, LogicalPlanError> {
+        let schema = infer_schema(&values)?;
+
+        Ok(Self { schema, values, alias: None })
+    }
+
+    pub fn new_with_alias(values: Vec<Vec<Expr>>, alias: String) -> Result<Self, LogicalPlanError> {
+        let mut values = Self::new(values)?;
+        values.alias = Some(alias);
+        Ok(values)
+    }
+
+    pub fn schema(&self) -> &Schema {
+        &self.schema
+    }
+
+    pub fn schema_mut(&mut self) -> &mut Schema {
+        &mut self.schema
     }
 }
 

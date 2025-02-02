@@ -133,19 +133,11 @@ impl Planner {
         Insert { table, input }: Insert,
     ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
         let Ident::Single(name) = table else { Err(NotImplemented("multiple schema"))? };
-        let _table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name))?;
+        let table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name))?;
 
         let builder = match input {
-            InsertInput::Values(rows) => {
-                let values = values(rows)?;
-                // TODO: values.insert(table_info)?;
-                values
-            }
-            InsertInput::Query(query) => {
-                let query = self.build_query(query)?;
-                // TODO: query.insert(table_info)?;
-                query
-            }
+            InsertInput::Values(rows) => values(rows)?.insert(table_info)?,
+            InsertInput::Query(query) => self.build_query(query)?.insert(table_info)?,
         };
 
         Ok(builder)
@@ -163,8 +155,8 @@ mod test {
     use crate::sql::Parser;
     use crate::{column, schema};
 
-    macro_rules! test_plan_select {
-        ($name:ident, {$( $table:expr => $columns:expr )+}, $query:expr, $want:expr) => {
+    macro_rules! test_statement {
+        ($name:ident, {$( $table:expr => $columns:expr )+}, $statement:expr, $want:expr) => {
             #[test]
             fn $name() {
                 const MEMORY: usize = PAGE_SIZE * 3;
@@ -181,8 +173,8 @@ mod test {
                     .unwrap();
                 )+
 
-                let query = $query;
-                let mut parser = Parser::new(&query).unwrap();
+                let statement= $statement;
+                let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
                 let planner = Planner::new(catalog);
                 let plan = planner.plan_statement(select).unwrap();
@@ -191,7 +183,7 @@ mod test {
             }
         };
 
-        ($name:ident, $query:expr, $want:expr) => {
+        ($name:ident, $statement:expr, $want:expr) => {
             #[test]
             fn $name() {
                 const MEMORY: usize = PAGE_SIZE * 3;
@@ -202,8 +194,8 @@ mod test {
 
                 let catalog = Catalog::new(pc);
 
-                let query = $query;
-                let mut parser = Parser::new(&query).unwrap();
+                let statement = $statement;
+                let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
                 let planner = Planner::new(catalog);
                 let plan = planner.plan_statement(select).unwrap();
@@ -213,7 +205,7 @@ mod test {
         };
     }
 
-    test_plan_select!(
+    test_statement!(
         t1,
         {
             "t1" => schema!{ column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
@@ -226,7 +218,7 @@ Projection [*]
 "
     );
 
-    test_plan_select!(
+    test_statement!(
         t2,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
@@ -242,7 +234,7 @@ Projection [*]
 "
     );
 
-    test_plan_select!(
+    test_statement!(
         t3,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
@@ -261,7 +253,7 @@ Projection [*]
 "
     );
 
-    test_plan_select!(
+    test_statement!(
         t4,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt),
@@ -275,7 +267,7 @@ Projection [c1, c2, c3, c4 AS column_four]
 "
     );
 
-    test_plan_select!(
+    test_statement!(
         t5,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
@@ -295,12 +287,37 @@ Projection [d1.*, d2.c3, d2.c4]
 "
     );
 
-    test_plan_select!(
+    test_statement!(
         t6,
         "SELECT * FROM VALUES (1, 2, 3), (4, 5, 6)",
         "\
 Projection [*]
     Values [(1, 2, 3), (4, 5, 6)]
+"
+    );
+
+    test_statement!(
+        t7,
+        {
+            "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
+        },
+        "INSERT INTO t1 VALUES (1, 2, 3), (4, 5, 6)",
+        "\
+Insert table=t1 oid=0
+    Values [(1, 2, 3), (4, 5, 6)]
+"
+    );
+
+    test_statement!(
+        t8,
+        {
+            "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
+        },
+        "INSERT INTO t1 (SELECT * FROM VALUES (1, 2, 3), (4, 5, 6))",
+        "\
+Insert table=t1 oid=0
+    Projection [*]
+        Values [(1, 2, 3), (4, 5, 6)]
 "
     );
 }

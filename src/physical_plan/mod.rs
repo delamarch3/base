@@ -33,6 +33,7 @@ pub fn logical_to_physical(
         LogicalPlan::Limit(limit) => todo!(),
         LogicalPlan::Sort(sort) => todo!(),
         LogicalPlan::Values(values) => todo!(),
+        LogicalPlan::Insert(values) => todo!(),
     };
 
     Ok(exec)

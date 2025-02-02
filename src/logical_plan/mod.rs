@@ -11,6 +11,7 @@ mod aggregate;
 mod filter;
 mod group;
 mod index_scan;
+mod insert;
 mod join;
 mod limit;
 mod projection;
@@ -19,8 +20,8 @@ mod sort;
 mod values;
 
 use {
-    aggregate::Aggregate, filter::Filter, group::Group, index_scan::IndexScan, join::Join,
-    limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
+    aggregate::Aggregate, filter::Filter, group::Group, index_scan::IndexScan, insert::Insert,
+    join::Join, limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
 };
 
 pub use projection::ProjectionAttributes;
@@ -33,6 +34,7 @@ pub enum LogicalPlanError {
     UnknownTable(String),
     UnknownColumn(String),
     NotImplemented(&'static str),
+    SchemaMismatch,
     Internal,
 }
 use LogicalPlanError::*;
@@ -46,6 +48,7 @@ impl std::fmt::Display for LogicalPlanError {
             LogicalPlanError::UnknownTable(table) => write!(f, "unknown table: {table}"),
             LogicalPlanError::UnknownColumn(column) => write!(f, "unknown column: {column}"),
             LogicalPlanError::NotImplemented(msg) => write!(f, "not implemented: {msg}"),
+            LogicalPlanError::SchemaMismatch => write!(f, "schema mismatch"),
             LogicalPlanError::Internal => write!(f, "internal"),
         }
     }
@@ -68,6 +71,7 @@ pub enum LogicalPlan {
     Limit(Limit),
     Sort(Sort),
     Values(Values),
+    Insert(Insert),
 }
 
 impl std::fmt::Display for LogicalPlan {
@@ -89,6 +93,7 @@ impl std::fmt::Display for LogicalPlan {
                 LogicalPlan::Limit(limit) => writeln!(f, "{limit}"),
                 LogicalPlan::Sort(sort) => writeln!(f, "{sort}"),
                 LogicalPlan::Values(values) => writeln!(f, "{values}"),
+                LogicalPlan::Insert(insert) => writeln!(f, "{insert}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -121,6 +126,7 @@ impl LogicalPlan {
             LogicalPlan::Limit(limit) => (Some(limit.input.as_ref()), None),
             LogicalPlan::Sort(sort) => (Some(sort.input.as_ref()), None),
             LogicalPlan::Values(_) => (None, None),
+            LogicalPlan::Insert(insert) => (Some(insert.input.as_ref()), None),
         }
     }
 
@@ -136,6 +142,7 @@ impl LogicalPlan {
             LogicalPlan::Limit(limit) => limit.input.schema(),
             LogicalPlan::Sort(sort) => sort.input.schema(),
             LogicalPlan::Values(values) => values.schema(),
+            LogicalPlan::Insert(insert) => insert.schema(),
         }
     }
 
@@ -151,6 +158,7 @@ impl LogicalPlan {
             LogicalPlan::Limit(limit) => limit.input.schema_mut(),
             LogicalPlan::Sort(sort) => sort.input.schema_mut(),
             LogicalPlan::Values(values) => values.schema_mut(),
+            LogicalPlan::Insert(insert) => insert.schema_mut(),
         }
     }
 }
@@ -314,6 +322,13 @@ impl Builder {
         let limit = Limit::new(expr, input);
 
         Self { root: limit.into() }
+    }
+
+    pub fn insert(self, table_info: Arc<TableInfo>) -> Result<Self, LogicalPlanError> {
+        let input = self.root;
+        let insert = Insert::new(table_info, input)?;
+
+        Ok(Self { root: insert.into() })
     }
 
     pub fn build(self) -> LogicalPlan {
