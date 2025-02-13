@@ -12,15 +12,14 @@ mod eval;
 
 pub fn logical_to_physical(
     logical_plan: LogicalPlan,
-) -> Result<Box<dyn Executor>, Box<dyn std::error::Error>> {
-    let exec: Box<dyn Executor> = match logical_plan {
+) -> Result<Box<dyn PhysicalOperator>, Box<dyn std::error::Error>> {
+    let exec: Box<dyn PhysicalOperator> = match logical_plan {
         LogicalPlan::Aggregate(aggregate) => todo!(),
         LogicalPlan::Filter(filter) => {
             let input = logical_to_physical(*filter.input)?;
             Box::new(Filter::new(input, filter.expr))
         }
         LogicalPlan::Group(group) => todo!(),
-        LogicalPlan::IndexScan(index_scan) => todo!(),
         LogicalPlan::Join(join) => todo!(),
         LogicalPlan::Projection(projection) => {
             let input = logical_to_physical(*projection.input)?;
@@ -39,7 +38,7 @@ pub fn logical_to_physical(
     Ok(exec)
 }
 
-pub trait Executor {
+pub trait PhysicalOperator {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>>;
     fn schema(&self) -> &Schema;
 }
@@ -55,7 +54,7 @@ impl Scan {
     }
 }
 
-impl Executor for Scan {
+impl PhysicalOperator for Scan {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         let next = match self.iter.next() {
             Some(result) => {
@@ -75,16 +74,16 @@ impl Executor for Scan {
 
 pub struct Filter {
     expr: Expr,
-    input: Box<dyn Executor>,
+    input: Box<dyn PhysicalOperator>,
 }
 
 impl Filter {
-    pub fn new(input: Box<dyn Executor>, expr: Expr) -> Self {
+    pub fn new(input: Box<dyn PhysicalOperator>, expr: Expr) -> Self {
         Self { input, expr }
     }
 }
 
-impl Executor for Filter {
+impl PhysicalOperator for Filter {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         loop {
             let Some(input_tuple) = self.input.next()? else { break Ok(None) };
@@ -106,16 +105,16 @@ impl Executor for Filter {
 
 pub struct Projection {
     attributes: ProjectionAttributes,
-    input: Box<dyn Executor>,
+    input: Box<dyn PhysicalOperator>,
 }
 
 impl Projection {
-    pub fn new(input: Box<dyn Executor>, attributes: ProjectionAttributes) -> Self {
+    pub fn new(input: Box<dyn PhysicalOperator>, attributes: ProjectionAttributes) -> Self {
         Self { attributes, input }
     }
 }
 
-impl Executor for Projection {
+impl PhysicalOperator for Projection {
     fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
         let Some(input_tuple) = self.input.next()? else { return Ok(None) };
         let input_schema = self.input.schema();

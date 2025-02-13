@@ -1,6 +1,8 @@
-use super::{expr_type, write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
 use crate::column;
+use crate::logical_plan::{
+    expr_type, write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*,
+};
 use crate::sql::{Expr, Ident, SelectItem};
 
 /// `schema`, `projection` have the same length, each field has a corresponding field at the

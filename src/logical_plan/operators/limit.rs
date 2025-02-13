@@ -1,8 +1,8 @@
-use super::{Expr, LogicalPlan};
+use crate::logical_plan::{Expr, LogicalPlan};
 
 pub struct Limit {
-    expr: Expr,
-    pub(super) input: Box<LogicalPlan>,
+    pub expr: Expr,
+    pub input: Box<LogicalPlan>,
 }
 
 impl std::fmt::Display for Limit {

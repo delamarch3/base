@@ -1,4 +1,4 @@
-use super::{Expr, LogicalPlan};
+use crate::logical_plan::{Expr, LogicalPlan};
 
 pub struct Filter {
     pub expr: Expr,

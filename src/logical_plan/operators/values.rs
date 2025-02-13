@@ -1,6 +1,6 @@
-use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::catalog::schema::{Schema, SchemaBuilder};
 use crate::column;
+use crate::logical_plan::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::sql::{Expr, Literal};
 
 pub struct Values {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::logical_plan::{LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 
 use crate::catalog::schema::Schema;
 use crate::catalog::TableInfo;

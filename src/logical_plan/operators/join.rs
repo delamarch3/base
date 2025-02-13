@@ -1,5 +1,5 @@
-use super::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::catalog::schema::Schema;
+use crate::logical_plan::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 use crate::sql::{Expr, Ident};
 
 pub enum JoinConstraint {

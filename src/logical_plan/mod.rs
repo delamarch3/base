@@ -1,30 +1,16 @@
 use std::sync::Arc;
 
 use crate::catalog::schema::{Schema, Type};
-use crate::catalog::{IndexInfo, TableInfo};
+use crate::catalog::TableInfo;
 use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
 pub mod expr;
 pub mod planner;
 
-mod aggregate;
-mod filter;
-mod group;
-mod index_scan;
-mod insert;
-mod join;
-mod limit;
-mod projection;
-mod scan;
-mod sort;
-mod values;
+mod operators;
 
-use {
-    aggregate::Aggregate, filter::Filter, group::Group, index_scan::IndexScan, insert::Insert,
-    join::Join, limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
-};
-
-pub use projection::ProjectionAttributes;
+pub use operators::ProjectionAttributes;
+use operators::{Aggregate, Filter, Group, Insert, Join, Limit, Projection, Scan, Sort, Values};
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
@@ -64,7 +50,6 @@ pub enum LogicalPlan {
     Aggregate(Aggregate),
     Filter(Filter),
     Group(Group),
-    IndexScan(IndexScan),
     Join(Join),
     Projection(Projection),
     Scan(Scan),
@@ -86,7 +71,6 @@ impl std::fmt::Display for LogicalPlan {
                 LogicalPlan::Aggregate(aggregate) => writeln!(f, "{aggregate}"),
                 LogicalPlan::Filter(filter) => writeln!(f, "{filter}"),
                 LogicalPlan::Group(group) => writeln!(f, "{group}"),
-                LogicalPlan::IndexScan(index_scan) => writeln!(f, "{index_scan}"),
                 LogicalPlan::Join(join) => writeln!(f, "{join}"),
                 LogicalPlan::Projection(projection) => writeln!(f, "{projection}"),
                 LogicalPlan::Scan(scan) => writeln!(f, "{scan}"),
@@ -117,7 +101,6 @@ impl LogicalPlan {
             LogicalPlan::Aggregate(aggregate) => (Some(aggregate.input.as_ref()), None),
             LogicalPlan::Filter(filter) => (Some(filter.input.as_ref()), None),
             LogicalPlan::Group(group) => (Some(group.input.as_ref()), None),
-            LogicalPlan::IndexScan(_) => (None, None),
             LogicalPlan::Join(join) => {
                 (Some(join.left_input.as_ref()), Some(join.right_input.as_ref()))
             }
@@ -135,7 +118,6 @@ impl LogicalPlan {
             LogicalPlan::Aggregate(aggregate) => aggregate.input.schema(),
             LogicalPlan::Filter(filter) => filter.input.schema(),
             LogicalPlan::Group(group) => group.input.schema(),
-            LogicalPlan::IndexScan(index_scan) => &index_scan.index.schema,
             LogicalPlan::Join(join) => &join.schema,
             LogicalPlan::Projection(projection) => &projection.attributes.schema(),
             LogicalPlan::Scan(scan) => &scan.schema,
@@ -151,7 +133,6 @@ impl LogicalPlan {
             LogicalPlan::Aggregate(aggregate) => aggregate.input.schema_mut(),
             LogicalPlan::Filter(filter) => filter.input.schema_mut(),
             LogicalPlan::Group(group) => group.input.schema_mut(),
-            LogicalPlan::IndexScan(index_scan) => &mut index_scan.index.schema,
             LogicalPlan::Join(join) => &mut join.schema,
             LogicalPlan::Projection(projection) => projection.attributes.schema_mut(),
             LogicalPlan::Scan(scan) => &mut scan.schema,
@@ -227,10 +208,6 @@ pub fn scan(table_info: Arc<TableInfo>) -> Builder {
 
 pub fn scan_with_alias(table_info: Arc<TableInfo>, alias: String) -> Builder {
     Builder { root: LogicalPlan::Scan(Scan::new_with_alias(table_info, alias)) }
-}
-
-pub fn index_scan(index_info: IndexInfo) -> Builder {
-    Builder { root: LogicalPlan::IndexScan(IndexScan::new(index_info)) }
 }
 
 pub fn values(values: Vec<Vec<Expr>>) -> Result<Builder, LogicalPlanError> {

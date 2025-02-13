@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::catalog::schema::Schema;
 use crate::catalog::TableInfo;
-
-use super::LogicalPlan;
+use crate::logical_plan::LogicalPlan;
 
 pub struct Scan {
     pub table: Arc<TableInfo>,
