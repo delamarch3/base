@@ -4,9 +4,9 @@ use crate::logical_plan::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlan
 use crate::sql::{Expr, Literal};
 
 pub struct Values {
-    schema: Schema,
-    values: Vec<Vec<Expr>>,
-    alias: Option<String>,
+    pub schema: Schema,
+    pub values: Vec<Vec<Expr>>,
+    pub alias: Option<String>,
 }
 
 impl std::fmt::Display for Values {

@@ -1,8 +1,10 @@
+use bytes::BytesMut;
 use eval::eval;
 
 use crate::catalog::schema::{Column, Schema};
 use crate::logical_plan::LogicalPlan;
 use crate::logical_plan::ProjectionAttributes;
+use crate::schema;
 use crate::sql::{Expr, SelectItem};
 use crate::table::list::Iter as TableIter;
 use crate::table::tuple::Data as TupleData;
@@ -31,7 +33,7 @@ pub fn logical_to_physical(
         }
         LogicalPlan::Limit(limit) => todo!(),
         LogicalPlan::Sort(sort) => todo!(),
-        LogicalPlan::Values(values) => todo!(),
+        LogicalPlan::Values(values) => Box::new(Values::new(values.values, values.schema)),
         LogicalPlan::Insert(values) => todo!(),
     };
 
@@ -153,5 +155,36 @@ impl PhysicalOperator for Projection {
 
     fn schema(&self) -> &Schema {
         &self.attributes.schema()
+    }
+}
+
+struct Values {
+    values: Vec<Vec<Expr>>,
+    schema: Schema,
+    pos: usize,
+}
+
+impl Values {
+    pub fn new(values: Vec<Vec<Expr>>, schema: Schema) -> Self {
+        Self { values, schema, pos: 0 }
+    }
+}
+
+impl PhysicalOperator for Values {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        self.pos += 1;
+        let Some(values) = self.values.get(self.pos - 1) else { return Ok(None) };
+
+        let mut tuple = TupleBuilder::new();
+        for (i, _column) in self.schema.iter().enumerate() {
+            let value = eval(&values[i], &schema! {}, &TupleData(BytesMut::new())).unwrap();
+            tuple = tuple.add(&value);
+        }
+
+        Ok(Some(tuple.build()))
+    }
+
+    fn schema(&self) -> &Schema {
+        &self.schema
     }
 }

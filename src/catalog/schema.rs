@@ -146,7 +146,7 @@ macro_rules! schema {
     () => {
         {
             let columns = Vec::new();
-            crate::catalog::schema::Schema::new(columns).compact()
+            crate::catalog::schema::Schema::new(columns)
         }
     };
     ( $( $column:expr ),* ) => {
