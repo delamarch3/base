@@ -1,14 +1,16 @@
+use std::sync::Arc;
+
 use bytes::BytesMut;
 use eval::eval;
 
 use crate::catalog::schema::{Column, Schema};
 use crate::logical_plan::LogicalPlan;
 use crate::logical_plan::ProjectionAttributes;
-use crate::schema;
 use crate::sql::{Expr, SelectItem};
-use crate::table::list::Iter as TableIter;
+use crate::table::list::{Iter as TableIter, ListRef as TableRef};
 use crate::table::tuple::Data as TupleData;
 use crate::table::tuple::{Builder as TupleBuilder, Value};
+use crate::{column, schema};
 
 mod eval;
 
@@ -34,7 +36,10 @@ pub fn logical_to_physical(
         LogicalPlan::Limit(limit) => todo!(),
         LogicalPlan::Sort(sort) => todo!(),
         LogicalPlan::Values(values) => Box::new(Values::new(values.values, values.schema)),
-        LogicalPlan::Insert(values) => todo!(),
+        LogicalPlan::Insert(insert) => {
+            let input = logical_to_physical(*insert.input)?;
+            Box::new(Insert::new(input, Arc::clone(&insert.table.table)))
+        }
     };
 
     Ok(exec)
@@ -182,6 +187,32 @@ impl PhysicalOperator for Values {
         }
 
         Ok(Some(tuple.build()))
+    }
+
+    fn schema(&self) -> &Schema {
+        &self.schema
+    }
+}
+
+struct Insert {
+    table: TableRef,
+    input: Box<dyn PhysicalOperator>,
+    schema: Schema,
+}
+
+impl Insert {
+    pub fn new(input: Box<dyn PhysicalOperator>, table: TableRef) -> Self {
+        Self { table, input, schema: schema! { column!("ok", Int) } }
+    }
+}
+
+impl PhysicalOperator for Insert {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        while let Some(tuple) = self.input.next()? {
+            self.table.insert(&tuple).unwrap();
+        }
+
+        Ok(Some(TupleBuilder::new().int(1).build()))
     }
 
     fn schema(&self) -> &Schema {

@@ -4,12 +4,12 @@ use crate::logical_plan::{LogicalPlan, LogicalPlanError, LogicalPlanError::*};
 
 use crate::catalog::schema::Schema;
 use crate::catalog::TableInfo;
-use crate::schema;
+use crate::{column, schema};
 
 pub struct Insert {
     pub input: Box<LogicalPlan>,
     schema: Schema,
-    table: Arc<TableInfo>,
+    pub table: Arc<TableInfo>,
 }
 
 impl std::fmt::Display for Insert {
@@ -32,7 +32,7 @@ impl Insert {
         input: impl Into<LogicalPlan>,
     ) -> Result<Self, LogicalPlanError> {
         let input = Box::new(input.into());
-        let schema = schema! {};
+        let schema = schema! { column!("ok", Int) };
 
         let table_schema = &table.schema;
         let input_schema = input.schema();

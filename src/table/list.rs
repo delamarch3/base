@@ -76,7 +76,15 @@ impl List {
         })
     }
 
-    pub fn insert(&self, tuple_data: &TupleData, meta: &TupleMeta) -> Result<Option<RID>> {
+    pub fn insert(&self, tuple_data: &TupleData) -> Result<Option<RID>> {
+        self.insert_with_meta(tuple_data, &TupleMeta { deleted: false })
+    }
+
+    pub fn insert_with_meta(
+        &self,
+        tuple_data: &TupleData,
+        meta: &TupleMeta,
+    ) -> Result<Option<RID>> {
         let mut last_page_id = self.last_page_id_mut();
         let page = self.pc.fetch_page(*last_page_id)?;
         let mut page_w = page.write();
@@ -198,14 +206,13 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
 
         let list = List::default(pc.clone())?;
-        let meta = TupleMeta { deleted: false };
         let want_a =
             TupleData(BytesMut::from(&std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8)[..]));
         let want_b =
             TupleData(BytesMut::from(&std::array::from_fn::<u8, 15, _>(|i| (i * 3) as u8)[..]));
 
-        let rid_a = list.insert(&want_a, &meta)?.unwrap();
-        let rid_b = list.insert(&want_b, &meta)?.unwrap();
+        let rid_a = list.insert(&want_a)?.unwrap();
+        let rid_b = list.insert(&want_b)?.unwrap();
 
         let list = List::new(
             pc,
@@ -234,13 +241,12 @@ mod test {
         let list = List::new(pc.clone(), TableMeta { first_page_id, last_page_id: first_page_id })?;
 
         const WANT_LEN: usize = 100;
-        let meta = TupleMeta { deleted: false };
         let mut tuples = Vec::new();
         for i in 0..WANT_LEN {
             let tuple = TupleData(BytesMut::from(
                 &std::array::from_fn::<u8, 150, _>(|j| (j * i) as u8)[..],
             ));
-            list.insert(&tuple, &meta)?;
+            list.insert(&tuple)?;
             tuples.push(tuple);
         }
 

@@ -208,10 +208,7 @@ mod test {
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
-    use crate::table::{
-        node::{TupleMeta, RID},
-        tuple::Builder as TupleBuilder,
-    };
+    use crate::table::{node::RID, tuple::Builder as TupleBuilder};
     use crate::{column, schema};
 
     macro_rules! test_btree_index {
@@ -233,9 +230,7 @@ mod test {
                 let info = catalog.get_table_by_name(TABLE_A).expect("table_a should exist");
 
                 for tuple in $tuples {
-                    info.table
-                        .insert(&tuple, &TupleMeta { deleted: false })?
-                        .expect("there should be a rid");
+                    info.table.insert(&tuple)?.expect("there should be a rid");
                 }
 
                 let index_schema = schema.filter(&$key).compact();
