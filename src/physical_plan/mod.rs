@@ -12,7 +12,7 @@ use crate::table::tuple::Data as TupleData;
 use crate::table::tuple::{Builder as TupleBuilder, Value};
 use crate::{column, schema};
 
-mod eval;
+pub mod eval;
 
 pub fn logical_to_physical(
     logical_plan: LogicalPlan,
@@ -33,7 +33,10 @@ pub fn logical_to_physical(
             let iter = scan.table.table.iter().unwrap();
             Box::new(Scan::new(iter, scan.schema))
         }
-        LogicalPlan::Limit(limit) => todo!(),
+        LogicalPlan::Limit(limit) => {
+            let input = logical_to_physical(*limit.input)?;
+            Box::new(Limit::new(input, limit.limit))
+        }
         LogicalPlan::Sort(sort) => todo!(),
         LogicalPlan::Values(values) => Box::new(Values::new(values.values, values.schema)),
         LogicalPlan::Insert(insert) => {
@@ -182,7 +185,7 @@ impl PhysicalOperator for Values {
 
         let mut tuple = TupleBuilder::new();
         for (i, _column) in self.schema.iter().enumerate() {
-            let value = eval(&values[i], &schema! {}, &TupleData(BytesMut::new())).unwrap();
+            let value = eval(&values[i], &schema! {}, &TupleData::empty()).unwrap();
             tuple = tuple.add(&value);
         }
 
@@ -196,8 +199,8 @@ impl PhysicalOperator for Values {
 
 struct Insert {
     table: TableRef,
-    input: Box<dyn PhysicalOperator>,
     schema: Schema,
+    input: Box<dyn PhysicalOperator>,
 }
 
 impl Insert {
@@ -217,5 +220,35 @@ impl PhysicalOperator for Insert {
 
     fn schema(&self) -> &Schema {
         &self.schema
+    }
+}
+
+struct Limit {
+    limit: usize,
+    pos: usize,
+    input: Box<dyn PhysicalOperator>,
+}
+
+impl Limit {
+    pub fn new(input: Box<dyn PhysicalOperator>, limit: usize) -> Self {
+        Self { limit, pos: 0, input }
+    }
+}
+
+impl PhysicalOperator for Limit {
+    fn next(&mut self) -> Result<Option<TupleData>, Box<dyn std::error::Error>> {
+        if self.pos == self.limit.saturating_sub(1) {
+            return Ok(None);
+        }
+        self.pos += 1;
+
+        match self.input.next()? {
+            Some(tuple) => Ok(Some(tuple)),
+            None => Ok(None),
+        }
+    }
+
+    fn schema(&self) -> &Schema {
+        self.input.schema()
     }
 }

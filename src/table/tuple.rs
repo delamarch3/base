@@ -83,6 +83,10 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
 }
 
 impl Data {
+    pub fn empty() -> Self {
+        Self(BytesMut::new())
+    }
+
     /// Increments the value of the first value of the tuple
     pub fn increment(&mut self, schema: &Schema) {
         *self = self.next(schema);

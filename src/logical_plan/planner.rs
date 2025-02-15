@@ -43,7 +43,7 @@ impl Planner {
         };
 
         if let Some(expr) = limit {
-            query = query.limit(expr)
+            query = query.limit(expr)?;
         }
 
         Ok(query)

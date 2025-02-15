@@ -20,6 +20,7 @@ pub enum LogicalPlanError {
     UnknownTable(String),
     UnknownColumn(String),
     NotImplemented(&'static str),
+    InvalidExpr(&'static str),
     SchemaMismatch,
     Internal,
 }
@@ -34,6 +35,7 @@ impl std::fmt::Display for LogicalPlanError {
             LogicalPlanError::UnknownTable(table) => write!(f, "unknown table: {table}"),
             LogicalPlanError::UnknownColumn(column) => write!(f, "unknown column: {column}"),
             LogicalPlanError::NotImplemented(msg) => write!(f, "not implemented: {msg}"),
+            LogicalPlanError::InvalidExpr(msg) => write!(f, "invalid expr: {msg}"),
             LogicalPlanError::SchemaMismatch => write!(f, "schema mismatch"),
             LogicalPlanError::Internal => write!(f, "internal"),
         }
@@ -294,11 +296,11 @@ impl Builder {
         Self { root: sort.into() }
     }
 
-    pub fn limit(self, expr: Expr) -> Self {
+    pub fn limit(self, expr: Expr) -> Result<Self, LogicalPlanError> {
         let input = self.root;
-        let limit = Limit::new(expr, input);
+        let limit = Limit::new(expr, input)?;
 
-        Self { root: limit.into() }
+        Ok(Self { root: limit.into() })
     }
 
     pub fn insert(self, table_info: Arc<TableInfo>) -> Result<Self, LogicalPlanError> {
@@ -368,7 +370,7 @@ mod test {
                 wildcard(),
             ])?
             .sort(vec![ident("c1")])
-            .limit(lit(5))
+            .limit(lit(5))?
             .build();
 
         let have = plan.to_string();
