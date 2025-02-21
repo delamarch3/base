@@ -1,9 +1,9 @@
-use crate::logical_plan::{write_iter, Expr, Function, LogicalPlan};
+use crate::logical_plan::{write_iter, Expr, Function, LogicalOperator};
 
 pub struct Aggregate {
     pub function: Function,
     pub keys: Vec<Expr>,
-    pub input: Box<LogicalPlan>,
+    pub input: Box<LogicalOperator>,
 }
 
 impl std::fmt::Display for Aggregate {
@@ -18,14 +18,14 @@ impl std::fmt::Display for Aggregate {
     }
 }
 
-impl From<Aggregate> for LogicalPlan {
+impl From<Aggregate> for LogicalOperator {
     fn from(aggregate: Aggregate) -> Self {
         Self::Aggregate(aggregate)
     }
 }
 
 impl Aggregate {
-    pub fn new(function: Function, keys: Vec<Expr>, input: impl Into<LogicalPlan>) -> Self {
+    pub fn new(function: Function, keys: Vec<Expr>, input: impl Into<LogicalOperator>) -> Self {
         Self { input: Box::new(input.into()), function, keys }
     }
 }

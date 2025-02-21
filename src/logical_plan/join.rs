@@ -1,5 +1,5 @@
 use crate::catalog::schema::Schema;
-use crate::logical_plan::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::logical_plan::{write_iter, LogicalOperator, LogicalOperatorError};
 use crate::sql::{Expr, Ident};
 
 pub enum JoinConstraint {
@@ -10,8 +10,8 @@ pub enum JoinConstraint {
 pub struct Join {
     pub constraint: JoinConstraint,
     pub schema: Schema,
-    pub left_input: Box<LogicalPlan>,
-    pub right_input: Box<LogicalPlan>,
+    pub left_input: Box<LogicalOperator>,
+    pub right_input: Box<LogicalOperator>,
 }
 
 impl std::fmt::Display for Join {
@@ -28,14 +28,18 @@ impl std::fmt::Display for Join {
     }
 }
 
-impl From<Join> for LogicalPlan {
+impl From<Join> for LogicalOperator {
     fn from(join: Join) -> Self {
         Self::Join(join)
     }
 }
 
 impl Join {
-    fn new(constraint: JoinConstraint, left_input: LogicalPlan, right_input: LogicalPlan) -> Self {
+    fn new(
+        constraint: JoinConstraint,
+        left_input: LogicalOperator,
+        right_input: LogicalOperator,
+    ) -> Self {
         let left_input = Box::new(left_input);
         let right_input = Box::new(right_input);
         let schema = left_input.schema().join(right_input.schema());
@@ -44,9 +48,9 @@ impl Join {
 
     pub fn on(
         expr: Expr,
-        left_input: impl Into<LogicalPlan>,
-        right_input: impl Into<LogicalPlan>,
-    ) -> Result<Self, LogicalPlanError> {
+        left_input: impl Into<LogicalOperator>,
+        right_input: impl Into<LogicalOperator>,
+    ) -> Result<Self, LogicalOperatorError> {
         let left_input = left_input.into();
         let right_input = right_input.into();
 
@@ -57,19 +61,19 @@ impl Join {
 
     pub fn using(
         columns: Vec<Ident>,
-        left_input: impl Into<LogicalPlan>,
-        right_input: impl Into<LogicalPlan>,
-    ) -> Result<Self, LogicalPlanError> {
+        left_input: impl Into<LogicalOperator>,
+        right_input: impl Into<LogicalOperator>,
+    ) -> Result<Self, LogicalOperatorError> {
         let left_input = left_input.into();
         let right_input = right_input.into();
         for column in &columns {
             // Assuming the identifiers only have one part
             if left_input.schema().find_column_by_name(&column[0]).is_none() {
-                Err(UnknownColumn(column.to_string()))?
+                Err(format!("unknown column: {column}"))?
             };
 
             if right_input.schema().find_column_by_name(&column[0]).is_none() {
-                Err(UnknownColumn(column.to_string()))?
+                Err(format!("unknown column: {column}"))?
             };
 
             // TODO: using columns aren't qualified so `schema.join()` should be updated or a new method

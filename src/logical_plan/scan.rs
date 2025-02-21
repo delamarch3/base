@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::catalog::schema::Schema;
 use crate::catalog::TableInfo;
-use crate::logical_plan::LogicalPlan;
+use crate::logical_plan::LogicalOperator;
 
 pub struct Scan {
     pub table: Arc<TableInfo>,
@@ -27,7 +27,7 @@ impl std::fmt::Display for Scan {
     }
 }
 
-impl From<Scan> for LogicalPlan {
+impl From<Scan> for LogicalOperator {
     fn from(scan: Scan) -> Self {
         Self::Scan(scan)
     }

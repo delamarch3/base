@@ -1,9 +1,9 @@
-use crate::logical_plan::{write_iter, Expr, LogicalPlan};
+use crate::logical_plan::{write_iter, Expr, LogicalOperator};
 
 pub struct Sort {
     pub exprs: Vec<Expr>,
     pub desc: bool,
-    pub input: Box<LogicalPlan>,
+    pub input: Box<LogicalOperator>,
 }
 
 impl std::fmt::Display for Sort {
@@ -14,14 +14,14 @@ impl std::fmt::Display for Sort {
     }
 }
 
-impl From<Sort> for LogicalPlan {
+impl From<Sort> for LogicalOperator {
     fn from(limit: Sort) -> Self {
         Self::Sort(limit)
     }
 }
 
 impl Sort {
-    pub fn new(exprs: Vec<Expr>, desc: bool, input: impl Into<LogicalPlan>) -> Self {
+    pub fn new(exprs: Vec<Expr>, desc: bool, input: impl Into<LogicalOperator>) -> Self {
         Self { exprs, desc, input: Box::new(input.into()) }
     }
 }

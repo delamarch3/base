@@ -1,8 +1,6 @@
 use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
 use crate::column;
-use crate::logical_plan::{
-    expr_type, write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*,
-};
+use crate::logical_plan::{expr_type, write_iter, LogicalOperator, LogicalOperatorError};
 use crate::sql::{Expr, Ident, SelectItem};
 
 /// `schema`, `projection` have the same length, each field has a corresponding field at the
@@ -17,7 +15,10 @@ pub struct ProjectionAttributes {
 }
 
 impl ProjectionAttributes {
-    fn new(projection: Vec<SelectItem>, input_schema: &Schema) -> Result<Self, LogicalPlanError> {
+    fn new(
+        projection: Vec<SelectItem>,
+        input_schema: &Schema,
+    ) -> Result<Self, LogicalOperatorError> {
         let mut input_idents = Vec::new();
         let mut schema = SchemaBuilder::new();
         for item in &projection {
@@ -26,7 +27,7 @@ impl ProjectionAttributes {
                     let column = input_schema
                         .find_column_by_name(column)
                         .cloned()
-                        .ok_or(UnknownColumn(ident.to_string()))?;
+                        .ok_or(format!("unknown column: {ident}"))?;
                     input_idents.push((column.ty, column.offset));
                     schema.append(column)
                 }
@@ -34,7 +35,7 @@ impl ProjectionAttributes {
                     let column = input_schema
                         .find_column_by_name_and_table(&idents[0], &idents[1])
                         .cloned()
-                        .ok_or(UnknownColumn(ident.to_string()))?;
+                        .ok_or(format!("unknown column: {ident}"))?;
                     input_idents.push((column.ty, column.offset));
                     schema.append(column)
                 }
@@ -80,7 +81,7 @@ impl ProjectionAttributes {
 }
 
 pub struct Projection {
-    pub input: Box<LogicalPlan>,
+    pub input: Box<LogicalOperator>,
     pub attributes: ProjectionAttributes,
 }
 
@@ -92,7 +93,7 @@ impl std::fmt::Display for Projection {
     }
 }
 
-impl From<Projection> for LogicalPlan {
+impl From<Projection> for LogicalOperator {
     fn from(projection: Projection) -> Self {
         Self::Projection(projection)
     }
@@ -101,8 +102,8 @@ impl From<Projection> for LogicalPlan {
 impl Projection {
     pub fn new(
         projection: Vec<SelectItem>,
-        input: impl Into<LogicalPlan>,
-    ) -> Result<Self, LogicalPlanError> {
+        input: impl Into<LogicalOperator>,
+    ) -> Result<Self, LogicalOperatorError> {
         let input = Box::new(input.into());
         let attributes = ProjectionAttributes::new(projection, input.schema())?;
 

@@ -7,6 +7,18 @@ pub enum Type {
     Varchar,
 }
 
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::TinyInt => write!(f, "TINYINT"),
+            Type::Bool => write!(f, "BOOL"),
+            Type::Int => write!(f, "INT"),
+            Type::BigInt => write!(f, "BIGINT"),
+            Type::Varchar => write!(f, "VARCHAR"),
+        }
+    }
+}
+
 impl Type {
     /// Returns the size of any value of the type at tuple level
     /// Since varchar is variable length, we only store the offset and
@@ -30,6 +42,7 @@ pub struct Column {
 }
 
 // TODO
+#[allow(unused)]
 struct ValueAttributes {
     nullable: bool,
     ty: Type,

@@ -4,51 +4,55 @@ use crate::catalog::schema::{Schema, Type};
 use crate::catalog::TableInfo;
 use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
-pub mod expr;
-pub mod planner;
+mod aggregate;
+mod filter;
+mod group;
+mod insert;
+mod join;
+mod limit;
+mod projection;
+mod scan;
+mod sort;
+mod values;
 
-mod operators;
-
-pub use operators::ProjectionAttributes;
-use operators::{Aggregate, Filter, Group, Insert, Join, Limit, Projection, Scan, Sort, Values};
+pub use projection::ProjectionAttributes;
+use {
+    aggregate::Aggregate, filter::Filter, group::Group, insert::Insert, join::Join, limit::Limit,
+    projection::Projection, scan::Scan, sort::Sort, values::Values,
+};
 
 /// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
 /// have both
-pub type LogicalPlanInputs<'a> = (Option<&'a LogicalPlan>, Option<&'a LogicalPlan>);
+pub type LogicalOperatorInputs<'a> = (Option<&'a LogicalOperator>, Option<&'a LogicalOperator>);
 
-pub enum LogicalPlanError {
-    UnknownTable(String),
-    UnknownColumn(String),
-    NotImplemented(&'static str),
-    InvalidExpr(&'static str),
-    SchemaMismatch,
-    Internal,
-}
-use LogicalPlanError::*;
+pub struct LogicalOperatorError(String);
+impl std::error::Error for LogicalOperatorError {}
 
-impl std::error::Error for LogicalPlanError {}
-
-impl std::fmt::Display for LogicalPlanError {
+impl std::fmt::Display for LogicalOperatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "logical plan error: ")?;
-        match self {
-            LogicalPlanError::UnknownTable(table) => write!(f, "unknown table: {table}"),
-            LogicalPlanError::UnknownColumn(column) => write!(f, "unknown column: {column}"),
-            LogicalPlanError::NotImplemented(msg) => write!(f, "not implemented: {msg}"),
-            LogicalPlanError::InvalidExpr(msg) => write!(f, "invalid expr: {msg}"),
-            LogicalPlanError::SchemaMismatch => write!(f, "schema mismatch"),
-            LogicalPlanError::Internal => write!(f, "internal"),
-        }
+        write!(f, "logical operator error: {}", self.0)
     }
 }
 
-impl std::fmt::Debug for LogicalPlanError {
+impl std::fmt::Debug for LogicalOperatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(self, f)
     }
 }
 
-pub enum LogicalPlan {
+impl From<String> for LogicalOperatorError {
+    fn from(value: String) -> Self {
+        LogicalOperatorError(value)
+    }
+}
+
+impl From<&str> for LogicalOperatorError {
+    fn from(value: &str) -> Self {
+        LogicalOperatorError(value.into())
+    }
+}
+
+pub enum LogicalOperator {
     Aggregate(Aggregate),
     Filter(Filter),
     Group(Group),
@@ -61,25 +65,25 @@ pub enum LogicalPlan {
     Insert(Insert),
 }
 
-impl std::fmt::Display for LogicalPlan {
+impl std::fmt::Display for LogicalOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn fmt(
             f: &mut std::fmt::Formatter<'_>,
-            plan: &LogicalPlan,
+            plan: &LogicalOperator,
             indent: u16,
         ) -> std::fmt::Result {
             (0..indent * 4).try_for_each(|_| write!(f, " "))?;
             match plan {
-                LogicalPlan::Aggregate(aggregate) => writeln!(f, "{aggregate}"),
-                LogicalPlan::Filter(filter) => writeln!(f, "{filter}"),
-                LogicalPlan::Group(group) => writeln!(f, "{group}"),
-                LogicalPlan::Join(join) => writeln!(f, "{join}"),
-                LogicalPlan::Projection(projection) => writeln!(f, "{projection}"),
-                LogicalPlan::Scan(scan) => writeln!(f, "{scan}"),
-                LogicalPlan::Limit(limit) => writeln!(f, "{limit}"),
-                LogicalPlan::Sort(sort) => writeln!(f, "{sort}"),
-                LogicalPlan::Values(values) => writeln!(f, "{values}"),
-                LogicalPlan::Insert(insert) => writeln!(f, "{insert}"),
+                LogicalOperator::Aggregate(aggregate) => writeln!(f, "{aggregate}"),
+                LogicalOperator::Filter(filter) => writeln!(f, "{filter}"),
+                LogicalOperator::Group(group) => writeln!(f, "{group}"),
+                LogicalOperator::Join(join) => writeln!(f, "{join}"),
+                LogicalOperator::Projection(projection) => writeln!(f, "{projection}"),
+                LogicalOperator::Scan(scan) => writeln!(f, "{scan}"),
+                LogicalOperator::Limit(limit) => writeln!(f, "{limit}"),
+                LogicalOperator::Sort(sort) => writeln!(f, "{sort}"),
+                LogicalOperator::Values(values) => writeln!(f, "{values}"),
+                LogicalOperator::Insert(insert) => writeln!(f, "{insert}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -97,51 +101,51 @@ impl std::fmt::Display for LogicalPlan {
     }
 }
 
-impl LogicalPlan {
-    pub fn inputs(&self) -> LogicalPlanInputs<'_> {
+impl LogicalOperator {
+    pub fn inputs(&self) -> LogicalOperatorInputs<'_> {
         match self {
-            LogicalPlan::Aggregate(aggregate) => (Some(aggregate.input.as_ref()), None),
-            LogicalPlan::Filter(filter) => (Some(filter.input.as_ref()), None),
-            LogicalPlan::Group(group) => (Some(group.input.as_ref()), None),
-            LogicalPlan::Join(join) => {
+            LogicalOperator::Aggregate(aggregate) => (Some(aggregate.input.as_ref()), None),
+            LogicalOperator::Filter(filter) => (Some(filter.input.as_ref()), None),
+            LogicalOperator::Group(group) => (Some(group.input.as_ref()), None),
+            LogicalOperator::Join(join) => {
                 (Some(join.left_input.as_ref()), Some(join.right_input.as_ref()))
             }
-            LogicalPlan::Projection(projection) => (Some(projection.input.as_ref()), None),
-            LogicalPlan::Scan(_) => (None, None),
-            LogicalPlan::Limit(limit) => (Some(limit.input.as_ref()), None),
-            LogicalPlan::Sort(sort) => (Some(sort.input.as_ref()), None),
-            LogicalPlan::Values(_) => (None, None),
-            LogicalPlan::Insert(insert) => (Some(insert.input.as_ref()), None),
+            LogicalOperator::Projection(projection) => (Some(projection.input.as_ref()), None),
+            LogicalOperator::Scan(_) => (None, None),
+            LogicalOperator::Limit(limit) => (Some(limit.input.as_ref()), None),
+            LogicalOperator::Sort(sort) => (Some(sort.input.as_ref()), None),
+            LogicalOperator::Values(_) => (None, None),
+            LogicalOperator::Insert(insert) => (Some(insert.input.as_ref()), None),
         }
     }
 
     pub fn schema(&self) -> &Schema {
         match self {
-            LogicalPlan::Aggregate(aggregate) => aggregate.input.schema(),
-            LogicalPlan::Filter(filter) => filter.input.schema(),
-            LogicalPlan::Group(group) => group.input.schema(),
-            LogicalPlan::Join(join) => &join.schema,
-            LogicalPlan::Projection(projection) => &projection.attributes.schema(),
-            LogicalPlan::Scan(scan) => &scan.schema,
-            LogicalPlan::Limit(limit) => limit.input.schema(),
-            LogicalPlan::Sort(sort) => sort.input.schema(),
-            LogicalPlan::Values(values) => values.schema(),
-            LogicalPlan::Insert(insert) => insert.schema(),
+            LogicalOperator::Aggregate(aggregate) => aggregate.input.schema(),
+            LogicalOperator::Filter(filter) => filter.input.schema(),
+            LogicalOperator::Group(group) => group.input.schema(),
+            LogicalOperator::Join(join) => &join.schema,
+            LogicalOperator::Projection(projection) => &projection.attributes.schema(),
+            LogicalOperator::Scan(scan) => &scan.schema,
+            LogicalOperator::Limit(limit) => limit.input.schema(),
+            LogicalOperator::Sort(sort) => sort.input.schema(),
+            LogicalOperator::Values(values) => values.schema(),
+            LogicalOperator::Insert(insert) => insert.schema(),
         }
     }
 
     pub fn schema_mut(&mut self) -> &mut Schema {
         match self {
-            LogicalPlan::Aggregate(aggregate) => aggregate.input.schema_mut(),
-            LogicalPlan::Filter(filter) => filter.input.schema_mut(),
-            LogicalPlan::Group(group) => group.input.schema_mut(),
-            LogicalPlan::Join(join) => &mut join.schema,
-            LogicalPlan::Projection(projection) => projection.attributes.schema_mut(),
-            LogicalPlan::Scan(scan) => &mut scan.schema,
-            LogicalPlan::Limit(limit) => limit.input.schema_mut(),
-            LogicalPlan::Sort(sort) => sort.input.schema_mut(),
-            LogicalPlan::Values(values) => values.schema_mut(),
-            LogicalPlan::Insert(insert) => insert.schema_mut(),
+            LogicalOperator::Aggregate(aggregate) => aggregate.input.schema_mut(),
+            LogicalOperator::Filter(filter) => filter.input.schema_mut(),
+            LogicalOperator::Group(group) => group.input.schema_mut(),
+            LogicalOperator::Join(join) => &mut join.schema,
+            LogicalOperator::Projection(projection) => projection.attributes.schema_mut(),
+            LogicalOperator::Scan(scan) => &mut scan.schema,
+            LogicalOperator::Limit(limit) => limit.input.schema_mut(),
+            LogicalOperator::Sort(sort) => sort.input.schema_mut(),
+            LogicalOperator::Values(values) => values.schema_mut(),
+            LogicalOperator::Insert(insert) => insert.schema_mut(),
         }
     }
 }
@@ -161,15 +165,15 @@ fn write_iter<T: std::fmt::Display, I: Iterator<Item = T>>(
     Ok(())
 }
 
-fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
+fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalOperatorError> {
     let ty = match expr {
         Expr::Ident(ident @ Ident::Single(column)) => {
-            schema.find_column_by_name(column).ok_or(UnknownColumn(ident.to_string()))?.ty
+            schema.find_column_by_name(column).ok_or(format!("unknown column: {ident}"))?.ty
         }
         Expr::Ident(ident @ Ident::Compound(idents)) => {
             schema
                 .find_column_by_name_and_table(&idents[0], &idents[1])
-                .ok_or(UnknownColumn(ident.to_string()))?
+                .ok_or(format!("unknown column: {ident}"))?
                 .ty
         }
         Expr::Literal(literal) => match literal {
@@ -201,26 +205,26 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalPlanError> {
 }
 
 pub struct Builder {
-    root: LogicalPlan,
+    root: LogicalOperator,
 }
 
 pub fn scan(table_info: Arc<TableInfo>) -> Builder {
-    Builder { root: LogicalPlan::Scan(Scan::new(table_info)) }
+    Builder { root: LogicalOperator::Scan(Scan::new(table_info)) }
 }
 
 pub fn scan_with_alias(table_info: Arc<TableInfo>, alias: String) -> Builder {
-    Builder { root: LogicalPlan::Scan(Scan::new_with_alias(table_info, alias)) }
+    Builder { root: LogicalOperator::Scan(Scan::new_with_alias(table_info, alias)) }
 }
 
-pub fn values(values: Vec<Vec<Expr>>) -> Result<Builder, LogicalPlanError> {
-    Ok(Builder { root: LogicalPlan::Values(Values::new(values)?) })
+pub fn values(values: Vec<Vec<Expr>>) -> Result<Builder, LogicalOperatorError> {
+    Ok(Builder { root: LogicalOperator::Values(Values::new(values)?) })
 }
 
 pub fn values_with_alias(
     values: Vec<Vec<Expr>>,
     alias: String,
-) -> Result<Builder, LogicalPlanError> {
-    Ok(Builder { root: LogicalPlan::Values(Values::new_with_alias(values, alias)?) })
+) -> Result<Builder, LogicalOperatorError> {
+    Ok(Builder { root: LogicalOperator::Values(Values::new_with_alias(values, alias)?) })
 }
 
 impl Builder {
@@ -232,7 +236,7 @@ impl Builder {
         self.root.schema_mut()
     }
 
-    pub fn project(self, projection: Vec<SelectItem>) -> Result<Self, LogicalPlanError> {
+    pub fn project(self, projection: Vec<SelectItem>) -> Result<Self, LogicalOperatorError> {
         let input = self.root;
         let projection = Projection::new(projection, input)?;
 
@@ -248,9 +252,9 @@ impl Builder {
 
     pub fn join_on(
         self,
-        rhs: impl Into<LogicalPlan>,
+        rhs: impl Into<LogicalOperator>,
         expr: Expr,
-    ) -> Result<Self, LogicalPlanError> {
+    ) -> Result<Self, LogicalOperatorError> {
         let lhs = self.root;
         let join = Join::on(expr, lhs, rhs)?;
 
@@ -259,9 +263,9 @@ impl Builder {
 
     pub fn join_using(
         self,
-        rhs: impl Into<LogicalPlan>,
+        rhs: impl Into<LogicalOperator>,
         columns: Vec<Ident>,
-    ) -> Result<Self, LogicalPlanError> {
+    ) -> Result<Self, LogicalOperatorError> {
         let lhs = self.root;
         let join = Join::using(columns, lhs, rhs)?;
 
@@ -296,21 +300,21 @@ impl Builder {
         Self { root: sort.into() }
     }
 
-    pub fn limit(self, expr: Expr) -> Result<Self, LogicalPlanError> {
+    pub fn limit(self, expr: Expr) -> Result<Self, LogicalOperatorError> {
         let input = self.root;
         let limit = Limit::new(expr, input)?;
 
         Ok(Self { root: limit.into() })
     }
 
-    pub fn insert(self, table_info: Arc<TableInfo>) -> Result<Self, LogicalPlanError> {
+    pub fn insert(self, table_info: Arc<TableInfo>) -> Result<Self, LogicalOperatorError> {
         let input = self.root;
         let insert = Insert::new(table_info, input)?;
 
         Ok(Self { root: insert.into() })
     }
 
-    pub fn build(self) -> LogicalPlan {
+    pub fn build(self) -> LogicalOperator {
         self.root
     }
 }
@@ -321,17 +325,15 @@ mod test {
 
     use crate::catalog::Catalog;
     use crate::disk::Memory;
-    use crate::logical_plan::{
-        expr::{alias, concat, ident, lit, wildcard},
-        scan,
-    };
+    use crate::logical_plan::scan;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
+    use crate::sql::expr_builder::{alias, concat, ident, lit, wildcard};
     use crate::{column, schema};
 
     #[test]
-    fn test_builder() -> Result<(), LogicalPlanError> {
+    fn test_builder() -> Result<(), LogicalOperatorError> {
         const MEMORY: usize = PAGE_SIZE * 8;
         const K: usize = 2;
         let disk = Memory::new::<MEMORY>();

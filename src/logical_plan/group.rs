@@ -1,8 +1,8 @@
-use crate::logical_plan::{write_iter, Expr, LogicalPlan};
+use crate::logical_plan::{write_iter, Expr, LogicalOperator};
 
 pub struct Group {
     pub keys: Vec<Expr>,
-    pub input: Box<LogicalPlan>,
+    pub input: Box<LogicalOperator>,
 }
 
 impl std::fmt::Display for Group {
@@ -13,14 +13,14 @@ impl std::fmt::Display for Group {
     }
 }
 
-impl From<Group> for LogicalPlan {
+impl From<Group> for LogicalOperator {
     fn from(group: Group) -> Self {
         Self::Group(group)
     }
 }
 
 impl Group {
-    pub fn new(keys: Vec<Expr>, input: impl Into<LogicalPlan>) -> Self {
+    pub fn new(keys: Vec<Expr>, input: impl Into<LogicalOperator>) -> Self {
         Self { keys, input: Box::new(input.into()) }
     }
 }

@@ -1,14 +1,46 @@
 use crate::catalog::Catalog;
-use crate::logical_plan::{scan, scan_with_alias, values, values_with_alias};
+use crate::logical_plan::{
+    scan, scan_with_alias, values, values_with_alias, Builder as LogicalOperatorBuilder,
+    LogicalOperator, LogicalOperatorError,
+};
 use crate::sql::{
     FromTable, Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, OrderByExpr, Query,
     Select, Statement,
 };
 
-use super::{
-    Builder as LogicalPlanBuilder, LogicalPlan,
-    LogicalPlanError::{self, *},
-};
+#[derive(PartialEq)]
+pub struct PlannerError(String);
+impl std::error::Error for PlannerError {}
+
+impl std::fmt::Display for PlannerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "planner error: {}", self.0)
+    }
+}
+
+impl std::fmt::Debug for PlannerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+impl From<String> for PlannerError {
+    fn from(value: String) -> Self {
+        PlannerError(value)
+    }
+}
+
+impl From<&str> for PlannerError {
+    fn from(value: &str) -> Self {
+        PlannerError(value.into())
+    }
+}
+
+impl From<LogicalOperatorError> for PlannerError {
+    fn from(value: LogicalOperatorError) -> Self {
+        PlannerError(format!("{value}"))
+    }
+}
 
 pub struct Planner {
     catalog: Catalog,
@@ -19,7 +51,7 @@ impl Planner {
         Self { catalog }
     }
 
-    pub fn plan_statement(&self, statement: Statement) -> Result<LogicalPlan, LogicalPlanError> {
+    pub fn plan_statement(&self, statement: Statement) -> Result<LogicalOperator, PlannerError> {
         let statement = match statement {
             Statement::Select(select) => self.build_select(select)?,
             Statement::Insert(insert) => self.build_insert(insert)?,
@@ -31,7 +63,7 @@ impl Planner {
         Ok(statement.build())
     }
 
-    fn build_select(&self, select: Select) -> Result<LogicalPlanBuilder, LogicalPlanError> {
+    fn build_select(&self, select: Select) -> Result<LogicalOperatorBuilder, PlannerError> {
         let Select { body, order, limit } = select;
 
         let mut query = self.build_query(body)?;
@@ -52,7 +84,7 @@ impl Planner {
     fn build_query(
         &self,
         Query { projection, from, joins, filter, group }: Query,
-    ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
+    ) -> Result<LogicalOperatorBuilder, PlannerError> {
         let (mut query, _) = self.build_from(from)?;
 
         for join in joins {
@@ -93,12 +125,16 @@ impl Planner {
     fn build_from(
         &self,
         from: FromTable,
-    ) -> Result<(LogicalPlanBuilder, String), LogicalPlanError> {
+    ) -> Result<(LogicalOperatorBuilder, String), PlannerError> {
         let builder = match from {
             FromTable::Table { name, alias } => {
-                let Ident::Single(name) = name else { Err(NotImplemented("multiple schema"))? };
-                let table_info =
-                    self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name.clone()))?;
+                let Ident::Single(name) = name else {
+                    Err(format!("multiple schemas aren't supported: {name}"))?
+                };
+                let table_info = self
+                    .catalog
+                    .get_table_by_name(&name)
+                    .ok_or(format!("unknown table: {name}"))?;
 
                 if let Some(alias) = alias {
                     // Alias is applied at the `Scan` node, single table
@@ -111,7 +147,7 @@ impl Planner {
                 let mut query = self.build_query(*query)?;
 
                 // Alias applies to all columns in the query, all tables
-                let Some(alias) = alias else { Err(Internal)? };
+                let Some(alias) = alias else { Err(format!("internal: expected derived alias"))? };
                 query.schema_mut().qualify(&alias);
 
                 (query, alias)
@@ -131,9 +167,12 @@ impl Planner {
     fn build_insert(
         &self,
         Insert { table, input }: Insert,
-    ) -> Result<LogicalPlanBuilder, LogicalPlanError> {
-        let Ident::Single(name) = table else { Err(NotImplemented("multiple schema"))? };
-        let table_info = self.catalog.get_table_by_name(&name).ok_or(UnknownTable(name))?;
+    ) -> Result<LogicalOperatorBuilder, PlannerError> {
+        let Ident::Single(name) = table else {
+            Err(format!("multiple schemas aren't supported: {table}"))?
+        };
+        let table_info =
+            self.catalog.get_table_by_name(&name).ok_or(format!("unknown table: {name}"))?;
 
         let builder = match input {
             InsertInput::Values(rows) => values(rows)?.insert(table_info)?,
@@ -148,9 +187,9 @@ impl Planner {
 mod test {
     use crate::catalog::Catalog;
     use crate::disk::Memory;
-    use crate::logical_plan::planner::Planner;
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
+    use crate::planner::Planner;
     use crate::replacer::LRU;
     use crate::sql::Parser;
     use crate::{column, schema};

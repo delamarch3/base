@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use crate::logical_plan::{LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::logical_plan::{LogicalOperator, LogicalOperatorError};
 
 use crate::catalog::schema::Schema;
 use crate::catalog::TableInfo;
 use crate::{column, schema};
 
 pub struct Insert {
-    pub input: Box<LogicalPlan>,
+    pub input: Box<LogicalOperator>,
     schema: Schema,
     pub table: Arc<TableInfo>,
 }
@@ -20,7 +20,7 @@ impl std::fmt::Display for Insert {
     }
 }
 
-impl From<Insert> for LogicalPlan {
+impl From<Insert> for LogicalOperator {
     fn from(insert: Insert) -> Self {
         Self::Insert(insert)
     }
@@ -29,23 +29,22 @@ impl From<Insert> for LogicalPlan {
 impl Insert {
     pub fn new(
         table: Arc<TableInfo>,
-        input: impl Into<LogicalPlan>,
-    ) -> Result<Self, LogicalPlanError> {
+        input: impl Into<LogicalOperator>,
+    ) -> Result<Self, LogicalOperatorError> {
         let input = Box::new(input.into());
         let schema = schema! { column!("ok", Int) };
 
         let table_schema = &table.schema;
-        let input_schema = input.schema();
+        let insert_schema = input.schema();
 
-        if input_schema.len() != table_schema.len() {
-            Err(SchemaMismatch)?
+        if insert_schema.len() != table_schema.len() {
+            Err("insert schema does not match table schema")?
         }
 
         // TODO: support type coercion
-        input_schema
-            .iter()
-            .zip(table_schema.iter())
-            .try_for_each(|(a, b)| (a.ty == b.ty).then_some(()).ok_or_else(|| SchemaMismatch))?;
+        insert_schema.iter().zip(table_schema.iter()).try_for_each(|(a, b)| {
+            (a.ty == b.ty).then_some(()).ok_or_else(|| "insert schema does not match table schema")
+        })?;
 
         Ok(Self { input, schema, table })
     }

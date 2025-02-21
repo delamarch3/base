@@ -1,6 +1,6 @@
 use crate::catalog::schema::{Schema, SchemaBuilder};
 use crate::column;
-use crate::logical_plan::{write_iter, LogicalPlan, LogicalPlanError, LogicalPlanError::*};
+use crate::logical_plan::{write_iter, LogicalOperator, LogicalOperatorError};
 use crate::sql::{Expr, Literal};
 
 pub struct Values {
@@ -31,20 +31,23 @@ impl std::fmt::Display for Values {
     }
 }
 
-impl From<Values> for LogicalPlan {
+impl From<Values> for LogicalOperator {
     fn from(values: Values) -> Self {
         Self::Values(values)
     }
 }
 
 impl Values {
-    pub fn new(values: Vec<Vec<Expr>>) -> Result<Self, LogicalPlanError> {
+    pub fn new(values: Vec<Vec<Expr>>) -> Result<Self, LogicalOperatorError> {
         let schema = infer_schema(&values)?;
 
         Ok(Self { schema, values, alias: None })
     }
 
-    pub fn new_with_alias(values: Vec<Vec<Expr>>, alias: String) -> Result<Self, LogicalPlanError> {
+    pub fn new_with_alias(
+        values: Vec<Vec<Expr>>,
+        alias: String,
+    ) -> Result<Self, LogicalOperatorError> {
         let mut values = Self::new(values)?;
         values.alias = Some(alias);
         Ok(values)
@@ -59,7 +62,7 @@ impl Values {
     }
 }
 
-fn infer_schema(values: &Vec<Vec<Expr>>) -> Result<Schema, LogicalPlanError> {
+fn infer_schema(values: &Vec<Vec<Expr>>) -> Result<Schema, LogicalOperatorError> {
     let mut schema = SchemaBuilder::new();
 
     if values.is_empty() {
@@ -69,7 +72,7 @@ fn infer_schema(values: &Vec<Vec<Expr>>) -> Result<Schema, LogicalPlanError> {
     let mut pos = 0;
     for expr in &values[0] {
         match expr {
-            Expr::Ident(..) => Err(NotImplemented("references aren't supported inside VALUES"))?,
+            Expr::Ident(..) => Err("column references aren't supported inside VALUES")?,
             Expr::Literal(literal) => {
                 let column = match literal {
                     Literal::Number(_) => column!(format!("c{pos}"), Int),
