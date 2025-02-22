@@ -37,7 +37,7 @@ impl Value {
 }
 
 // TODO: support NULL - include a null bitmap with each tuple if columns can be nullable
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Data(pub BytesMut);
 
 // TODO: rewrite to use TupleBuilder
@@ -83,6 +83,10 @@ pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
 }
 
 impl Data {
+    pub fn new(data: &[u8]) -> Self {
+        Self(BytesMut::from(data))
+    }
+
     pub fn empty() -> Self {
         Self(BytesMut::new())
     }

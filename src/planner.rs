@@ -38,7 +38,7 @@ impl From<&str> for PlannerError {
 
 impl From<LogicalOperatorError> for PlannerError {
     fn from(value: LogicalOperatorError) -> Self {
-        PlannerError(format!("{value}"))
+        value.to_string().into()
     }
 }
 

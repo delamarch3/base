@@ -68,25 +68,15 @@ impl Directory {
     }
 
     pub fn local_depth_mask(&self, i: usize) -> usize {
-        Self::depth_mask(self.local_depths[i] as u32)
+        depth_mask(self.local_depths[i] as u32)
     }
 
     pub fn global_depth_mask(&self) -> usize {
-        Self::depth_mask(self.global_depth)
+        depth_mask(self.global_depth)
     }
 
     pub fn get_local_high_bit(&self, i: usize) -> usize {
         1 << self.local_depths[i]
-    }
-
-    #[inline]
-    fn depth_mask(depth: u32) -> usize {
-        // 0 => ...0001
-        // 1 => ...0011
-        // 2 => ...0111
-        // etc
-
-        (1 << depth) - 1
     }
 
     pub fn global_depth(&self) -> u32 {
@@ -94,10 +84,19 @@ impl Directory {
     }
 }
 
+#[inline]
+fn depth_mask(depth: u32) -> usize {
+    // 0 => ...0001
+    // 1 => ...0011
+    // 2 => ...0111
+    // etc
+    (1 << depth) - 1
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
-        hash_table::dir_page::Directory,
+        hash_table::directory::Directory,
         page::{Page, PageBuf, PAGE_SIZE},
         writep,
     };
@@ -106,16 +105,16 @@ mod test {
     fn test_depth_mask() {
         let mut dir = Directory::from(&[0; PAGE_SIZE]);
 
-        assert!(dir.global_depth_mask() == 0);
+        assert_eq!(dir.global_depth_mask(), 0);
 
         dir.set_global_depth(2);
-        assert!(dir.global_depth_mask() == 3);
+        assert_eq!(dir.global_depth_mask(), 3);
 
         dir.set_global_depth(4);
-        assert!(dir.global_depth_mask() == 15);
+        assert_eq!(dir.global_depth_mask(), 15);
 
         dir.set_global_depth(8);
-        assert!(dir.global_depth_mask() == 255);
+        assert_eq!(dir.global_depth_mask(), 255);
     }
 
     #[test]
@@ -129,16 +128,16 @@ mod test {
         dir.insert(2, 2);
         dir.insert(10, 10);
 
-        assert!(dir.get(1) == 1);
-        assert!(dir.get(2) == 2);
-        assert!(dir.get(10) == 10);
+        assert_eq!(dir.get(1), 1);
+        assert_eq!(dir.get(2), 2);
+        assert_eq!(dir.get(10), 10);
 
         writep!(w, &PageBuf::from(dir));
 
         // Make sure it reads back ok
         let dir = Directory::from(&w.data);
-        assert!(dir.get(1) == 1);
-        assert!(dir.get(2) == 2);
-        assert!(dir.get(10) == 10);
+        assert_eq!(dir.get(1), 1);
+        assert_eq!(dir.get(2), 2);
+        assert_eq!(dir.get(10), 10);
     }
 }

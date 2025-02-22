@@ -1,3 +1,3 @@
-pub mod bucket_page;
-pub mod dir_page;
+pub mod bucket;
+pub mod directory;
 pub mod extendible;
