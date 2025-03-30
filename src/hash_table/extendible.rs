@@ -5,11 +5,10 @@ use std::marker::PhantomData;
 use crate::catalog::schema::Schema;
 use crate::hash_table::bucket::Bucket;
 use crate::hash_table::directory::{self, Directory};
-use crate::page::{PageBuf, PageID};
+use crate::page::PageID;
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::Data as TupleData;
-use crate::writep;
 
 pub struct ExtendibleHashTable<'a, V> {
     dir_page_id: PageID,
@@ -37,7 +36,7 @@ where
             0 => {
                 let p = self.pc.new_page()?;
                 dir.insert(bucket_index, p.page.read().id);
-                writep!(dir_page_w, &PageBuf::from(&dir));
+                dir_page_w.put_object(&dir);
                 p
             }
             _ => self.pc.fetch_page(bucket_page_id)?,
@@ -47,7 +46,7 @@ where
         let mut bucket = Bucket::deserialise_page(&bucket_page_w.data, &self.schema);
 
         bucket.insert(key, value);
-        writep!(bucket_page_w, &PageBuf::from(&bucket));
+        bucket_page_w.put_object(&bucket);
 
         if bucket.is_full() {
             if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
@@ -80,9 +79,9 @@ where
                 dir.insert(i, new_page_id);
             }
 
-            writep!(dir_page_w, &PageBuf::from(dir));
-            writep!(page0_w, &PageBuf::from(&bucket0));
-            writep!(page1_w, &PageBuf::from(&bucket0));
+            dir_page_w.put_object(&dir);
+            page0_w.put_object(&bucket0);
+            page1_w.put_object(&bucket0);
 
             // TODO: mark original page on disk as ready to be allocated
             self.pc.remove_page(bucket_page_w.id);
@@ -106,7 +105,7 @@ where
         let mut bucket = Bucket::deserialise_page(&bucket_page_w.data, &self.schema);
 
         let ret = bucket.remove(key, v);
-        writep!(bucket_page_w, &PageBuf::from(bucket));
+        bucket_page_w.put_object(bucket);
 
         // TODO: attempt to merge if empty
 

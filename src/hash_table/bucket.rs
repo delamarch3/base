@@ -169,9 +169,9 @@ where
 #[cfg(test)]
 mod test {
     use crate::hash_table::bucket::Bucket;
-    use crate::page::{Page, PageBuf};
+    use crate::page::Page;
     use crate::table::tuple::Builder as TupleBuilder;
-    use crate::{column, schema, writep};
+    use crate::{column, schema};
 
     #[test]
     fn test_bucket() {
@@ -195,7 +195,7 @@ mod test {
         assert_eq!(bucket.get(4).unwrap(), &(keys[4].clone(), values[4]));
         assert!(bucket.get(5).is_none());
 
-        writep!(page_w, &PageBuf::from(bucket));
+        page_w.put_object(bucket);
 
         // Make sure it reads back ok
         let mut bucket: Bucket<i32> = Bucket::deserialise_page(&page_w.data, &key_schema);

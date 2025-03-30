@@ -230,7 +230,6 @@ mod test {
         page::PAGE_SIZE,
         page_cache::{FreeList, PageCache, PageCacheError, CACHE_SIZE},
         replacer::LRU,
-        writep,
     };
 
     #[test]
@@ -254,8 +253,7 @@ mod test {
             let page = pc.new_page()?;
             id = page.id;
             let mut w = page.write();
-            w.data[0..want.len()].copy_from_slice(want);
-            w.dirty = true;
+            w.put_range(want, 0..want.len());
         }
 
         // Swap the page out and write something to page PAGE_CACHE - 1 (last available page):
@@ -263,7 +261,7 @@ mod test {
             let data = b"page 8";
             let page = pc.new_page()?;
             let mut w = page.write();
-            writep!(w, 0..data.len(), data);
+            w.put_range(data, 0..data.len());
         }
 
         // Read back page CACHE_SIZE - 2

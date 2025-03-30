@@ -97,8 +97,7 @@ fn depth_mask(depth: u32) -> usize {
 mod test {
     use crate::{
         hash_table::directory::Directory,
-        page::{Page, PageBuf, PAGE_SIZE},
-        writep,
+        page::{Page, PAGE_SIZE},
     };
 
     #[test]
@@ -132,7 +131,7 @@ mod test {
         assert_eq!(dir.get(2), 2);
         assert_eq!(dir.get(10), 10);
 
-        writep!(w, &PageBuf::from(dir));
+        w.put_object(dir);
 
         // Make sure it reads back ok
         let dir = Directory::from(&w.data);

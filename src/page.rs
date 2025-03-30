@@ -1,17 +1,5 @@
+use std::ops::Range;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-#[macro_export]
-macro_rules! writep {
-    ($page:ident, $data:expr) => {
-        // TODO: do PageBuf::from in here
-        $page.data[..].copy_from_slice($data);
-        $page.dirty = true;
-    };
-    ($page:ident, $range:expr, $data:expr) => {
-        $page.data[$range].copy_from_slice($data);
-        $page.dirty = true;
-    };
-}
 
 pub const PAGE_SIZE: usize = 4 * 1024;
 
@@ -53,6 +41,15 @@ impl Default for PageInner {
 }
 
 impl PageInner {
+    pub fn put_object(&mut self, data: impl Into<PageBuf>) {
+        self.put_range(&data.into(), 0..PAGE_SIZE);
+    }
+
+    pub fn put_range(&mut self, data: &[u8], range: Range<usize>) {
+        self.data[range].copy_from_slice(data);
+        self.dirty = true;
+    }
+
     pub fn reset(&mut self) {
         self.id = 0;
         self.dirty = false;

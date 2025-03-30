@@ -8,11 +8,10 @@ use crate::btree::{
     slot::{Either, Slot},
 };
 use crate::catalog::schema::Schema;
-use crate::page::{PageBuf, PageID, PageReadGuard, PageWriteGuard};
+use crate::page::{PageID, PageReadGuard, PageWriteGuard};
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::{Comparand, Data as TupleData};
-use crate::writep;
 
 pub struct BTree<'s, V> {
     root: PageID,
@@ -46,7 +45,7 @@ where
                 pin = self.pc.new_page()?;
                 let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true, self.schema);
                 let mut page = pin.write();
-                writep!(page, &PageBuf::from(&node));
+                page.put_object(&node);
                 page
             }
             id => {
@@ -65,7 +64,7 @@ where
             new_root.insert(os);
 
             let mut w = new_root_page.write();
-            writep!(w, &PageBuf::from(&new_root));
+            w.put_object(&new_root);
         }
 
         Ok(())
@@ -89,7 +88,7 @@ where
 
             if Comparand(self.schema, key) >= Comparand(self.schema, node.last_key().unwrap()) {
                 // Write the node
-                writep!(page, &PageBuf::from(&node));
+                page.put_object(&node);
 
                 // We don't need to keep a lock on this side of the tree
                 drop(page);
@@ -112,7 +111,7 @@ where
                         None => {
                             // Reached leaf node
                             nnode.replace(Slot(key.clone(), Either::Value(value.clone())));
-                            writep!(npage, &PageBuf::from(&nnode));
+                            npage.put_object(&nnode);
 
                             return Ok(node.get_separators(Some(nnode)));
                         }
@@ -128,7 +127,7 @@ where
                     }
 
                     // Write the new node
-                    writep!(npage, &PageBuf::from(&nnode));
+                    npage.put_object(&nnode);
 
                     return Ok(node.get_separators(Some(nnode)));
                 }
@@ -136,7 +135,7 @@ where
 
             // Write the new node
             // Original node is written below
-            writep!(npage, &PageBuf::from(&nnode));
+            npage.put_object(&nnode);
 
             split = Some(nnode)
         }
@@ -159,7 +158,7 @@ where
                 None => {
                     // Reached leaf node
                     node.replace(Slot(key.clone(), Either::Value(value.clone())));
-                    writep!(page, &PageBuf::from(&node));
+                    page.put_object(&node);
 
                     return Ok(node.get_separators(split));
                 }
@@ -175,7 +174,7 @@ where
             }
 
             // Write the original node
-            writep!(page, &PageBuf::from(&node));
+            page.put_object(&node);
 
             Ok(node.get_separators(split))
         }
@@ -343,7 +342,7 @@ where
             None if node.t == NodeType::Leaf => {
                 let rem = node.remove(key);
                 if rem {
-                    writep!(w, &PageBuf::from(&node));
+                    w.put_object(&node);
                 }
                 Ok(rem)
             }

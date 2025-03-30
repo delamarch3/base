@@ -1,11 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use crate::page::{PageBuf, PageID};
+use crate::page::PageID;
 use crate::page_cache::{Result, SharedPageCache};
 use crate::table::node::Node;
 use crate::table::node::{TupleMeta, RID};
 use crate::table::tuple::Data as TupleData;
-use crate::writep;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TableMeta {
@@ -91,7 +90,7 @@ impl List {
         let mut node = Node::from(&page_w.data);
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
-            writep!(page_w, &PageBuf::from(&node));
+            page_w.put_object(&node);
             return Ok(Some(RID { page_id: *last_page_id, slot_id }));
         }
 
@@ -107,12 +106,12 @@ impl List {
 
         // Write the next page id on first node
         // TODO: just write the page id instead of the entire page?
-        writep!(page_w, &PageBuf::from(&node));
+        page_w.put_object(&node);
 
         let mut node = Node::from(&npage_w.data);
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
-                writep!(npage_w, &PageBuf::from(&node));
+                npage_w.put_object(&node);
                 Ok(Some(RID { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),
