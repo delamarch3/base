@@ -4,8 +4,8 @@ use crate::logical_plan::{
     LogicalOperator, LogicalOperatorError,
 };
 use crate::sql::{
-    FromTable, Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, OrderByExpr, Query,
-    Select, Statement,
+    Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, OrderByExpr,
+    Query, Select, Statement,
 };
 
 #[derive(PartialEq)]
@@ -57,7 +57,7 @@ impl Planner {
             Statement::Insert(insert) => self.build_insert(insert)?,
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
-            Statement::Create(_) => todo!(),
+            Statement::Create(create) => self.build_create(create),
         };
 
         Ok(statement.build())
@@ -180,6 +180,10 @@ impl Planner {
         };
 
         Ok(builder)
+    }
+
+    fn build_create(&self, create: Create) -> LogicalOperatorBuilder {
+        todo!()
     }
 }
 
