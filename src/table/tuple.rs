@@ -40,9 +40,22 @@ impl Value {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Data(pub BytesMut);
 
-// TODO: rewrite to use TupleBuilder
-/// Given a buffer representing a tuple and a schema, reduce the buffer to match the schema
-pub fn fit_tuple_with_schema(data: &[u8], schema: &Schema) -> Data {
+/// Creates a new tuple using only the columns in the schema. The schema offsets are expected to
+/// align with the offsets in the tuple. This is useful for creating composite key tuple out of
+/// non-contiguous columns.
+pub fn fit_tuple_with_schema(tuple: &Data, schema: &Schema) -> Data {
+    let mut builder = Builder::new();
+    for Column { offset, ty, .. } in &schema.columns {
+        let value = tuple.get_value(*offset, *ty);
+        builder = builder.add(&value);
+    }
+
+    builder.build()
+}
+
+/// Creates a new tuple using only the columns in the schema. This is useful for unmarshalling
+/// tuples out of page objects.
+pub fn bytes_to_tuple(data: &[u8], schema: &Schema) -> Data {
     struct Variable<'a> {
         data: &'a [u8],
         offset_offset: usize,
@@ -339,7 +352,7 @@ mod test {
         ($name:tt, $schema:expr, tuple: $tuple:expr, want: $want:expr) => {
             #[test]
             fn $name() {
-                let have = fit_tuple_with_schema(&$tuple.as_bytes(), &$schema.into());
+                let have = fit_tuple_with_schema(&$tuple, &$schema.into());
                 assert_eq!($want, have);
             }
         };

@@ -3,7 +3,7 @@ use crate::catalog::schema::Schema;
 use crate::get_ptr;
 use crate::page::{PageBuf, PageID, PAGE_SIZE};
 use crate::storable::Storable;
-use crate::table::tuple::{fit_tuple_with_schema, Comparand, Data as TupleData};
+use crate::table::tuple::{bytes_to_tuple, Comparand, Data as TupleData};
 
 use super::slot::Slot;
 
@@ -167,7 +167,7 @@ where
         let mut values = Vec::new();
         let mut left = &buf[NODE_VALUES_START..];
         for _ in 0..len {
-            let tuple = fit_tuple_with_schema(left, schema);
+            let tuple = bytes_to_tuple(left, schema);
             let slot_size = tuple.size() + Either::<V>::SIZE;
             let either = Either::from(&left[tuple.size()..slot_size]);
             values.push(Slot(tuple, either));

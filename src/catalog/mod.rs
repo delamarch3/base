@@ -159,8 +159,8 @@ impl Catalog {
                 let info = self.tables.get(&self.table_names[table_name])?;
                 for result in info.table.iter().expect("todo") {
                     // Remove columns from the tuple to match schema
-                    let (_, TupleData(data), rid) = result.expect("todo");
-                    let tuple = fit_tuple_with_schema(&data, &tuple_schema);
+                    let (_, tuple, rid) = result.expect("todo");
+                    let tuple = fit_tuple_with_schema(&tuple, &tuple_schema);
                     btree.insert(&tuple, &rid).expect("todo");
                 }
 
