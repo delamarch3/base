@@ -1,7 +1,6 @@
 use crate::catalog::schema::{Column, Schema, Type};
 use bytes::{BufMut, BytesMut};
 use std::cmp::Ordering::{self, *};
-use std::mem::size_of;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Value {
@@ -104,6 +103,14 @@ impl Data {
         Self(BytesMut::new())
     }
 
+    pub fn size(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
     /// Increments the value of the first value of the tuple
     pub fn increment(&mut self, schema: &Schema) {
         *self = self.next(schema);
@@ -147,60 +154,38 @@ impl Data {
         builder.build()
     }
 
-    // pub fn get_value(&self, column: &Column) -> Value {
     pub fn get_value(&self, offset: usize, ty: Type) -> Value {
         let Self(buf) = self;
 
-        let cell = match ty {
-            Type::Varchar => {
-                // First two bytes is the offset
-                let var_offset =
-                    u16::from_be_bytes(buf[offset..offset + 2].try_into().unwrap()) as usize;
-
-                // Second two bytes is the length
-                let size =
-                    u16::from_be_bytes(buf[offset + 2..offset + 4].try_into().unwrap()) as usize;
-
-                assert!(var_offset + size <= buf.len());
-
-                &buf[var_offset..var_offset + size]
-            }
-            _ => {
-                assert!(offset + ty.size() <= buf.len());
-                &buf[offset..offset + ty.size()]
-            }
-        };
-
         match ty {
-            Type::TinyInt => {
-                assert_eq!(cell.len(), size_of::<i8>());
-                Value::TinyInt(i8::from_be_bytes(cell.try_into().unwrap()))
-            }
-            Type::Bool => {
-                assert_eq!(cell.len(), size_of::<bool>());
-                Value::Bool(u8::from_be_bytes(cell.try_into().unwrap()) > 0)
-            }
-            Type::Int => {
-                assert_eq!(cell.len(), size_of::<i32>());
-                Value::Int(i32::from_be_bytes(cell.try_into().unwrap()))
-            }
-            Type::BigInt => {
-                assert_eq!(cell.len(), size_of::<i64>());
-                Value::BigInt(i64::from_be_bytes(cell.try_into().unwrap()))
-            }
             Type::Varchar => {
-                let str = std::str::from_utf8(cell).expect("todo");
+                let length =
+                    u16::from_be_bytes(buf[offset + 2..offset + 4].try_into().unwrap()) as usize;
+                let offset =
+                    u16::from_be_bytes(buf[offset..offset + 2].try_into().unwrap()) as usize;
+                assert!(offset + length <= buf.len());
+
+                let str = std::str::from_utf8(&buf[offset..offset + length]).expect("todo");
                 Value::Varchar(str.into())
             }
+            Type::TinyInt => {
+                let value = i8::from_be_bytes(buf[offset..offset + ty.size()].try_into().unwrap());
+                Value::TinyInt(value)
+            }
+            Type::Bool => {
+                let value =
+                    u8::from_be_bytes(buf[offset..offset + ty.size()].try_into().unwrap()) > 0;
+                Value::Bool(value)
+            }
+            Type::Int => {
+                let value = i32::from_be_bytes(buf[offset..offset + ty.size()].try_into().unwrap());
+                Value::Int(value)
+            }
+            Type::BigInt => {
+                let value = i64::from_be_bytes(buf[offset..offset + ty.size()].try_into().unwrap());
+                Value::BigInt(value)
+            }
         }
-    }
-
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
     }
 }
 
