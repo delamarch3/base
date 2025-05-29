@@ -27,26 +27,26 @@ where
 
     pub fn insert(&self, key: TupleData, value: V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let mut dir_page_w = dir_page.page.write();
-        let mut dir = Directory::from(&dir_page_w.data);
 
-        let bucket_index = Self::get_bucket_index(&key, &dir);
+        let mut dir = dir_page.write3::<Directory>();
+
+        let bucket_index = get_bucket_index(&key, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
                 let p = self.pc.new_page()?;
-                dir.insert(bucket_index, p.page.read().id);
-                dir_page_w.put_object(&dir);
+                dir.insert(bucket_index, p.read().id);
+                // dir_w.put(&dir);
                 p
             }
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let mut bucket_page_w = bucket_page.page.write();
-        let mut bucket = Bucket::deserialise_page(&bucket_page_w.data, &self.schema);
+        let mut bucket_w = bucket_page.write();
+        let mut bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
 
         bucket.insert(key, value);
-        bucket_page_w.put_object(&bucket);
+        bucket_w.put(&bucket);
 
         if bucket.is_full() {
             if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
@@ -59,16 +59,16 @@ where
             // 3. Reinsert into the new pages
             // 4. Update the page ids in the directory
             let page0 = self.pc.new_page()?;
-            let mut page0_w = page0.page.write();
+            let mut page0_w = page0.write();
             let mut bucket0 = Bucket::deserialise_page(&page0_w.data, &self.schema);
 
             let page1 = self.pc.new_page()?;
-            let mut page1_w = page1.page.write();
+            let mut page1_w = page1.write();
             let mut bucket1 = Bucket::deserialise_page(&page1_w.data, &self.schema);
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
-                let i = Self::get_bucket_index(&pair.a, &dir);
+                let i = get_bucket_index(&pair.a, &dir);
                 let new_bucket = if i & bit > 0 { &mut bucket1 } else { &mut bucket0 };
                 new_bucket.insert(pair.a, pair.b);
             }
@@ -79,12 +79,12 @@ where
                 dir.insert(i, new_page_id);
             }
 
-            dir_page_w.put_object(&dir);
-            page0_w.put_object(&bucket0);
-            page1_w.put_object(&bucket0);
+            // dir_w.put(&dir);
+            page0_w.put(&bucket0);
+            page1_w.put(&bucket0);
 
             // TODO: mark original page on disk as ready to be allocated
-            self.pc.remove_page(bucket_page_w.id);
+            self.pc.remove_page(bucket_w.id);
         }
 
         Ok(true)
@@ -92,20 +92,19 @@ where
 
     pub fn remove(&self, key: &TupleData, v: &V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir_page_r = dir_page.page.read();
-        let dir = Directory::from(&dir_page_r.data);
+        let dir = dir_page.read3::<Directory>();
 
-        let bucket_index = Self::get_bucket_index(key, &dir);
+        let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(false),
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
-        let mut bucket_page_w = bucket_page.page.write();
-        let mut bucket = Bucket::deserialise_page(&bucket_page_w.data, &self.schema);
+        let mut bucket_w = bucket_page.write();
+        let mut bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
 
         let ret = bucket.remove(key, v);
-        bucket_page_w.put_object(bucket);
+        bucket_w.put(bucket);
 
         // TODO: attempt to merge if empty
 
@@ -114,42 +113,39 @@ where
 
     pub fn get(&self, key: &TupleData) -> crate::Result<Vec<V>> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir_page_r = dir_page.page.read();
-        let dir = Directory::from(&dir_page_r.data);
+        let dir = dir_page.read3::<Directory>();
 
-        let bucket_index = Self::get_bucket_index(key, &dir);
+        let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => return Ok(vec![]),
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let bucket_page_w = bucket_page.page.read();
-        let bucket = Bucket::deserialise_page(&bucket_page_w.data, &self.schema);
+        let bucket_w = bucket_page.read();
+        let bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
 
         Ok(bucket.find(key))
     }
 
     pub fn get_num_buckets(&self) -> crate::Result<u32> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir_page_r = dir_page.page.read();
-        let dir = Directory::from(&dir_page_r.data);
-
+        let dir = dir_page.read3::<Directory>();
         Ok(1 << dir.global_depth())
     }
+}
 
-    fn hash(key: &TupleData) -> usize {
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
-        hasher.finish() as usize
-    }
+fn hash(key: &TupleData) -> usize {
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish() as usize
+}
 
-    fn get_bucket_index(key: &TupleData, directory: &Directory) -> usize {
-        let hash = Self::hash(key);
-        let i = hash & directory.global_depth_mask();
+fn get_bucket_index(key: &TupleData, directory: &Directory) -> usize {
+    let hash = hash(key);
+    let i = hash & directory.global_depth_mask();
 
-        i % directory::PAGE_IDS_SIZE_U32
-    }
+    i % directory::PAGE_IDS_SIZE_U32
 }
 
 #[cfg(test)]
@@ -246,8 +242,8 @@ mod test {
         assert_eq!(table.get_num_buckets().unwrap(), 2);
 
         let dir_page = pm.fetch_page(0).expect("there should be a page 0");
-        let dir_page_w = dir_page.page.write();
-        let dir = Directory::from(&dir_page_w.data);
+        let dir_w = dir_page.write();
+        let dir = Directory::from(&dir_w.data);
 
         assert_eq!(dir.global_depth(), 1);
 

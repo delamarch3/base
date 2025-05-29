@@ -131,7 +131,7 @@ mod test {
         assert_eq!(dir.get(2), 2);
         assert_eq!(dir.get(10), 10);
 
-        w.put_object(dir);
+        w.put(dir);
 
         // Make sure it reads back ok
         let dir = Directory::from(&w.data);

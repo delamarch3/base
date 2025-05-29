@@ -90,7 +90,7 @@ impl List {
         let mut node = Node::from(&page_w.data);
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
-            page_w.put_object(&node);
+            page_w.put(&node);
             return Ok(Some(RID { page_id: *last_page_id, slot_id }));
         }
 
@@ -106,12 +106,12 @@ impl List {
 
         // Write the next page id on first node
         // TODO: just write the page id instead of the entire page?
-        page_w.put_object(&node);
+        page_w.put(&node);
 
         let mut node = Node::from(&npage_w.data);
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
-                npage_w.put_object(&node);
+                npage_w.put(&node);
                 Ok(Some(RID { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),

@@ -4,7 +4,10 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering::*};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::disk::Disk;
-use crate::page::{Page, PageID, PageInner};
+use crate::page::{
+    Page, PageBuf, PageID, PageInner, PageReadGuard2, PageReadGuard3, PageWriteGuard2,
+    PageWriteGuard3,
+};
 use crate::replacer::{AccessType, LRU};
 
 pub const CACHE_SIZE: usize = 64;
@@ -71,7 +74,7 @@ impl<const SIZE: usize> FreeList<SIZE> {
 }
 
 pub struct Pin<'a> {
-    pub page: &'a Page,
+    page: &'a Page,
     pub id: PageID,
     i: FrameID,
     replacer: Arc<LRU>,
@@ -90,14 +93,38 @@ impl<'a> Pin<'a> {
 
     pub fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
         let w = self.page.write();
-
         assert!(self.id == w.id, "page was swapped out whilst a pin was held");
-
         w
     }
 
     pub fn read(&self) -> RwLockReadGuard<'_, PageInner> {
         self.page.read()
+    }
+
+    pub fn read2<T>(&self) -> PageReadGuard2<T> {
+        self.page.read2::<T>()
+    }
+
+    pub fn write2<T>(&self) -> PageWriteGuard2<T> {
+        let w = self.page.write2::<T>();
+        assert!(self.id == w.guard.id);
+        w
+    }
+
+    pub fn read3<T>(&self) -> PageReadGuard3<T>
+    where
+        T: for<'b> From<&'b PageBuf>,
+        PageBuf: for<'b> From<&'b T>,
+    {
+        self.page.read3::<T>()
+    }
+
+    pub fn write3<T>(&self) -> PageWriteGuard3<T>
+    where
+        T: for<'b> From<&'b PageBuf>,
+        PageBuf: for<'b> From<&'b T>,
+    {
+        self.page.write3::<T>()
     }
 }
 
@@ -225,12 +252,10 @@ impl PageCache {
 mod test {
     use std::{sync::Arc, thread};
 
-    use crate::{
-        disk::Memory,
-        page::PAGE_SIZE,
-        page_cache::{FreeList, PageCache, PageCacheError, CACHE_SIZE},
-        replacer::LRU,
-    };
+    use crate::disk::Memory;
+    use crate::page::PAGE_SIZE;
+    use crate::page_cache::{FreeList, PageCache, PageCacheError, CACHE_SIZE};
+    use crate::replacer::LRU;
 
     #[test]
     fn test_pm_read() -> Result<(), PageCacheError> {

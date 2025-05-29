@@ -45,7 +45,7 @@ where
                 pin = self.pc.new_page()?;
                 let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true, self.schema);
                 let mut page = pin.write();
-                page.put_object(&node);
+                page.put(&node);
                 page
             }
             id => {
@@ -64,7 +64,7 @@ where
             new_root.insert(os);
 
             let mut w = new_root_page.write();
-            w.put_object(&new_root);
+            w.put(&new_root);
         }
 
         Ok(())
@@ -88,7 +88,7 @@ where
 
             if Comparand(self.schema, key) >= Comparand(self.schema, node.last_key().unwrap()) {
                 // Write the node
-                page.put_object(&node);
+                page.put(&node);
 
                 // We don't need to keep a lock on this side of the tree
                 drop(page);
@@ -111,7 +111,7 @@ where
                         None => {
                             // Reached leaf node
                             nnode.replace(Slot(key.clone(), Either::Value(value.clone())));
-                            npage.put_object(&nnode);
+                            npage.put(&nnode);
 
                             return Ok(node.get_separators(Some(nnode)));
                         }
@@ -127,7 +127,7 @@ where
                     }
 
                     // Write the new node
-                    npage.put_object(&nnode);
+                    npage.put(&nnode);
 
                     return Ok(node.get_separators(Some(nnode)));
                 }
@@ -135,7 +135,7 @@ where
 
             // Write the new node
             // Original node is written below
-            npage.put_object(&nnode);
+            npage.put(&nnode);
 
             split = Some(nnode)
         }
@@ -158,7 +158,7 @@ where
                 None => {
                     // Reached leaf node
                     node.replace(Slot(key.clone(), Either::Value(value.clone())));
-                    page.put_object(&node);
+                    page.put(&node);
 
                     return Ok(node.get_separators(split));
                 }
@@ -174,7 +174,7 @@ where
             }
 
             // Write the original node
-            page.put_object(&node);
+            page.put(&node);
 
             Ok(node.get_separators(split))
         }
@@ -342,7 +342,7 @@ where
             None if node.t == NodeType::Leaf => {
                 let rem = node.remove(key);
                 if rem {
-                    w.put_object(&node);
+                    w.put(&node);
                 }
                 Ok(rem)
             }
