@@ -217,7 +217,6 @@ where
     }
 
     // TODO: unit tests
-    // TODO: Accept ref to key and value separately - less cloning
     pub fn replace(&mut self, mut slot: Slot<V>, schema: &Schema) -> Option<Slot<V>> {
         let mut i = self.values.len();
         for (j, Slot(k, _)) in self.values.iter().enumerate() {

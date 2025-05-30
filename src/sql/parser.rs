@@ -200,8 +200,6 @@ impl Parser {
 
         let table = self.parse_ident()?;
 
-        // TODO: parse columns too, currently assuming all columns in each insert
-
         if self.check_keywords(&[Keyword::Values]) {
             let rows = self.parse_values()?;
             Ok(Insert { table, input: InsertInput::Values(rows) })

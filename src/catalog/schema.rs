@@ -41,14 +41,6 @@ pub struct Column {
     pub table: Option<String>,
 }
 
-// TODO
-#[allow(unused)]
-struct ValueAttributes {
-    nullable: bool,
-    ty: Type,
-    offset: usize,
-}
-
 #[derive(PartialEq, Clone, Debug, Default)]
 pub struct Schema {
     pub columns: Vec<Column>,
@@ -56,7 +48,6 @@ pub struct Schema {
 }
 
 impl Schema {
-    // TODO: support nullable columns
     pub fn new(columns: Vec<Column>) -> Self {
         Self { tuple_size: columns.iter().fold(0, |acc, column| acc + column.ty.size()), columns }
     }

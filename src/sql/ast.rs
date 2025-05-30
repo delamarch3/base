@@ -243,7 +243,6 @@ pub enum JoinConstraint {
 #[derive(PartialEq, Debug, Clone)]
 pub enum JoinType {
     Inner,
-    // TODO: add more joins
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -332,5 +331,4 @@ pub enum ColumnType {
 pub struct ColumnDef {
     pub ty: ColumnType,
     pub name: String,
-    // TODO: constraints
 }

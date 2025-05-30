@@ -78,7 +78,6 @@ where
                 dir.insert(i, new_page_id);
             }
 
-            // dir_w.put(&dir);
             page0_w.put(&bucket0);
             page1_w.put(&bucket0);
 
@@ -104,8 +103,6 @@ where
 
         let ret = bucket.remove(key, v);
         bucket_w.put(&bucket);
-
-        // TODO: attempt to merge if empty
 
         Ok(ret)
     }

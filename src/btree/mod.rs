@@ -68,7 +68,6 @@ where
         Ok(())
     }
 
-    // TODO: Duplicate code for find and insert
     fn _insert<'a>(
         &'a self,
         mut prev_page: Option<&'a PageWriteGuard<'a>>,
@@ -181,7 +180,6 @@ where
         }
     }
 
-    // TODO: return just the values instead? Less cloning
     pub fn scan(&self) -> crate::Result<Vec<(TupleData, V)>> {
         let mut ret = Vec::new();
         if self.root == -1 {
@@ -301,7 +299,6 @@ where
         }
     }
 
-    // TODO: return just the value instead? Less cloning
     pub fn get(&self, key: &TupleData) -> crate::Result<Option<Slot<V>>> {
         if self.root == -1 {
             return Ok(None);

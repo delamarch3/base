@@ -35,7 +35,6 @@ impl Value {
     }
 }
 
-// TODO: support NULL - include a null bitmap with each tuple if columns can be nullable
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Data(pub BytesMut);
 
@@ -118,7 +117,7 @@ impl Data {
 
     /// Gets the next tuple, which has the value of the first column incremented by 1. This returns
     /// a new tuple, use `increment` to modify the current tuple.
-    /// For integers it's a simple increment (TODO: handle overflow)
+    /// For integers it's a simple increment
     /// Bool will always be set to true
     /// Varchars will have their first char incremented by 1
     pub fn next(&self, schema: &Schema) -> Self {

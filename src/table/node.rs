@@ -192,7 +192,6 @@ impl Node {
         self.slots.push(TupleSlot { offset: offset as u32, len: tuple.size() as u32, meta: *meta });
 
         unsafe {
-            // TODO: This writes to the page buffer but doesn't set the dirty flag
             let tuples_ptr = self.page_start.add(offset);
             let tuples = std::slice::from_raw_parts_mut(tuples_ptr, PAGE_SIZE - offset);
             tuples[..tuple.size()].copy_from_slice(&tuple.0);

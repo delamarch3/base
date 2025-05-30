@@ -86,7 +86,6 @@ fn eval_literal(literal: &Literal) -> Result<Value, ExecError> {
     Ok(value)
 }
 
-// TODO: implement this once NULL has been implemented
 fn eval_is_null(
     expr: &Expr,
     _negated: bool,
@@ -203,7 +202,6 @@ fn value_op(lhs: &Value, op: Op, rhs: &Value) -> Result<Value, ExecError> {
         Err(format!("cannot perform {} {op} {}", lhs.ty(), rhs.ty()))?
     }
 
-    // TODO: currently just supports comparisons but can support math too
     let result = match lhs {
         Value::TinyInt(lhs) => numeric_op(*lhs, op, *get_value!(rhs, TinyInt)),
         Value::Bool(lhs) => bool_op(*lhs, op, *get_value!(rhs, Bool)),
