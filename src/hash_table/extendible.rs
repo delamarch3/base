@@ -28,15 +28,14 @@ where
     pub fn insert(&self, key: TupleData, value: V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
 
-        let mut dir = dir_page.write3::<Directory>(&Schema::default());
+        let mut dir = dir_page.write_object::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(&key, &dir);
         let bucket_page_id = dir.get(bucket_index);
         let bucket_page = match bucket_page_id {
             0 => {
                 let p = self.pc.new_page()?;
-                dir.insert(bucket_index, p.read().id);
-                // dir_w.put(&dir);
+                dir.insert(bucket_index, p.id);
                 p
             }
             _ => self.pc.fetch_page(bucket_page_id)?,
@@ -46,7 +45,7 @@ where
         let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
 
         bucket.insert(key, value);
-        bucket_w.put2(&bucket);
+        bucket_w.put(&bucket);
 
         if bucket.is_full() {
             if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
@@ -80,8 +79,8 @@ where
             }
 
             // dir_w.put(&dir);
-            page0_w.put2(&bucket0);
-            page1_w.put2(&bucket0);
+            page0_w.put(&bucket0);
+            page1_w.put(&bucket0);
 
             // TODO: mark original page on disk as ready to be allocated
             self.pc.remove_page(bucket_w.id);
@@ -92,7 +91,7 @@ where
 
     pub fn remove(&self, key: &TupleData, v: &V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>(&Schema::default());
+        let dir = dir_page.read_object::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
@@ -104,7 +103,7 @@ where
         let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
 
         let ret = bucket.remove(key, v);
-        bucket_w.put2(&bucket);
+        bucket_w.put(&bucket);
 
         // TODO: attempt to merge if empty
 
@@ -113,7 +112,7 @@ where
 
     pub fn get(&self, key: &TupleData) -> crate::Result<Vec<V>> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>(&Schema::default());
+        let dir = dir_page.read_object::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
@@ -122,15 +121,14 @@ where
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let bucket_w = bucket_page.read();
-        let bucket = Bucket::deserialise(bucket_w.data, &self.schema);
+        let bucket = bucket_page.read_object::<Bucket<V>>(&self.schema);
 
         Ok(bucket.find(key))
     }
 
     pub fn get_num_buckets(&self) -> crate::Result<u32> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>(&Schema::default());
+        let dir = dir_page.read_object::<Directory>(&Schema::default());
         Ok(1 << dir.global_depth())
     }
 }

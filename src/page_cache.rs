@@ -1,13 +1,12 @@
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering::*};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 
 use crate::catalog::schema::Schema;
 use crate::disk::Disk;
 use crate::page::{
-    DiskObject, Page, PageID, PageInner, PageReadGuard3, PageReadGuardUnsafe, PageWriteGuard3,
-    PageWriteGuardUnsafe,
+    DiskObject, ObjectReadGuard, ObjectWriteGuard, Page, PageID, PageReadGuard, PageWriteGuard,
 };
 use crate::replacer::{AccessType, LRU};
 
@@ -92,38 +91,28 @@ impl<'a> Pin<'a> {
         Self { page, i, id, replacer }
     }
 
-    pub fn write(&self) -> RwLockWriteGuard<'_, PageInner> {
+    pub fn write(&self) -> PageWriteGuard {
         let w = self.page.write();
         assert!(self.id == w.id, "page was swapped out whilst a pin was held");
         w
     }
 
-    pub fn read(&self) -> RwLockReadGuard<'_, PageInner> {
+    pub fn read(&self) -> PageReadGuard {
         self.page.read()
     }
 
-    pub fn read2<T>(&self) -> PageReadGuardUnsafe<T> {
-        self.page.read2::<T>()
-    }
-
-    pub fn write2<T>(&self) -> PageWriteGuardUnsafe<T> {
-        let w = self.page.write2::<T>();
-        assert!(self.id == w.guard.id);
-        w
-    }
-
-    pub fn read3<T>(&self, schema: &Schema) -> PageReadGuard3<T>
+    pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<T>
     where
         T: DiskObject,
     {
-        self.page.read3::<T>(schema)
+        self.page.read_object::<T>(schema)
     }
 
-    pub fn write3<T>(&self, schema: &Schema) -> PageWriteGuard3<T>
+    pub fn write_object<T>(&self, schema: &Schema) -> ObjectWriteGuard<T>
     where
         T: DiskObject,
     {
-        self.page.write3::<T>(schema)
+        self.page.write_object::<T>(schema)
     }
 }
 

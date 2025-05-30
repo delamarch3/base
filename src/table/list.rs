@@ -91,7 +91,7 @@ impl List {
         let mut node = Node::deserialise(page_w.data, &Schema::default());
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
-            page_w.put2(&node);
+            page_w.put(&node);
             return Ok(Some(RID { page_id: *last_page_id, slot_id }));
         }
 
@@ -106,12 +106,12 @@ impl List {
         *last_page_id = npage.id;
 
         // Write the next page id on first node
-        page_w.put2(&node);
+        page_w.put(&node);
 
         let mut node = Node::deserialise(npage_w.data, &Schema::default());
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
-                npage_w.put2(&node);
+                npage_w.put(&node);
                 Ok(Some(RID { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),

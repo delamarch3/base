@@ -186,7 +186,7 @@ mod test {
         assert_eq!(bucket.get(4).unwrap(), &(keys[4].clone(), values[4]));
         assert!(bucket.get(5).is_none());
 
-        page_w.put2(&bucket);
+        page_w.put(&bucket);
 
         // Make sure it reads back ok
         let mut bucket: Bucket<i32> = Bucket::deserialise(page_w.data, &key_schema);

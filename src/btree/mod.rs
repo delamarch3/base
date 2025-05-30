@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::btree::node::{Node, NodeType};
 use crate::btree::slot::{Either, Slot};
 use crate::catalog::schema::Schema;
-use crate::page::{DiskObject, PageID, PageReadGuard, PageWriteGuard};
+use crate::page::{DiskObject, ObjectReadGuard, PageID, PageWriteGuard};
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::{Comparand, Data as TupleData};
@@ -43,7 +43,7 @@ where
                 pin = self.pc.new_page()?;
                 let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true);
                 let mut page = pin.write();
-                page.put2(&node);
+                page.put(&node);
                 page
             }
             id => {
@@ -62,7 +62,7 @@ where
             new_root.insert(os, self.schema);
 
             let mut w = new_root_page.write();
-            w.put2(&new_root);
+            w.put(&new_root);
         }
 
         Ok(())
@@ -86,7 +86,7 @@ where
 
             if Comparand(self.schema, key) >= Comparand(self.schema, node.last_key().unwrap()) {
                 // Write the node
-                page.put2(&node);
+                page.put(&node);
 
                 // We don't need to keep a lock on this side of the tree
                 drop(page);
@@ -112,7 +112,7 @@ where
                                 Slot(key.clone(), Either::Value(value.clone())),
                                 self.schema,
                             );
-                            npage.put2(&nnode);
+                            npage.put(&nnode);
 
                             return Ok(node.get_separators(Some(nnode), self.schema));
                         }
@@ -128,7 +128,7 @@ where
                     }
 
                     // Write the new node
-                    npage.put2(&nnode);
+                    npage.put(&nnode);
 
                     return Ok(node.get_separators(Some(nnode), self.schema));
                 }
@@ -136,7 +136,7 @@ where
 
             // Write the new node
             // Original node is written below
-            npage.put2(&nnode);
+            npage.put(&nnode);
 
             split = Some(nnode)
         }
@@ -159,7 +159,7 @@ where
                 None => {
                     // Reached leaf node
                     node.replace(Slot(key.clone(), Either::Value(value.clone())), self.schema);
-                    page.put2(&node);
+                    page.put(&node);
 
                     return Ok(node.get_separators(split, self.schema));
                 }
@@ -175,7 +175,7 @@ where
             }
 
             // Write the original node
-            page.put2(&node);
+            page.put(&node);
 
             Ok(node.get_separators(split, self.schema))
         }
@@ -189,7 +189,7 @@ where
         }
 
         let pin = self.pc.fetch_page(self.root)?;
-        let r = pin.read();
+        let r = pin.read_object::<Node<V>>(self.schema);
 
         self._scan(None, r, &mut ret)?;
 
@@ -198,22 +198,20 @@ where
 
     fn _scan<'a>(
         &'a self,
-        mut prev_page: Option<PageReadGuard<'a>>,
-        page: PageReadGuard<'a>,
+        mut prev_node: Option<ObjectReadGuard<'a, Node<V>>>,
+        node: ObjectReadGuard<'a, Node<V>>,
         acc: &mut Vec<(TupleData, V)>,
     ) -> crate::Result<()> {
-        let node: Node<V> = Node::deserialise(page.data, self.schema);
-
         // Find first leaf
         if node.t != NodeType::Leaf {
             let Slot(_, v) = node.first().unwrap();
             match v {
                 Either::Pointer(ptr) => {
                     let pin = self.pc.fetch_page(*ptr)?;
-                    let r = pin.read();
+                    let r = pin.read_object::<Node<V>>(self.schema);
 
-                    prev_page.take();
-                    return self._scan(Some(page), r, acc);
+                    prev_node.take();
+                    return self._scan(Some(node), r, acc);
                 }
                 Either::Value(_) => unreachable!(),
             };
@@ -229,10 +227,10 @@ where
         }
 
         let pin = self.pc.fetch_page(node.next)?;
-        let r = pin.read();
+        let r = pin.read_object::<Node<V>>(self.schema);
 
-        prev_page.take();
-        self._scan(Some(page), r, acc)
+        prev_node.take();
+        self._scan(Some(node), r, acc)
     }
 
     pub fn range(&self, from: &TupleData, to: &TupleData) -> crate::Result<Vec<(TupleData, V)>> {
@@ -244,7 +242,7 @@ where
         };
 
         let page = self.pc.fetch_page(cur)?;
-        let r = page.read();
+        let r = page.read_object::<Node<V>>(self.schema);
 
         self._range(None, r, &mut ret, from, to)?;
 
@@ -253,19 +251,19 @@ where
 
     fn _range<'a>(
         &'a self,
-        mut prev_page: Option<PageReadGuard<'a>>,
-        page: PageReadGuard<'a>,
+        mut prev_node: Option<ObjectReadGuard<'a, Node<V>>>,
+        node: ObjectReadGuard<'a, Node<V>>,
         acc: &mut Vec<(TupleData, V)>,
         from: &TupleData,
         to: &TupleData,
     ) -> crate::Result<()> {
-        let node = Node::deserialise(page.data, self.schema);
         let next = node.next;
         let len = acc.len();
         acc.extend(
-            node.into_iter()
+            node.iter()
                 .skip_while(|Slot(k, _)| Comparand(self.schema, k) < Comparand(self.schema, from))
                 .take_while(|Slot(k, _)| Comparand(self.schema, k) <= Comparand(self.schema, to))
+                .cloned()
                 .map(|Slot(k, v)| {
                     let v = match v {
                         Either::Value(v) => v,
@@ -283,19 +281,18 @@ where
         }
 
         let next_page = self.pc.fetch_page(next)?;
-        let r = next_page.read();
+        let r = next_page.read_object::<Node<V>>(self.schema);
 
-        prev_page.take();
+        prev_node.take();
 
-        self._range(Some(page), r, acc, from, to)
+        self._range(Some(node), r, acc, from, to)
     }
 
     fn get_ptr(&self, key: &TupleData, ptr: PageID) -> crate::Result<Option<PageID>> {
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
-        let r = page.read();
-        let node: Node<V> = Node::deserialise(r.data, self.schema);
+        let node = page.read_object::<Node<V>>(self.schema);
 
         match node.find_child(key, self.schema) {
             Some(ptr) => self.get_ptr(key, ptr),
@@ -315,8 +312,7 @@ where
 
     fn _get(&self, key: &TupleData, ptr: PageID) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
-        let r = page.read();
-        let node = Node::deserialise(r.data, self.schema);
+        let node = page.read_object::<Node<V>>(self.schema);
 
         match node.find_child(key, self.schema) {
             Some(ptr) => self._get(key, ptr),
@@ -343,7 +339,7 @@ where
             None if node.t == NodeType::Leaf => {
                 let rem = node.remove(key, self.schema);
                 if rem {
-                    w.put2(&node);
+                    w.put(&node);
                 }
                 Ok(rem)
             }
@@ -356,8 +352,7 @@ where
         assert!(ptr != -1);
 
         let page = self.pc.fetch_page(ptr)?;
-        let r = page.read();
-        let node: Node<V> = Node::deserialise(r.data, self.schema);
+        let node = page.read_object::<Node<V>>(self.schema);
         if node.t == NodeType::Leaf {
             return Ok(ptr);
         }
@@ -381,8 +376,7 @@ where
 
         while cur != -1 {
             let pin = self.pc.fetch_page(cur)?;
-            let page = pin.read();
-            let node: Node<V> = Node::deserialise(page.data, self.schema);
+            let node = pin.read_object::<Node<V>>(self.schema);
 
             ret += 1;
             cur = node.next;

@@ -132,7 +132,7 @@ mod test {
         assert_eq!(dir.get(2), 2);
         assert_eq!(dir.get(10), 10);
 
-        w.put2(&dir);
+        w.put(&dir);
 
         // Make sure it reads back ok
         let dir = Directory::deserialise(w.data, &Schema::default());
