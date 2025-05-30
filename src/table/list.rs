@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::page::PageID;
+use crate::catalog::schema::Schema;
+use crate::page::{DiskObject, PageID};
 use crate::page_cache::{Result, SharedPageCache};
 use crate::table::node::Node;
 use crate::table::node::{TupleMeta, RID};
@@ -66,7 +67,7 @@ impl List {
         let last_page_id = self.last_page_id();
         let page = self.pc.fetch_page(last_page_id)?;
         let page_r = page.read();
-        let node = Node::from(&page_r.data);
+        let node = Node::deserialise(page_r.data, &Schema::default());
 
         Ok(Iter {
             list: Arc::clone(self),
@@ -87,10 +88,10 @@ impl List {
         let mut last_page_id = self.last_page_id_mut();
         let page = self.pc.fetch_page(*last_page_id)?;
         let mut page_w = page.write();
-        let mut node = Node::from(&page_w.data);
+        let mut node = Node::deserialise(page_w.data, &Schema::default());
 
         if let Some(slot_id) = node.insert(tuple_data, meta) {
-            page_w.put(&node);
+            page_w.put2(&node);
             return Ok(Some(RID { page_id: *last_page_id, slot_id }));
         }
 
@@ -105,13 +106,12 @@ impl List {
         *last_page_id = npage.id;
 
         // Write the next page id on first node
-        // TODO: just write the page id instead of the entire page?
-        page_w.put(&node);
+        page_w.put2(&node);
 
-        let mut node = Node::from(&npage_w.data);
+        let mut node = Node::deserialise(npage_w.data, &Schema::default());
         match node.insert(tuple_data, meta) {
             Some(slot_id) => {
-                npage_w.put(&node);
+                npage_w.put2(&node);
                 Ok(Some(RID { page_id: *last_page_id, slot_id }))
             }
             None => unreachable!(),
@@ -121,7 +121,7 @@ impl List {
     pub fn get(&self, rid: RID) -> Result<Option<(TupleMeta, TupleData)>> {
         let page = self.pc.fetch_page(rid.page_id)?;
         let page_r = page.read();
-        let node = Node::from(&page_r.data);
+        let node = Node::deserialise(page_r.data, &Schema::default());
 
         Ok(node.get(&rid))
     }
@@ -159,7 +159,7 @@ impl Iterator for Iter {
             Err(e) => return Some(Err(e)),
         };
         let page_r = page.read();
-        let node = Node::from(&page_r.data);
+        let node = Node::deserialise(page_r.data, &Schema::default());
 
         if self.rid.page_id == self.end.page_id && self.rid.slot_id == self.end.slot_id - 1 {
             // Last tuple, increment (so the next iteration returns None) and return result
@@ -179,21 +179,16 @@ impl Iterator for Iter {
 
 #[cfg(test)]
 mod test {
-    use {
-        crate::{
-            disk::Memory,
-            page::PAGE_SIZE,
-            page_cache::PageCache,
-            replacer::LRU,
-            table::list::List,
-            table::{
-                list::TableMeta,
-                node::{TupleMeta, RID},
-                tuple::Data as TupleData,
-            },
-        },
-        bytes::BytesMut,
-    };
+    use crate::disk::Memory;
+    use crate::page::PAGE_SIZE;
+    use crate::page_cache::PageCache;
+    use crate::replacer::LRU;
+    use crate::table::list::List;
+    use crate::table::list::TableMeta;
+    use crate::table::node::{TupleMeta, RID};
+    use crate::table::tuple::Data as TupleData;
+
+    use bytes::BytesMut;
 
     #[test]
     fn test_table() -> crate::Result<()> {

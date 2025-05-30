@@ -1,23 +1,18 @@
-use {
-    crate::{
-        page::{PageBuf, PageID, PAGE_SIZE},
-        storable::Storable,
-        table::tuple::Data as TupleData,
-    },
-    bytes::BytesMut,
-    std::ops::Range,
-};
+use crate::page::{DiskObject, PageBuf, PageID, PAGE_SIZE};
+use crate::storable::Storable;
+use crate::table::tuple::Data as TupleData;
 
-/*
-    TablePage:
-    NextPageID | NumTuples | NumDeletedTuples | Slots | Free | Tuples
+use bytes::BytesMut;
+use std::ops::Range;
 
-    Slot:
-    TupleInfo
-
-    Tuple:
-    RID | Data
-*/
+// TablePage:
+// NextPageID | NumTuples | NumDeletedTuples | Slots | Free | Tuples
+//
+// Slot:
+// TupleInfo
+//
+// Tuple:
+// RID | Data
 
 pub type SlotID = u32;
 
@@ -27,25 +22,21 @@ pub struct RID {
     pub slot_id: SlotID,
 }
 
-// TODO: get rid of `Storable`
 impl Storable for RID {
     const SIZE: usize = 8;
 
     type ByteArray = [u8; Self::SIZE];
 
     fn into_bytes(self) -> Self::ByteArray {
-        let mut ret = [0; 8];
-        ret[0..4].copy_from_slice(&self.page_id.into_bytes());
-        ret[4..8].copy_from_slice(&self.slot_id.into_bytes());
-
-        ret
+        let mut buf = [0; 8];
+        buf[0..4].copy_from_slice(&self.page_id.into_bytes());
+        buf[4..8].copy_from_slice(&self.slot_id.into_bytes());
+        buf
     }
 
-    // TODO: this is reading the wrong bytes
     fn from_bytes(bytes: &[u8]) -> Self {
         let page_id = i32::from_be_bytes(bytes[0..4].try_into().unwrap());
         let slot_id = u32::from_be_bytes(bytes[4..8].try_into().unwrap());
-
         Self { page_id, slot_id }
     }
 
@@ -62,7 +53,6 @@ pub struct TupleMeta {
 impl From<&[u8]> for TupleMeta {
     fn from(value: &[u8]) -> Self {
         let deleted = u8::from_be_bytes(value[0..1].try_into().unwrap()) > 1;
-
         Self { deleted }
     }
 }
@@ -118,8 +108,38 @@ pub struct Node {
     slots: Vec<TupleSlot>,
 }
 
-impl From<&PageBuf> for Node {
-    fn from(buf: &PageBuf) -> Self {
+impl DiskObject for Node {
+    fn serialise(&self) -> PageBuf {
+        let mut ret: PageBuf = [0; PAGE_SIZE];
+
+        ret[NEXT_PAGE_ID].copy_from_slice(&self.next_page_id.to_be_bytes());
+        ret[TUPLES_LEN].copy_from_slice(&(self.slots.len() as u32).to_be_bytes());
+        ret[DELETED_TUPLES_LEN].copy_from_slice(&self.deleted_tuples_len.to_be_bytes());
+
+        const SLOT_SIZE: usize = TupleSlot::SIZE;
+        let mut from = SLOTS_START;
+        for slot in &self.slots {
+            let slot = TupleInfoBuf::from(slot);
+            ret[from..from + SLOT_SIZE].copy_from_slice(&slot);
+            from += SLOT_SIZE;
+        }
+
+        let offset = match self.slots.last() {
+            Some(o) => o.offset as usize,
+            None => return ret,
+        };
+        assert!(offset < PAGE_SIZE, "tuple being written at PAGE_SIZE or greater");
+
+        unsafe {
+            let tuples_ptr = self.page_start.add(offset);
+            let tuples = std::slice::from_raw_parts(tuples_ptr, PAGE_SIZE - offset);
+            ret[offset..].copy_from_slice(tuples);
+        }
+
+        ret
+    }
+
+    fn deserialise(buf: PageBuf, _: &crate::catalog::schema::Schema) -> Self {
         let page_start = buf.as_ptr() as *mut u8;
         let next_page_id = i32::from_be_bytes(buf[NEXT_PAGE_ID].try_into().unwrap());
         let tuples_len = u32::from_be_bytes(buf[TUPLES_LEN].try_into().unwrap());
@@ -139,38 +159,6 @@ impl From<&PageBuf> for Node {
         }
 
         Self { page_start, next_page_id, deleted_tuples_len, slots }
-    }
-}
-
-impl From<&Node> for PageBuf {
-    fn from(table: &Node) -> Self {
-        let mut ret: PageBuf = [0; PAGE_SIZE];
-
-        ret[NEXT_PAGE_ID].copy_from_slice(&table.next_page_id.to_be_bytes());
-        ret[TUPLES_LEN].copy_from_slice(&(table.slots.len() as u32).to_be_bytes());
-        ret[DELETED_TUPLES_LEN].copy_from_slice(&table.deleted_tuples_len.to_be_bytes());
-
-        const SLOT_SIZE: usize = TupleSlot::SIZE;
-        let mut from = SLOTS_START;
-        for slot in &table.slots {
-            let slot = TupleInfoBuf::from(slot);
-            ret[from..from + SLOT_SIZE].copy_from_slice(&slot);
-            from += SLOT_SIZE;
-        }
-
-        let offset = match table.slots.last() {
-            Some(o) => o.offset as usize,
-            None => return ret,
-        };
-        assert!(offset < PAGE_SIZE, "tuple being written at PAGE_SIZE or greater");
-
-        unsafe {
-            let tuples_ptr = table.page_start.add(offset);
-            let tuples = std::slice::from_raw_parts(tuples_ptr, PAGE_SIZE - offset);
-            ret[offset..].copy_from_slice(tuples);
-        }
-
-        ret
     }
 }
 
@@ -237,12 +225,13 @@ mod test {
     use bytes::BytesMut;
 
     use crate::{
-        page::{PageBuf, PAGE_SIZE},
+        catalog::schema::Schema,
+        page::{DiskObject, PAGE_SIZE},
         table::node::{Node, TupleData, TupleMeta, TupleSlot, RID},
     };
 
     #[test]
-    fn test_from() {
+    fn test_serde() {
         let mut buf = [0; PAGE_SIZE];
 
         let tuple_a = std::array::from_fn::<u8, 10, _>(|i| (i * 2) as u8);
@@ -269,9 +258,9 @@ mod test {
             ],
         };
 
-        let bytes = PageBuf::from(&table);
+        let bytes = table.serialise();
 
-        let mut table2 = Node::from(&bytes);
+        let mut table2 = Node::deserialise(bytes, &Schema::default());
 
         let offset = table.slots.last().unwrap().offset as usize;
         let tuples = unsafe {
