@@ -3,12 +3,10 @@ pub mod slot;
 
 use std::marker::PhantomData;
 
-use crate::btree::{
-    node::{Node, NodeType},
-    slot::{Either, Slot},
-};
+use crate::btree::node::{Node, NodeType};
+use crate::btree::slot::{Either, Slot};
 use crate::catalog::schema::Schema;
-use crate::page::{PageID, PageReadGuard, PageWriteGuard};
+use crate::page::{DiskObject, PageID, PageReadGuard, PageWriteGuard};
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::{Comparand, Data as TupleData};
@@ -43,9 +41,9 @@ where
         let rpage = match self.root {
             -1 => {
                 pin = self.pc.new_page()?;
-                let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true, self.schema);
+                let node: Node<V> = Node::new(pin.id, NodeType::Leaf, true);
                 let mut page = pin.write();
-                page.put(&node);
+                page.put2(&node);
                 page
             }
             id => {
@@ -57,14 +55,14 @@ where
 
         if let Some((s, os)) = self._insert(None, rpage, key, value)? {
             let new_root_page = self.pc.new_page()?;
-            let mut new_root = Node::new(new_root_page.id, NodeType::Internal, true, self.schema);
+            let mut new_root = Node::new(new_root_page.id, NodeType::Internal, true);
             self.root = new_root.id;
 
-            new_root.insert(s);
-            new_root.insert(os);
+            new_root.insert(s, self.schema);
+            new_root.insert(os, self.schema);
 
             let mut w = new_root_page.write();
-            w.put(&new_root);
+            w.put2(&new_root);
         }
 
         Ok(())
@@ -78,17 +76,17 @@ where
         key: &TupleData,
         value: &V,
     ) -> crate::Result<Option<(Slot<V>, Slot<V>)>> {
-        let mut node: Node<V> = Node::from(&page.data, self.schema);
+        let mut node: Node<V> = Node::deserialise(page.data, self.schema);
 
         let mut split = None;
-        if node.almost_full() {
+        if node.almost_full(self.schema) {
             let new_page = self.pc.new_page()?;
             let mut npage = new_page.write();
             let mut nnode = node.split(new_page.id);
 
             if Comparand(self.schema, key) >= Comparand(self.schema, node.last_key().unwrap()) {
                 // Write the node
-                page.put(&node);
+                page.put2(&node);
 
                 // We don't need to keep a lock on this side of the tree
                 drop(page);
@@ -96,24 +94,27 @@ where
                 // Find and insert
                 {
                     // Find the child node
-                    let ptr = match nnode.find_child(key) {
+                    let ptr = match nnode.find_child(key, self.schema) {
                         Some(ptr) => ptr,
                         None if nnode.t == NodeType::Internal => {
                             // Bump the last node if no pointer found
                             let Slot(_, v) = nnode.pop_last().unwrap();
-                            nnode.insert(Slot(key.next(self.schema), v));
+                            nnode.insert(Slot(key.next(self.schema), v), self.schema);
 
-                            match nnode.find_child(key) {
+                            match nnode.find_child(key, self.schema) {
                                 Some(ptr) => ptr,
                                 None => unreachable!(),
                             }
                         }
                         None => {
                             // Reached leaf node
-                            nnode.replace(Slot(key.clone(), Either::Value(value.clone())));
-                            npage.put(&nnode);
+                            nnode.replace(
+                                Slot(key.clone(), Either::Value(value.clone())),
+                                self.schema,
+                            );
+                            npage.put2(&nnode);
 
-                            return Ok(node.get_separators(Some(nnode)));
+                            return Ok(node.get_separators(Some(nnode), self.schema));
                         }
                     };
 
@@ -122,20 +123,20 @@ where
 
                     prev_page.take();
                     if let Some((s, os)) = self._insert(Some(&npage), cpage, key, value)? {
-                        nnode.replace(s);
-                        nnode.replace(os);
+                        nnode.replace(s, self.schema);
+                        nnode.replace(os, self.schema);
                     }
 
                     // Write the new node
-                    npage.put(&nnode);
+                    npage.put2(&nnode);
 
-                    return Ok(node.get_separators(Some(nnode)));
+                    return Ok(node.get_separators(Some(nnode), self.schema));
                 }
             }
 
             // Write the new node
             // Original node is written below
-            npage.put(&nnode);
+            npage.put2(&nnode);
 
             split = Some(nnode)
         }
@@ -143,24 +144,24 @@ where
         // Find and insert
         {
             // Find the child node
-            let ptr = match node.find_child(key) {
+            let ptr = match node.find_child(key, self.schema) {
                 Some(ptr) => ptr,
                 None if node.t == NodeType::Internal => {
                     // Bump the last node if no pointer found
                     let Slot(_, v) = node.pop_last().unwrap();
-                    node.insert(Slot(key.next(self.schema), v));
+                    node.insert(Slot(key.next(self.schema), v), self.schema);
 
-                    match node.find_child(key) {
+                    match node.find_child(key, self.schema) {
                         Some(ptr) => ptr,
                         None => unreachable!(),
                     }
                 }
                 None => {
                     // Reached leaf node
-                    node.replace(Slot(key.clone(), Either::Value(value.clone())));
-                    page.put(&node);
+                    node.replace(Slot(key.clone(), Either::Value(value.clone())), self.schema);
+                    page.put2(&node);
 
-                    return Ok(node.get_separators(split));
+                    return Ok(node.get_separators(split, self.schema));
                 }
             };
 
@@ -169,14 +170,14 @@ where
 
             prev_page.take();
             if let Some((s, os)) = self._insert(Some(&page), cpage, key, value)? {
-                node.replace(s);
-                node.replace(os);
+                node.replace(s, self.schema);
+                node.replace(os, self.schema);
             }
 
             // Write the original node
-            page.put(&node);
+            page.put2(&node);
 
-            Ok(node.get_separators(split))
+            Ok(node.get_separators(split, self.schema))
         }
     }
 
@@ -201,7 +202,7 @@ where
         page: PageReadGuard<'a>,
         acc: &mut Vec<(TupleData, V)>,
     ) -> crate::Result<()> {
-        let node: Node<V> = Node::from(&page.data, self.schema);
+        let node: Node<V> = Node::deserialise(page.data, self.schema);
 
         // Find first leaf
         if node.t != NodeType::Leaf {
@@ -258,7 +259,7 @@ where
         from: &TupleData,
         to: &TupleData,
     ) -> crate::Result<()> {
-        let node = Node::from(&page.data, self.schema);
+        let node = Node::deserialise(page.data, self.schema);
         let next = node.next;
         let len = acc.len();
         acc.extend(
@@ -294,9 +295,9 @@ where
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<V> = Node::from(&r.data, self.schema);
+        let node: Node<V> = Node::deserialise(r.data, self.schema);
 
-        match node.find_child(key) {
+        match node.find_child(key, self.schema) {
             Some(ptr) => self.get_ptr(key, ptr),
             None if node.t == NodeType::Leaf => Ok(Some(ptr)),
             None => Ok(None),
@@ -315,11 +316,11 @@ where
     fn _get(&self, key: &TupleData, ptr: PageID) -> crate::Result<Option<Slot<V>>> {
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node = Node::from(&r.data, self.schema);
+        let node = Node::deserialise(r.data, self.schema);
 
-        match node.find_child(key) {
+        match node.find_child(key, self.schema) {
             Some(ptr) => self._get(key, ptr),
-            None if node.t == NodeType::Leaf => Ok(node.get(key).cloned()),
+            None if node.t == NodeType::Leaf => Ok(node.get(key, self.schema).cloned()),
             None => Ok(None),
         }
     }
@@ -335,14 +336,14 @@ where
     fn _delete(&self, key: &TupleData, ptr: PageID) -> crate::Result<bool> {
         let page = self.pc.fetch_page(ptr)?;
         let mut w = page.write();
-        let mut node: Node<V> = Node::from(&w.data, self.schema);
+        let mut node: Node<V> = Node::deserialise(w.data, self.schema);
 
-        match node.find_child(key) {
+        match node.find_child(key, self.schema) {
             Some(ptr) => self._delete(key, ptr),
             None if node.t == NodeType::Leaf => {
-                let rem = node.remove(key);
+                let rem = node.remove(key, self.schema);
                 if rem {
-                    w.put(&node);
+                    w.put2(&node);
                 }
                 Ok(rem)
             }
@@ -356,7 +357,7 @@ where
 
         let page = self.pc.fetch_page(ptr)?;
         let r = page.read();
-        let node: Node<V> = Node::from(&r.data, self.schema);
+        let node: Node<V> = Node::deserialise(r.data, self.schema);
         if node.t == NodeType::Leaf {
             return Ok(ptr);
         }
@@ -381,7 +382,7 @@ where
         while cur != -1 {
             let pin = self.pc.fetch_page(cur)?;
             let page = pin.read();
-            let node: Node<V> = Node::from(&page.data, self.schema);
+            let node: Node<V> = Node::deserialise(page.data, self.schema);
 
             ret += 1;
             cur = node.next;
