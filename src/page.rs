@@ -74,11 +74,11 @@ impl Default for Page {
 
 impl Page {
     pub fn read(&self) -> PageReadGuard {
-        self.0.read().expect("todo")
+        self.0.read().unwrap()
     }
 
     pub fn write(&self) -> PageWriteGuard {
-        self.0.write().expect("todo")
+        self.0.write().unwrap()
     }
 
     pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<T>

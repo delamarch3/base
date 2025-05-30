@@ -66,8 +66,7 @@ impl List {
     pub fn iter(self: &Arc<Self>) -> Result<Iter> {
         let last_page_id = self.last_page_id();
         let page = self.pc.fetch_page(last_page_id)?;
-        let page_r = page.read();
-        let node = Node::deserialise(page_r.data, &Schema::default());
+        let node = page.read_object::<Node>(&Schema::default());
 
         Ok(Iter {
             list: Arc::clone(self),
@@ -158,8 +157,7 @@ impl Iterator for Iter {
             Ok(p) => p,
             Err(e) => return Some(Err(e)),
         };
-        let page_r = page.read();
-        let node = Node::deserialise(page_r.data, &Schema::default());
+        let node = page.read_object::<Node>(&Schema::default());
 
         if self.rid.page_id == self.end.page_id && self.rid.slot_id == self.end.slot_id - 1 {
             // Last tuple, increment (so the next iteration returns None) and return result
