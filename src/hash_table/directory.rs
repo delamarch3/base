@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::page::{PageBuf, PageID, PAGE_SIZE};
+use crate::page::{DiskObject, PageBuf, PageID, PAGE_SIZE};
 
 pub const PAGE_IDS_SIZE_U32: usize = 512;
 pub const PAGE_IDS_SIZE_U8: usize = 512 * 4;
@@ -16,6 +16,30 @@ pub struct Directory {
     local_depths: [u8; PAGE_IDS_SIZE_U32],
     /// Bucket page IDs
     page_ids: [u8; PAGE_IDS_SIZE_U8],
+}
+
+impl DiskObject for Directory {
+    fn serialise(&self) -> PageBuf {
+        let mut buf: PageBuf = [0; PAGE_SIZE];
+
+        buf[GLOBAL_DEPTH].copy_from_slice(&self.global_depth.to_be_bytes());
+        buf[LOCAL_DEPTHS].copy_from_slice(&self.local_depths);
+        buf[PAGE_IDS].copy_from_slice(&self.page_ids);
+
+        buf
+    }
+
+    fn deserialise(buf: PageBuf, _: &crate::catalog::schema::Schema) -> Self {
+        let global_depth = u32::from_be_bytes(buf[GLOBAL_DEPTH].try_into().unwrap());
+
+        let mut local_depths = [0; PAGE_IDS_SIZE_U32];
+        local_depths[..].copy_from_slice(&buf[LOCAL_DEPTHS]);
+
+        let mut bucket_page_ids = [0; PAGE_IDS_SIZE_U8];
+        bucket_page_ids[..].copy_from_slice(&buf[PAGE_IDS]);
+
+        Self { global_depth, local_depths, page_ids: bucket_page_ids }
+    }
 }
 
 impl From<&PageBuf> for Directory {

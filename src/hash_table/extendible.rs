@@ -28,7 +28,7 @@ where
     pub fn insert(&self, key: TupleData, value: V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
 
-        let mut dir = dir_page.write3::<Directory>();
+        let mut dir = dir_page.write3::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(&key, &dir);
         let bucket_page_id = dir.get(bucket_index);
@@ -92,7 +92,7 @@ where
 
     pub fn remove(&self, key: &TupleData, v: &V) -> crate::Result<bool> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>();
+        let dir = dir_page.read3::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
@@ -113,7 +113,7 @@ where
 
     pub fn get(&self, key: &TupleData) -> crate::Result<Vec<V>> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>();
+        let dir = dir_page.read3::<Directory>(&Schema::default());
 
         let bucket_index = get_bucket_index(key, &dir);
         let bucket_page_id = dir.get(bucket_index);
@@ -130,7 +130,7 @@ where
 
     pub fn get_num_buckets(&self) -> crate::Result<u32> {
         let dir_page = self.pc.fetch_page(self.dir_page_id)?;
-        let dir = dir_page.read3::<Directory>();
+        let dir = dir_page.read3::<Directory>(&Schema::default());
         Ok(1 << dir.global_depth())
     }
 }

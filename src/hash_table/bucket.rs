@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use crate::bitmap::BitMap;
 use crate::catalog::schema::Schema;
-use crate::page::{PageBuf, PAGE_SIZE};
+use crate::page::{DiskObject, PageBuf, PAGE_SIZE};
 use crate::pair::Pair;
 use crate::storable::Storable;
 use crate::table::tuple::Data as TupleData;
@@ -19,6 +19,68 @@ pub struct Bucket<V> {
     pub readable: BitMap<BITMAP_SIZE>,
     pairs: [Option<Pair<TupleData, V>>; 512],
     key_size: usize,
+}
+
+impl<V> DiskObject for Bucket<V>
+where
+    V: Storable,
+{
+    fn serialise(&self) -> PageBuf {
+        let mut buf: PageBuf = [0; PAGE_SIZE];
+
+        buf[OCCUPIED].copy_from_slice(self.occupied.as_slice());
+        buf[READABLE].copy_from_slice(self.occupied.as_slice());
+
+        let mut pos = BITMAP_SIZE * 2;
+        let key_size = self.key_size;
+        let pair_size = key_size + size_of::<V>();
+        for pair in &self.pairs {
+            if pos + pair_size > PAGE_SIZE {
+                break;
+            }
+
+            if let Some(pair) = pair {
+                buf[pos..pos + key_size].copy_from_slice(pair.a.as_bytes());
+                pos += pair.a.size();
+                pair.b.write_to(&mut buf, pos);
+                pos += pair.b.size();
+            }
+        }
+
+        buf
+    }
+
+    fn deserialise(buf: PageBuf, schema: &Schema) -> Self {
+        let mut occupied = BitMap::<BITMAP_SIZE>::new();
+        occupied.as_mut_slice().copy_from_slice(&buf[OCCUPIED]);
+
+        let mut readable = BitMap::<BITMAP_SIZE>::new();
+        readable.as_mut_slice().copy_from_slice(&buf[READABLE]);
+
+        // Use the occupied map to find pairs to insert
+        let mut pairs: [Option<Pair<TupleData, V>>; 512] = std::array::from_fn(|_| None);
+
+        let key_size = schema.tuple_size();
+        let value_size = size_of::<V>();
+
+        let mut pos = BITMAP_SIZE * 2;
+        for (i, pair) in pairs.iter_mut().enumerate() {
+            if !occupied.check(i) {
+                pos += key_size + value_size;
+                continue;
+            }
+
+            let key = TupleData::new(&buf[pos..pos + key_size]);
+            pos += key_size;
+
+            let value = V::from_bytes(&buf[pos..pos + value_size]);
+            pos += value_size;
+
+            *pair = Some(Pair::new(key, value));
+        }
+
+        Self { occupied, readable, pairs, key_size }
+    }
 }
 
 impl<V> From<&Bucket<V>> for PageBuf

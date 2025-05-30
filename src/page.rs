@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use crate::catalog::schema::Schema;
+
 pub const PAGE_SIZE: usize = 4 * 1024;
 
 pub type PageID = i32;
@@ -9,13 +11,18 @@ pub type PageBuf = [u8; PAGE_SIZE];
 pub type PageReadGuard<'a> = RwLockReadGuard<'a, PageInner>;
 pub type PageWriteGuard<'a> = RwLockWriteGuard<'a, PageInner>;
 
-pub struct PageReadGuard2<'a, T> {
+pub trait DiskObject {
+    fn serialise(&self) -> PageBuf;
+    fn deserialise(buf: PageBuf, schema: &Schema) -> Self;
+}
+
+pub struct PageReadGuardUnsafe<'a, T> {
     pub guard: RwLockReadGuard<'a, PageInner>,
     data: *const T,
     _data: PhantomData<&'a T>,
 }
 
-impl<'a, T> std::ops::Deref for PageReadGuard2<'a, T> {
+impl<'a, T> std::ops::Deref for PageReadGuardUnsafe<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -23,13 +30,13 @@ impl<'a, T> std::ops::Deref for PageReadGuard2<'a, T> {
     }
 }
 
-pub struct PageWriteGuard2<'a, T> {
+pub struct PageWriteGuardUnsafe<'a, T> {
     pub guard: RwLockWriteGuard<'a, PageInner>,
     data: *mut T,
     _data: PhantomData<&'a mut T>,
 }
 
-impl<'a, T> std::ops::Deref for PageWriteGuard2<'a, T> {
+impl<'a, T> std::ops::Deref for PageWriteGuardUnsafe<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -37,7 +44,7 @@ impl<'a, T> std::ops::Deref for PageWriteGuard2<'a, T> {
     }
 }
 
-impl<'a, T> std::ops::DerefMut for PageWriteGuard2<'a, T> {
+impl<'a, T> std::ops::DerefMut for PageWriteGuardUnsafe<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.data }
     }
@@ -56,28 +63,24 @@ impl<'a, T> std::ops::Deref for PageReadGuard3<'a, T> {
     }
 }
 
-pub struct PageWriteGuard3<'a, T>
-where
-    PageBuf: for<'b> From<&'b T>,
-{
+pub struct PageWriteGuard3<'a, T: DiskObject> {
     guard: RwLockWriteGuard<'a, PageInner>,
     data: T,
 }
 
 impl<'a, T> Drop for PageWriteGuard3<'a, T>
 where
-    PageBuf: for<'b> From<&'b T>,
+    T: DiskObject,
 {
     fn drop(&mut self) {
-        let buf: PageBuf = (&self.data).into();
+        let buf = self.data.serialise();
         self.guard.put(buf);
-        self.guard.dirty = true;
     }
 }
 
 impl<'a, T> std::ops::Deref for PageWriteGuard3<'a, T>
 where
-    PageBuf: for<'b> From<&'b T>,
+    T: DiskObject,
 {
     type Target = T;
 
@@ -88,7 +91,7 @@ where
 
 impl<'a, T> std::ops::DerefMut for PageWriteGuard3<'a, T>
 where
-    PageBuf: for<'b> From<&'b T>,
+    T: DiskObject,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
@@ -115,37 +118,35 @@ impl Page {
     }
 
     // For objects that can be directly reinterpreted
-    pub fn read2<T>(&self) -> PageReadGuard2<T> {
+    pub fn read2<T>(&self) -> PageReadGuardUnsafe<T> {
         let guard = self.0.read().unwrap();
         let data = guard.data.as_ptr() as *const T;
-        PageReadGuard2 { guard, data, _data: PhantomData }
+        PageReadGuardUnsafe { guard, data, _data: PhantomData }
     }
 
-    pub fn write2<T>(&self) -> PageWriteGuard2<T> {
+    pub fn write2<T>(&self) -> PageWriteGuardUnsafe<T> {
         let mut guard = self.0.write().unwrap();
         guard.dirty = true;
         let data = guard.data.as_mut_ptr() as *mut T;
-        PageWriteGuard2 { guard, data, _data: PhantomData }
+        PageWriteGuardUnsafe { guard, data, _data: PhantomData }
     }
 
     // A nicer interface compared to the current implementation
-    pub fn read3<T>(&self) -> PageReadGuard3<T>
+    pub fn read3<T>(&self, schema: &Schema) -> PageReadGuard3<'_, T>
     where
-        T: for<'b> From<&'b PageBuf>,
-        PageBuf: for<'b> From<&'b T>,
+        T: DiskObject,
     {
         let guard = self.0.read().unwrap();
-        let data: T = (&guard.data).into();
+        let data: T = DiskObject::deserialise(guard.data, schema);
         PageReadGuard3 { _guard: guard, data }
     }
 
-    pub fn write3<T>(&self) -> PageWriteGuard3<T>
+    pub fn write3<'a, T>(&self, schema: &'a Schema) -> PageWriteGuard3<'_, T>
     where
-        T: for<'b> From<&'b PageBuf>,
-        PageBuf: for<'b> From<&'b T>,
+        T: DiskObject,
     {
         let guard = self.0.write().unwrap();
-        let data: T = (&guard.data).into();
+        let data: T = DiskObject::deserialise(guard.data, schema);
         PageWriteGuard3 { guard, data }
     }
 }

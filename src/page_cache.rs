@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering::*};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use crate::catalog::schema::Schema;
 use crate::disk::Disk;
 use crate::page::{
-    Page, PageBuf, PageID, PageInner, PageReadGuard2, PageReadGuard3, PageWriteGuard2,
-    PageWriteGuard3,
+    DiskObject, Page, PageID, PageInner, PageReadGuard3, PageReadGuardUnsafe, PageWriteGuard3,
+    PageWriteGuardUnsafe,
 };
 use crate::replacer::{AccessType, LRU};
 
@@ -101,30 +102,28 @@ impl<'a> Pin<'a> {
         self.page.read()
     }
 
-    pub fn read2<T>(&self) -> PageReadGuard2<T> {
+    pub fn read2<T>(&self) -> PageReadGuardUnsafe<T> {
         self.page.read2::<T>()
     }
 
-    pub fn write2<T>(&self) -> PageWriteGuard2<T> {
+    pub fn write2<T>(&self) -> PageWriteGuardUnsafe<T> {
         let w = self.page.write2::<T>();
         assert!(self.id == w.guard.id);
         w
     }
 
-    pub fn read3<T>(&self) -> PageReadGuard3<T>
+    pub fn read3<T>(&self, schema: &Schema) -> PageReadGuard3<T>
     where
-        T: for<'b> From<&'b PageBuf>,
-        PageBuf: for<'b> From<&'b T>,
+        T: DiskObject,
     {
-        self.page.read3::<T>()
+        self.page.read3::<T>(schema)
     }
 
-    pub fn write3<T>(&self) -> PageWriteGuard3<T>
+    pub fn write3<T>(&self, schema: &Schema) -> PageWriteGuard3<T>
     where
-        T: for<'b> From<&'b PageBuf>,
-        PageBuf: for<'b> From<&'b T>,
+        T: DiskObject,
     {
-        self.page.write3::<T>()
+        self.page.write3::<T>(schema)
     }
 }
 
