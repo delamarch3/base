@@ -18,6 +18,16 @@ pub struct Directory {
     page_ids: [u8; PAGE_IDS_SIZE_U8],
 }
 
+impl Default for Directory {
+    fn default() -> Self {
+        Self {
+            global_depth: 0,
+            local_depths: [0; PAGE_IDS_SIZE_U32],
+            page_ids: [0; PAGE_IDS_SIZE_U8],
+        }
+    }
+}
+
 impl DiskObject for Directory {
     fn serialise(&self) -> PageBuf {
         let mut buf: PageBuf = [0; PAGE_SIZE];
@@ -39,38 +49,6 @@ impl DiskObject for Directory {
         bucket_page_ids[..].copy_from_slice(&buf[PAGE_IDS]);
 
         Self { global_depth, local_depths, page_ids: bucket_page_ids }
-    }
-}
-
-impl From<&PageBuf> for Directory {
-    fn from(buf: &PageBuf) -> Self {
-        let global_depth = u32::from_be_bytes(buf[GLOBAL_DEPTH].try_into().unwrap());
-
-        let mut local_depths = [0; PAGE_IDS_SIZE_U32];
-        local_depths[..].copy_from_slice(&buf[LOCAL_DEPTHS]);
-
-        let mut bucket_page_ids = [0; PAGE_IDS_SIZE_U8];
-        bucket_page_ids[..].copy_from_slice(&buf[PAGE_IDS]);
-
-        Self { global_depth, local_depths, page_ids: bucket_page_ids }
-    }
-}
-
-impl From<&Directory> for PageBuf {
-    fn from(dir: &Directory) -> Self {
-        let mut ret: PageBuf = [0; PAGE_SIZE];
-
-        ret[GLOBAL_DEPTH].copy_from_slice(&dir.global_depth.to_be_bytes());
-        ret[LOCAL_DEPTHS].copy_from_slice(&dir.local_depths);
-        ret[PAGE_IDS].copy_from_slice(&dir.page_ids);
-
-        ret
-    }
-}
-
-impl From<Directory> for PageBuf {
-    fn from(dir: Directory) -> Self {
-        Self::from(&dir)
     }
 }
 
@@ -119,14 +97,13 @@ fn depth_mask(depth: u32) -> usize {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        hash_table::directory::Directory,
-        page::{Page, PAGE_SIZE},
-    };
+    use crate::catalog::schema::Schema;
+    use crate::hash_table::directory::Directory;
+    use crate::page::{DiskObject, Page};
 
     #[test]
     fn test_depth_mask() {
-        let mut dir = Directory::from(&[0; PAGE_SIZE]);
+        let mut dir = Directory::default();
 
         assert_eq!(dir.global_depth_mask(), 0);
 
@@ -145,7 +122,7 @@ mod test {
         let page = Page::default();
         let mut w = page.write();
 
-        let mut dir = Directory::from(&w.data);
+        let mut dir = Directory::deserialise(w.data, &Schema::default());
 
         dir.insert(1, 1);
         dir.insert(2, 2);
@@ -155,10 +132,10 @@ mod test {
         assert_eq!(dir.get(2), 2);
         assert_eq!(dir.get(10), 10);
 
-        w.put(dir);
+        w.put2(&dir);
 
         // Make sure it reads back ok
-        let dir = Directory::from(&w.data);
+        let dir = Directory::deserialise(w.data, &Schema::default());
         assert_eq!(dir.get(1), 1);
         assert_eq!(dir.get(2), 2);
         assert_eq!(dir.get(10), 10);

@@ -83,81 +83,10 @@ where
     }
 }
 
-impl<V> From<&Bucket<V>> for PageBuf
-where
-    V: Storable,
-{
-    fn from(bucket: &Bucket<V>) -> Self {
-        let mut ret: PageBuf = [0; PAGE_SIZE];
-
-        ret[OCCUPIED].copy_from_slice(bucket.occupied.as_slice());
-        ret[READABLE].copy_from_slice(bucket.occupied.as_slice());
-
-        let mut pos = BITMAP_SIZE * 2;
-        let key_size = bucket.key_size;
-        let pair_size = key_size + size_of::<V>();
-        for pair in &bucket.pairs {
-            if pos + pair_size > PAGE_SIZE {
-                break;
-            }
-
-            if let Some(pair) = pair {
-                ret[pos..pos + key_size].copy_from_slice(pair.a.as_bytes());
-                pos += pair.a.size();
-                pair.b.write_to(&mut ret, pos);
-                pos += pair.b.size();
-            }
-        }
-
-        ret
-    }
-}
-
-impl<V> From<Bucket<V>> for PageBuf
-where
-    V: Storable,
-{
-    fn from(bucket: Bucket<V>) -> Self {
-        Self::from(&bucket)
-    }
-}
-
 impl<V> Bucket<V>
 where
     V: Storable + Copy + Eq,
 {
-    pub fn deserialise_page(buf: &PageBuf, schema: &Schema) -> Self {
-        let mut occupied = BitMap::<BITMAP_SIZE>::new();
-        occupied.as_mut_slice().copy_from_slice(&buf[OCCUPIED]);
-
-        let mut readable = BitMap::<BITMAP_SIZE>::new();
-        readable.as_mut_slice().copy_from_slice(&buf[READABLE]);
-
-        // Use the occupied map to find pairs to insert
-        let mut pairs: [Option<Pair<TupleData, V>>; 512] = std::array::from_fn(|_| None);
-
-        let key_size = schema.tuple_size();
-        let value_size = size_of::<V>();
-
-        let mut pos = BITMAP_SIZE * 2;
-        for (i, pair) in pairs.iter_mut().enumerate() {
-            if !occupied.check(i) {
-                pos += key_size + value_size;
-                continue;
-            }
-
-            let key = TupleData::new(&buf[pos..pos + key_size]);
-            pos += key_size;
-
-            let value = V::from_bytes(&buf[pos..pos + value_size]);
-            pos += value_size;
-
-            *pair = Some(Pair::new(key, value));
-        }
-
-        Self { occupied, readable, pairs, key_size }
-    }
-
     pub fn remove(&mut self, key: &TupleData, value: &V) -> bool {
         let mut ret = false;
         for (i, pair) in self.pairs.iter().enumerate() {
@@ -231,7 +160,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::hash_table::bucket::Bucket;
-    use crate::page::Page;
+    use crate::page::{DiskObject, Page};
     use crate::table::tuple::Builder as TupleBuilder;
     use crate::{column, schema};
 
@@ -241,7 +170,7 @@ mod test {
         let mut page_w = page.write();
         let key_schema = schema! { column!("c1", Int) };
 
-        let mut bucket: Bucket<i32> = Bucket::deserialise_page(&page_w.data, &key_schema);
+        let mut bucket: Bucket<i32> = Bucket::deserialise(page_w.data, &key_schema);
 
         let keys = [1, 3, 5, 7, 9].map(|n| TupleBuilder::new().int(n).build());
         let values = [2, 4, 6, 8, 10];
@@ -257,10 +186,10 @@ mod test {
         assert_eq!(bucket.get(4).unwrap(), &(keys[4].clone(), values[4]));
         assert!(bucket.get(5).is_none());
 
-        page_w.put(bucket);
+        page_w.put2(&bucket);
 
         // Make sure it reads back ok
-        let mut bucket: Bucket<i32> = Bucket::deserialise_page(&page_w.data, &key_schema);
+        let mut bucket: Bucket<i32> = Bucket::deserialise(page_w.data, &key_schema);
         assert_eq!(bucket.get(0).unwrap(), &(keys[0].clone(), values[0]));
         assert_eq!(bucket.get(1).unwrap(), &(keys[1].clone(), values[1]));
         assert_eq!(bucket.get(2).unwrap(), &(keys[2].clone(), values[2]));

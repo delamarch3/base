@@ -168,6 +168,10 @@ impl PageInner {
         self.put_range(&data.into(), 0..PAGE_SIZE);
     }
 
+    pub fn put2(&mut self, data: &impl DiskObject) {
+        self.put_range(&data.serialise(), 0..PAGE_SIZE);
+    }
+
     pub fn put_range(&mut self, data: &[u8], range: Range<usize>) {
         self.data[range].copy_from_slice(data);
         self.dirty = true;

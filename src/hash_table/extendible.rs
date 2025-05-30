@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::catalog::schema::Schema;
 use crate::hash_table::bucket::Bucket;
 use crate::hash_table::directory::{self, Directory};
-use crate::page::PageID;
+use crate::page::{DiskObject, PageID};
 use crate::page_cache::SharedPageCache;
 use crate::storable::Storable;
 use crate::table::tuple::Data as TupleData;
@@ -43,10 +43,10 @@ where
         };
 
         let mut bucket_w = bucket_page.write();
-        let mut bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
+        let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
 
         bucket.insert(key, value);
-        bucket_w.put(&bucket);
+        bucket_w.put2(&bucket);
 
         if bucket.is_full() {
             if dir.local_depth_mask(bucket_index) == dir.global_depth_mask() {
@@ -60,11 +60,11 @@ where
             // 4. Update the page ids in the directory
             let page0 = self.pc.new_page()?;
             let mut page0_w = page0.write();
-            let mut bucket0 = Bucket::deserialise_page(&page0_w.data, &self.schema);
+            let mut bucket0 = Bucket::deserialise(page0_w.data, &self.schema);
 
             let page1 = self.pc.new_page()?;
             let mut page1_w = page1.write();
-            let mut bucket1 = Bucket::deserialise_page(&page1_w.data, &self.schema);
+            let mut bucket1 = Bucket::deserialise(page1_w.data, &self.schema);
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
@@ -80,8 +80,8 @@ where
             }
 
             // dir_w.put(&dir);
-            page0_w.put(&bucket0);
-            page1_w.put(&bucket0);
+            page0_w.put2(&bucket0);
+            page1_w.put2(&bucket0);
 
             // TODO: mark original page on disk as ready to be allocated
             self.pc.remove_page(bucket_w.id);
@@ -101,10 +101,10 @@ where
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
         let mut bucket_w = bucket_page.write();
-        let mut bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
+        let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
 
         let ret = bucket.remove(key, v);
-        bucket_w.put(bucket);
+        bucket_w.put2(&bucket);
 
         // TODO: attempt to merge if empty
 
@@ -123,7 +123,7 @@ where
         };
 
         let bucket_w = bucket_page.read();
-        let bucket = Bucket::deserialise_page(&bucket_w.data, &self.schema);
+        let bucket = Bucket::deserialise(bucket_w.data, &self.schema);
 
         Ok(bucket.find(key))
     }
@@ -153,11 +153,12 @@ mod test {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
+    use crate::catalog::schema::Schema;
     use crate::disk::Memory;
     use crate::hash_table::bucket::BITMAP_SIZE;
     use crate::hash_table::directory::Directory;
     use crate::hash_table::extendible::ExtendibleHashTable;
-    use crate::page::PAGE_SIZE;
+    use crate::page::{DiskObject, PAGE_SIZE};
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
     use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
@@ -243,7 +244,7 @@ mod test {
 
         let dir_page = pm.fetch_page(0).expect("there should be a page 0");
         let dir_w = dir_page.write();
-        let dir = Directory::from(&dir_w.data);
+        let dir = Directory::deserialise(dir_w.data, &Schema::default());
 
         assert_eq!(dir.global_depth(), 1);
 
