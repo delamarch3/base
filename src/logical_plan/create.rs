@@ -2,8 +2,8 @@ use crate::catalog::schema::Schema;
 use crate::logical_plan::LogicalOperator;
 
 pub struct Create {
-    name: String,
-    schema: Schema,
+    pub name: String,
+    pub schema: Schema,
 }
 
 impl std::fmt::Display for Create {
@@ -29,13 +29,5 @@ impl From<Create> for LogicalOperator {
 impl Create {
     pub fn new(name: String, schema: Schema) -> Self {
         Self { name, schema }
-    }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn schema_mut(&mut self) -> &mut Schema {
-        &mut self.schema
     }
 }

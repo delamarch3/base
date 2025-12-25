@@ -1,12 +1,14 @@
-use crate::catalog::schema::{Column, SchemaBuilder, Type};
-use crate::catalog::Catalog;
-use crate::logical_plan::{
-    create, scan, scan_with_alias, values, values_with_alias, Builder as LogicalOperatorBuilder,
-    LogicalOperator, LogicalOperatorError,
-};
-use crate::sql::{
-    ColumnDef, ColumnType, Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint,
-    JoinType, OrderByExpr, Query, Select, Statement,
+use crate::{
+    catalog::{schema::SchemaBuilder, Catalog},
+    column,
+    logical_plan::{
+        create, scan, scan_with_alias, values, values_with_alias,
+        Builder as LogicalOperatorBuilder, LogicalOperator, LogicalOperatorError,
+    },
+    sql::{
+        ColumnDef, ColumnType, Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint,
+        JoinType, OrderByExpr, Query, Select, Statement,
+    },
 };
 
 #[derive(PartialEq)]
@@ -197,12 +199,10 @@ impl Planner {
 
         let mut builder = SchemaBuilder::new();
         for ColumnDef { ty, name } in columns {
-            let ty = match ty {
-                ColumnType::Int => Type::Int,
-                ColumnType::Varchar => Type::Varchar,
+            let column = match ty {
+                ColumnType::Int => column!(name, Int),
+                ColumnType::Varchar => column!(name, Varchar),
             };
-
-            let column = Column { name, ty, offset: 0, table: None };
 
             builder.append(column);
         }

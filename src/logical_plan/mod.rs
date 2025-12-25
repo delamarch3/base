@@ -137,9 +137,9 @@ impl LogicalOperator {
             LogicalOperator::Scan(scan) => &scan.schema,
             LogicalOperator::Limit(limit) => limit.input.schema(),
             LogicalOperator::Sort(sort) => sort.input.schema(),
-            LogicalOperator::Values(values) => values.schema(),
-            LogicalOperator::Insert(insert) => insert.schema(),
-            LogicalOperator::Create(create) => create.schema(),
+            LogicalOperator::Values(values) => &values.schema,
+            LogicalOperator::Insert(insert) => &insert.schema,
+            LogicalOperator::Create(create) => &create.schema,
         }
     }
 
@@ -153,9 +153,9 @@ impl LogicalOperator {
             LogicalOperator::Scan(scan) => &mut scan.schema,
             LogicalOperator::Limit(limit) => limit.input.schema_mut(),
             LogicalOperator::Sort(sort) => sort.input.schema_mut(),
-            LogicalOperator::Values(values) => values.schema_mut(),
-            LogicalOperator::Insert(insert) => insert.schema_mut(),
-            LogicalOperator::Create(create) => create.schema_mut(),
+            LogicalOperator::Values(values) => &mut values.schema,
+            LogicalOperator::Insert(insert) => &mut insert.schema,
+            LogicalOperator::Create(create) => &mut create.schema,
         }
     }
 }

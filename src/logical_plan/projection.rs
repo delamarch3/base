@@ -1,7 +1,9 @@
-use crate::catalog::schema::{Column, Schema, SchemaBuilder, Type};
-use crate::column;
-use crate::logical_plan::{expr_type, write_iter, LogicalOperator, LogicalOperatorError};
-use crate::sql::{Expr, Ident, SelectItem};
+use crate::{
+    catalog::schema::{Column, Schema, SchemaBuilder, Type},
+    column,
+    logical_plan::{expr_type, write_iter, LogicalOperator, LogicalOperatorError},
+    sql::{Expr, Ident, SelectItem},
+};
 
 /// `schema`, `projection` have the same length, each field has a corresponding field at the
 /// matching index

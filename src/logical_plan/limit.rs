@@ -1,8 +1,9 @@
-use crate::execution::eval;
-use crate::logical_plan::{Expr, LogicalOperator, LogicalOperatorError};
-use crate::schema;
-use crate::table::tuple::Data as TupleData;
-use crate::table::tuple::Value;
+use crate::{
+    execution::eval,
+    logical_plan::{Expr, LogicalOperator, LogicalOperatorError},
+    schema,
+    table::tuple::{Data as TupleData, Value},
+};
 
 pub struct Limit {
     pub limit: usize,

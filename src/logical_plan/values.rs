@@ -52,14 +52,6 @@ impl Values {
         values.alias = Some(alias);
         Ok(values)
     }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn schema_mut(&mut self) -> &mut Schema {
-        &mut self.schema
-    }
 }
 
 fn infer_schema(values: &[Vec<Expr>]) -> Result<Schema, LogicalOperatorError> {

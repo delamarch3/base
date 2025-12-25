@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use crate::logical_plan::{LogicalOperator, LogicalOperatorError};
-
-use crate::catalog::schema::Schema;
-use crate::catalog::TableInfo;
-use crate::{column, schema};
+use crate::{
+    catalog::{schema::Schema, TableInfo},
+    column,
+    logical_plan::{LogicalOperator, LogicalOperatorError},
+    schema,
+};
 
 pub struct Insert {
     pub input: Box<LogicalOperator>,
-    schema: Schema,
+    pub schema: Schema,
     pub table: Arc<TableInfo>,
 }
 
@@ -47,13 +48,5 @@ impl Insert {
         })?;
 
         Ok(Self { input, schema, table })
-    }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
-    }
-
-    pub fn schema_mut(&mut self) -> &mut Schema {
-        &mut self.schema
     }
 }
