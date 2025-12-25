@@ -5,6 +5,7 @@ use crate::catalog::TableInfo;
 use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
 mod aggregate;
+mod create;
 mod filter;
 mod group;
 mod insert;
@@ -17,12 +18,12 @@ mod values;
 
 pub use projection::ProjectionAttributes;
 use {
-    aggregate::Aggregate, filter::Filter, group::Group, insert::Insert, join::Join, limit::Limit,
-    projection::Projection, scan::Scan, sort::Sort, values::Values,
+    aggregate::Aggregate, create::Create, filter::Filter, group::Group, insert::Insert, join::Join,
+    limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
 };
 
-/// The first value will always be Some(..) unless it's a Scan. Binary operators like joins should
-/// have both
+/// The first value will always be Some(..) unless it's a leaf node like Scan.
+/// Binary operators like joins should have both
 pub type LogicalOperatorInputs<'a> = (Option<&'a LogicalOperator>, Option<&'a LogicalOperator>);
 
 pub struct LogicalOperatorError(String);
@@ -63,6 +64,7 @@ pub enum LogicalOperator {
     Sort(Sort),
     Values(Values),
     Insert(Insert),
+    Create(Create),
 }
 
 impl std::fmt::Display for LogicalOperator {
@@ -70,20 +72,25 @@ impl std::fmt::Display for LogicalOperator {
         fn fmt(
             f: &mut std::fmt::Formatter<'_>,
             plan: &LogicalOperator,
-            indent: u16,
+            indent: usize,
         ) -> std::fmt::Result {
-            (0..indent * 4).try_for_each(|_| write!(f, " "))?;
+            let spaces = indent * 4;
+            write!(f, "{:spaces$}", "")?;
+
             match plan {
                 LogicalOperator::Aggregate(aggregate) => writeln!(f, "{aggregate}"),
                 LogicalOperator::Filter(filter) => writeln!(f, "{filter}"),
                 LogicalOperator::Group(group) => writeln!(f, "{group}"),
                 LogicalOperator::Join(join) => writeln!(f, "{join}"),
-                LogicalOperator::Projection(projection) => writeln!(f, "{projection}"),
+                LogicalOperator::Projection(projection) => {
+                    writeln!(f, "{projection}")
+                }
                 LogicalOperator::Scan(scan) => writeln!(f, "{scan}"),
                 LogicalOperator::Limit(limit) => writeln!(f, "{limit}"),
                 LogicalOperator::Sort(sort) => writeln!(f, "{sort}"),
                 LogicalOperator::Values(values) => writeln!(f, "{values}"),
                 LogicalOperator::Insert(insert) => writeln!(f, "{insert}"),
+                LogicalOperator::Create(create) => writeln!(f, "{create}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -116,6 +123,7 @@ impl LogicalOperator {
             LogicalOperator::Sort(sort) => (Some(sort.input.as_ref()), None),
             LogicalOperator::Values(_) => (None, None),
             LogicalOperator::Insert(insert) => (Some(insert.input.as_ref()), None),
+            LogicalOperator::Create(_) => (None, None),
         }
     }
 
@@ -131,6 +139,7 @@ impl LogicalOperator {
             LogicalOperator::Sort(sort) => sort.input.schema(),
             LogicalOperator::Values(values) => values.schema(),
             LogicalOperator::Insert(insert) => insert.schema(),
+            LogicalOperator::Create(create) => create.schema(),
         }
     }
 
@@ -146,6 +155,7 @@ impl LogicalOperator {
             LogicalOperator::Sort(sort) => sort.input.schema_mut(),
             LogicalOperator::Values(values) => values.schema_mut(),
             LogicalOperator::Insert(insert) => insert.schema_mut(),
+            LogicalOperator::Create(create) => create.schema_mut(),
         }
     }
 }
@@ -206,6 +216,10 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalOperatorError>
 
 pub struct Builder {
     root: LogicalOperator,
+}
+
+pub fn create(name: String, schema: Schema) -> Builder {
+    Builder { root: LogicalOperator::Create(Create::new(name, schema)) }
 }
 
 pub fn scan(table_info: Arc<TableInfo>) -> Builder {

@@ -34,6 +34,7 @@ pub fn logical_to_physical(
             let input = logical_to_physical(*insert.input)?;
             Box::new(Insert::new(input, Arc::clone(&insert.table.table)))
         }
+        LogicalOperator::Create(_create) => todo!(),
     };
 
     Ok(exec)

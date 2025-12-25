@@ -1,11 +1,12 @@
+use crate::catalog::schema::{Column, SchemaBuilder, Type};
 use crate::catalog::Catalog;
 use crate::logical_plan::{
-    scan, scan_with_alias, values, values_with_alias, Builder as LogicalOperatorBuilder,
+    create, scan, scan_with_alias, values, values_with_alias, Builder as LogicalOperatorBuilder,
     LogicalOperator, LogicalOperatorError,
 };
 use crate::sql::{
-    Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, OrderByExpr,
-    Query, Select, Statement,
+    ColumnDef, ColumnType, Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint,
+    JoinType, OrderByExpr, Query, Select, Statement,
 };
 
 #[derive(PartialEq)]
@@ -57,7 +58,7 @@ impl Planner {
             Statement::Insert(insert) => self.build_insert(insert)?,
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
-            Statement::Create(create) => self.build_create(create),
+            Statement::Create(create) => self.build_create(create)?,
         };
 
         Ok(statement.build())
@@ -97,8 +98,6 @@ impl Planner {
                 JoinConstraint::On(expr) => query.join_on(rhs.build(), expr)?,
                 JoinConstraint::Using(columns) => query.join_using(rhs.build(), columns)?,
             };
-
-            // query = query.join_on(rhs.build(), predicate);
         }
 
         if let Some(filter) = filter {
@@ -108,8 +107,8 @@ impl Planner {
             query = query.filter(filter);
         }
 
-        // There may or may not be a aggregate function in the projection. If there isn't, then it
-        // should still group by, where the first processed tuple columns are in the result
+        // There may or may not be an aggregate function in the projection. If there isn't, then it
+        // should still group by, where the first/last processed tuple columns are in the result
         if !group.is_empty() {
             todo!()
         }
@@ -184,8 +183,33 @@ impl Planner {
         Ok(builder)
     }
 
-    fn build_create(&self, _create: Create) -> LogicalOperatorBuilder {
-        todo!()
+    fn build_create(
+        &self,
+        Create { name, columns }: Create,
+    ) -> Result<LogicalOperatorBuilder, PlannerError> {
+        let Ident::Single(name) = name else {
+            Err(format!("multiple schemas aren't supported: {name}"))?
+        };
+
+        if self.catalog.get_table_by_name(&name).is_some() {
+            Err(format!("{name} already exists"))?
+        };
+
+        let mut builder = SchemaBuilder::new();
+        for ColumnDef { ty, name } in columns {
+            let ty = match ty {
+                ColumnType::Int => Type::Int,
+                ColumnType::Varchar(_) => Type::Varchar,
+            };
+
+            let column = Column { name, ty, offset: 0, table: None };
+
+            builder.append(column);
+        }
+
+        let schema = builder.build();
+
+        Ok(create(name, schema))
     }
 }
 
@@ -224,7 +248,7 @@ mod test {
                 let planner = Planner::new(catalog);
                 let plan = planner.plan_statement(select).unwrap();
 
-                assert_eq!(plan.to_string(), $want);
+                assert_eq!($want, plan.to_string());
             }
         };
 
@@ -245,13 +269,13 @@ mod test {
                 let planner = Planner::new(catalog);
                 let plan = planner.plan_statement(select).unwrap();
 
-                assert_eq!(plan.to_string(), $want);
+                assert_eq!($want, plan.to_string());
             }
         };
     }
 
     test_statement!(
-        t1,
+        simple_select,
         {
             "t1" => schema!{ column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
         },
@@ -264,7 +288,7 @@ Projection [*]
     );
 
     test_statement!(
-        t2,
+        select_with_join_on,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
             "t2" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
@@ -280,7 +304,7 @@ Projection [*]
     );
 
     test_statement!(
-        t3,
+        select_with_join_using,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
             "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
@@ -299,7 +323,7 @@ Projection [*]
     );
 
     test_statement!(
-        t4,
+        select_with_projection,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt),
                      column!("c4", BigInt), column!("c5", BigInt)}
@@ -313,7 +337,7 @@ Projection [c1, c2, c3, c4 AS column_four]
     );
 
     test_statement!(
-        t5,
+        select_with_derived_tables,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
             "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
@@ -333,7 +357,7 @@ Projection [d1.*, d2.c3, d2.c4]
     );
 
     test_statement!(
-        t6,
+        select_from_values,
         "SELECT * FROM VALUES (1, 2, 3), (4, 5, 6)",
         "\
 Projection [*]
@@ -342,7 +366,7 @@ Projection [*]
     );
 
     test_statement!(
-        t7,
+        insert_from_values,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
         },
@@ -354,7 +378,7 @@ Insert table=t1 oid=0
     );
 
     test_statement!(
-        t8,
+        insert_from_derived_table,
         {
             "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
         },
@@ -363,6 +387,14 @@ Insert table=t1 oid=0
 Insert table=t1 oid=0
     Projection [*]
         Values [(1, 2, 3), (4, 5, 6)]
+"
+    );
+
+    test_statement!(
+        create_table,
+        "CREATE TABLE t1 (c1 INT, c2 VARCHAR(0))",
+        "\
+Create table=t1 schema=[c1 INT, c2 VARCHAR]
 "
     );
 }

@@ -22,7 +22,7 @@ impl std::fmt::Display for Type {
 impl Type {
     /// Returns the size of any value of the type at tuple level
     /// Since varchar is variable length, we only store the offset and
-    /// the size at the tuple level (2 bytes each)
+    /// the size in the tuple (2 bytes each), and append the actual data at the end
     pub fn size(&self) -> usize {
         match self {
             Type::TinyInt | Type::Bool => 1,
@@ -39,6 +39,12 @@ pub struct Column {
     pub ty: Type,
     pub offset: usize,
     pub table: Option<String>,
+}
+
+impl std::fmt::Display for Column {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.name, self.ty)
+    }
 }
 
 #[derive(PartialEq, Clone, Debug, Default)]
