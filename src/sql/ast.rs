@@ -324,7 +324,7 @@ pub struct Create {
 #[derive(PartialEq, Debug)]
 pub enum ColumnType {
     Int,
-    Varchar(u16),
+    Varchar,
 }
 
 #[derive(PartialEq, Debug)]

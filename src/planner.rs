@@ -199,7 +199,7 @@ impl Planner {
         for ColumnDef { ty, name } in columns {
             let ty = match ty {
                 ColumnType::Int => Type::Int,
-                ColumnType::Varchar(_) => Type::Varchar,
+                ColumnType::Varchar => Type::Varchar,
             };
 
             let column = Column { name, ty, offset: 0, table: None };
@@ -392,7 +392,7 @@ Insert table=t1 oid=0
 
     test_statement!(
         create_table,
-        "CREATE TABLE t1 (c1 INT, c2 VARCHAR(0))",
+        "CREATE TABLE t1 (c1 INT, c2 VARCHAR)",
         "\
 Create table=t1 schema=[c1 INT, c2 VARCHAR]
 "

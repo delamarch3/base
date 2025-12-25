@@ -15,7 +15,7 @@ struct Unexpected<'a>(&'a Token, &'a Location);
 
 impl<'a> std::fmt::Display for Unexpected<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: unexpected token {:?}", self.1, self.0)
+        write!(f, "unexpected token {}: {:?}", self.1, self.0)
     }
 }
 
@@ -290,18 +290,7 @@ impl Parser {
         let (token, location) = self.next();
         let ty = match token {
             Token::Keyword(Keyword::Int) => ColumnType::Int,
-            Token::Keyword(Keyword::Varchar) => {
-                self.parse_tokens(&[Token::LParen])?;
-                let (token, location) = self.next();
-                let max = match token {
-                    Token::NumberLiteral(ref max) => {
-                        max.parse().map_err(|_| Unexpected(&token, &location))?
-                    }
-                    _ => Err(Unexpected(&token, &location))?,
-                };
-                self.parse_tokens(&[Token::RParen])?;
-                ColumnType::Varchar(max)
-            }
+            Token::Keyword(Keyword::Varchar) => ColumnType::Varchar,
             _ => Err(Unexpected(&token, &location))?,
         };
 
@@ -697,14 +686,14 @@ mod test {
         let input = "
             CREATE TABLE t1 (
                 c1 INT,
-                c2 VARCHAR(1024)
+                c2 VARCHAR
             )";
 
         let want = vec![Statement::Create(Create {
             name: Ident::Single("t1".into()),
             columns: vec![
                 ColumnDef { ty: ColumnType::Int, name: "c1".into() },
-                ColumnDef { ty: ColumnType::Varchar(1024), name: "c2".into() },
+                ColumnDef { ty: ColumnType::Varchar, name: "c2".into() },
             ],
         })];
 
