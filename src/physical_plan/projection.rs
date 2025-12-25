@@ -41,7 +41,7 @@ impl PhysicalOperator for Projection {
                 }
                 SelectItem::QualifiedWildcard(ident) => {
                     for column in input_schema.columns.iter().filter(|Column { table, .. }| {
-                        table.as_ref().map_or(false, |table| table.as_str() == &ident[0])
+                        table.as_ref().is_some_and(|table| table.as_str() == &ident[0])
                     }) {
                         let value = input_tuple.get_value(column.offset, column.ty);
                         tuple = tuple.add(&value);
@@ -54,6 +54,6 @@ impl PhysicalOperator for Projection {
     }
 
     fn schema(&self) -> &Schema {
-        &self.attributes.schema()
+        self.attributes.schema()
     }
 }

@@ -125,7 +125,7 @@ impl LogicalOperator {
             LogicalOperator::Filter(filter) => filter.input.schema(),
             LogicalOperator::Group(group) => group.input.schema(),
             LogicalOperator::Join(join) => &join.schema,
-            LogicalOperator::Projection(projection) => &projection.attributes.schema(),
+            LogicalOperator::Projection(projection) => projection.attributes.schema(),
             LogicalOperator::Scan(scan) => &scan.schema,
             LogicalOperator::Limit(limit) => limit.input.schema(),
             LogicalOperator::Sort(sort) => sort.input.schema(),

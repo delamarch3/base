@@ -62,15 +62,14 @@ impl Values {
     }
 }
 
-fn infer_schema(values: &Vec<Vec<Expr>>) -> Result<Schema, LogicalOperatorError> {
+fn infer_schema(values: &[Vec<Expr>]) -> Result<Schema, LogicalOperatorError> {
     let mut schema = SchemaBuilder::new();
 
     if values.is_empty() {
         return Ok(schema.build());
     }
 
-    let mut pos = 0;
-    for expr in &values[0] {
+    for (pos, expr) in values[0].iter().enumerate() {
         match expr {
             Expr::Ident(..) => Err("column references aren't supported inside VALUES")?,
             Expr::Literal(literal) => {
@@ -95,8 +94,6 @@ fn infer_schema(values: &Vec<Vec<Expr>>) -> Result<Schema, LogicalOperatorError>
             Expr::Wildcard => todo!(),
             Expr::QualifiedWildcard(..) => todo!(),
         }
-
-        pos += 1;
     }
 
     Ok(schema.build())

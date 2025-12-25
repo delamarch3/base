@@ -43,7 +43,7 @@ impl Insert {
 
         // TODO: support type coercion
         insert_schema.iter().zip(table_schema.iter()).try_for_each(|(a, b)| {
-            (a.ty == b.ty).then_some(()).ok_or_else(|| "insert schema does not match table schema")
+            (a.ty == b.ty).then_some(()).ok_or("insert schema does not match table schema")
         })?;
 
         Ok(Self { input, schema, table })

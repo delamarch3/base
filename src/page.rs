@@ -73,15 +73,15 @@ impl Default for Page {
 }
 
 impl Page {
-    pub fn read(&self) -> PageReadGuard {
+    pub fn read(&self) -> PageReadGuard<'_> {
         self.0.read().unwrap()
     }
 
-    pub fn write(&self) -> PageWriteGuard {
+    pub fn write(&self) -> PageWriteGuard<'_> {
         self.0.write().unwrap()
     }
 
-    pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<T>
+    pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<'_, T>
     where
         T: DiskObject,
     {
@@ -90,7 +90,7 @@ impl Page {
         ObjectReadGuard { _guard: guard, data }
     }
 
-    pub fn write_object<T>(&self, schema: &Schema) -> ObjectWriteGuard<T>
+    pub fn write_object<T>(&self, schema: &Schema) -> ObjectWriteGuard<'_, T>
     where
         T: DiskObject,
     {

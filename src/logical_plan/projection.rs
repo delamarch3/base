@@ -51,7 +51,7 @@ impl ProjectionAttributes {
                         .columns
                         .iter()
                         .filter(|Column { table, .. }| {
-                            table.as_ref().map_or(false, |table| table.as_str() == &ident[0])
+                            table.as_ref().is_some_and(|table| table.as_str() == &ident[0])
                         })
                         .cloned(),
                 ),

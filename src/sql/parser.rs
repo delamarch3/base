@@ -391,12 +391,9 @@ impl Parser {
 
             Token::Keyword(Keyword::Select) => Expr::SubQuery(self.parse_query().map(Box::new)?),
 
-            Token::Keyword(kw) => match kw {
-                Keyword::Min | Keyword::Max | Keyword::Sum | Keyword::Avg | Keyword::Count => {
-                    Expr::Function(self.parse_function()?)
-                }
-                _ => Err(Unexpected(&token, &location))?,
-            },
+            Token::Keyword(
+                Keyword::Min | Keyword::Max | Keyword::Sum | Keyword::Avg | Keyword::Count,
+            ) => Expr::Function(self.parse_function()?),
 
             Token::Ident(_) => {
                 let ident = self.parse_ident()?;
@@ -663,7 +660,7 @@ impl Parser {
                 continue;
             }
 
-            Err(Unexpected(&have, &location))?;
+            Err(Unexpected(have, &location))?;
         }
 
         Ok(())
@@ -683,7 +680,7 @@ impl Parser {
     }
 
     fn get(&self, i: usize) -> (Token, Location) {
-        self.tokens.get(i).map(|t| t.clone()).unwrap_or((Token::Eof, Default::default()))
+        self.tokens.get(i).cloned().unwrap_or((Token::Eof, Default::default()))
     }
 }
 

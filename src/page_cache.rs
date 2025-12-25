@@ -91,24 +91,24 @@ impl<'a> Pin<'a> {
         Self { page, i, id, replacer }
     }
 
-    pub fn write(&self) -> PageWriteGuard {
+    pub fn write(&self) -> PageWriteGuard<'_> {
         let w = self.page.write();
         assert!(self.id == w.id, "page was swapped out whilst a pin was held");
         w
     }
 
-    pub fn read(&self) -> PageReadGuard {
+    pub fn read(&self) -> PageReadGuard<'_> {
         self.page.read()
     }
 
-    pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<T>
+    pub fn read_object<T>(&self, schema: &Schema) -> ObjectReadGuard<'_, T>
     where
         T: DiskObject,
     {
         self.page.read_object::<T>(schema)
     }
 
-    pub fn write_object<T>(&self, schema: &Schema) -> ObjectWriteGuard<T>
+    pub fn write_object<T>(&self, schema: &Schema) -> ObjectWriteGuard<'_, T>
     where
         T: DiskObject,
     {
@@ -148,13 +148,13 @@ impl PageCache {
         self.next_page_id.fetch_add(1, Relaxed)
     }
 
-    pub fn new_page(&self) -> Result<Pin> {
+    pub fn new_page(&self) -> Result<Pin<'_>> {
         let page_id = self.allocate_page();
 
         self.try_get_page(page_id)
     }
 
-    pub fn fetch_page(&self, page_id: PageID) -> Result<Pin> {
+    pub fn fetch_page(&self, page_id: PageID) -> Result<Pin<'_>> {
         if let Some(i) = self.page_table.read().expect("todo").get(&page_id) {
             let mut replacer = self.replacer.lock();
             replacer.record_access(*i, AccessType::Get);
@@ -166,7 +166,7 @@ impl PageCache {
         self.try_get_page(page_id)
     }
 
-    fn try_get_page(&self, page_id: PageID) -> Result<Pin> {
+    fn try_get_page(&self, page_id: PageID) -> Result<Pin<'_>> {
         let i = match self.free.pop() {
             Some(i) => i,
             None => self.replacer.evict().ok_or(PageCacheError::OutOfMemory)?, // All pages are pinned

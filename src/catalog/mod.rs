@@ -7,7 +7,7 @@ use crate::page_cache::SharedPageCache;
 use crate::table::{
     list::{List as TableInner, ListRef as TableRef},
     node::RID,
-    tuple::{fit_tuple_with_schema, Data as TupleData},
+    tuple::fit_tuple_with_schema,
 };
 
 use std::collections::HashMap;
@@ -111,15 +111,15 @@ impl Catalog {
         self.index_names.insert(name.into(), HashMap::new());
         self.tables.insert(oid, Arc::new(info));
 
-        Ok(self.tables.get(&oid).map(|info| info.clone()))
+        Ok(self.tables.get(&oid).cloned())
     }
 
     pub fn get_table_by_oid(&self, oid: OID) -> Option<Arc<TableInfo>> {
-        self.tables.get(&oid).map(|info| info.clone())
+        self.tables.get(&oid).cloned()
     }
 
     pub fn get_table_by_name(&self, name: &str) -> Option<Arc<TableInfo>> {
-        self.tables.get(self.table_names.get(name)?).map(|info| info.clone())
+        self.tables.get(self.table_names.get(name)?).cloned()
     }
 
     pub fn list_tables(&self) -> Vec<&String> {
@@ -182,21 +182,20 @@ impl Catalog {
         self.indexes.insert(oid, Arc::new(info));
         indexed_table.insert(index_name.into(), oid);
 
-        self.indexes.get(&oid).map(|info| info.clone())
+        self.indexes.get(&oid).cloned()
     }
 
     pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<Arc<IndexInfo>> {
         self.indexes
-            .get(self.index_names.get(table_name)?.get(index_name)?)
-            .map(|info| info.clone())
+            .get(self.index_names.get(table_name)?.get(index_name)?).cloned()
     }
 
     pub fn get_index_by_oid(&self, oid: OID) -> Option<Arc<IndexInfo>> {
-        self.indexes.get(&oid).map(|info| info.clone())
+        self.indexes.get(&oid).cloned()
     }
 
     pub fn list_indexes(&self) -> Vec<Arc<IndexInfo>> {
-        self.indexes.values().map(|info| info.clone()).collect()
+        self.indexes.values().cloned().collect()
     }
 }
 

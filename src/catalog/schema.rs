@@ -104,7 +104,7 @@ impl Schema {
         column_name: &str,
     ) -> Option<&Column> {
         self.columns.iter().find(|Column { name, table, .. }| {
-            table.as_ref().map_or(false, |table| table == table_name) && name == column_name
+            table.as_ref().is_some_and(|table| table == table_name) && name == column_name
         })
     }
 
@@ -125,6 +125,12 @@ pub struct SchemaBuilder {
     columns: Vec<Column>,
 }
 
+impl Default for SchemaBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SchemaBuilder {
     pub fn new() -> Self {
         Self { columns: vec![] }
@@ -136,7 +142,7 @@ impl SchemaBuilder {
     }
 
     pub fn append_n(&mut self, column: impl IntoIterator<Item = Column>) -> &mut Self {
-        self.columns.extend(column.into_iter());
+        self.columns.extend(column);
         self
     }
 
@@ -150,16 +156,13 @@ macro_rules! schema {
     () => {
         {
             let columns = Vec::new();
-            crate::catalog::schema::Schema::new(columns)
+            $crate::catalog::schema::Schema::new(columns)
         }
     };
     ( $( $column:expr ),* ) => {
         {
-            let mut columns = Vec::new();
-            $(
-                columns.push($column);
-            )*
-            crate::catalog::schema::Schema::new(columns).compact()
+            let columns = vec![$($column,)*];
+            $crate::catalog::schema::Schema::new(columns).compact()
         }
     };
 }
@@ -167,22 +170,22 @@ macro_rules! schema {
 #[macro_export]
 macro_rules! column {
     ($name:expr, $ty:tt, $table:expr) => {
-        crate::catalog::schema::Column {
+        $crate::catalog::schema::Column {
             name: $name.into(),
-            ty: crate::catalog::schema::Type::$ty,
+            ty: $crate::catalog::schema::Type::$ty,
             offset: 0,
             table: Some($table.into()),
         }
     };
     ($name:expr, $ty:tt) => {
-        crate::catalog::schema::Column {
+        $crate::catalog::schema::Column {
             name: $name.into(),
-            ty: crate::catalog::schema::Type::$ty,
+            ty: $crate::catalog::schema::Type::$ty,
             offset: 0,
             table: None,
         }
     };
     ($name:expr => $ty:expr) => {
-        crate::catalog::schema::Column { name: $name.into(), ty: $ty, offset: 0, table: None }
+        $crate::catalog::schema::Column { name: $name.into(), ty: $ty, offset: 0, table: None }
     };
 }

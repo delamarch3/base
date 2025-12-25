@@ -110,7 +110,7 @@ impl Planner {
 
         // There may or may not be a aggregate function in the projection. If there isn't, then it
         // should still group by, where the first processed tuple columns are in the result
-        if group.len() > 0 {
+        if !group.is_empty() {
             todo!()
         }
 
@@ -147,7 +147,9 @@ impl Planner {
                 let mut query = self.build_query(*query)?;
 
                 // Alias applies to all columns in the query, all tables
-                let Some(alias) = alias else { Err(format!("internal: expected derived alias"))? };
+                let Some(alias) = alias else {
+                    Err("internal: expected derived alias".to_string())?
+                };
                 query.schema_mut().qualify(&alias);
 
                 (query, alias)
@@ -182,7 +184,7 @@ impl Planner {
         Ok(builder)
     }
 
-    fn build_create(&self, create: Create) -> LogicalOperatorBuilder {
+    fn build_create(&self, _create: Create) -> LogicalOperatorBuilder {
         todo!()
     }
 }

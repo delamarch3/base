@@ -52,7 +52,7 @@ pub fn wildcard() -> SelectItem {
 }
 
 pub fn ident(ident: &str) -> Expr {
-    let ident = Parser::new(&ident).expect("invalid input").parse_ident().expect("invalid ident");
+    let ident = Parser::new(ident).expect("invalid input").parse_ident().expect("invalid ident");
     Expr::Ident(ident)
 }
 

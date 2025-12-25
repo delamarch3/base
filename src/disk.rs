@@ -36,7 +36,8 @@ impl Disk for FileSystem {
 
 impl FileSystem {
     pub fn new(file: impl AsRef<Path>) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).write(true).create(true).open(file)?;
+        let file =
+            OpenOptions::new().read(true).write(true).create(true).truncate(false).open(file)?;
 
         Ok(Self { file })
     }
@@ -75,7 +76,7 @@ impl Disk for Memory {
 
 impl Memory {
     pub fn new<const SIZE: usize>() -> Self {
-        assert!(SIZE % PAGE_SIZE == 0);
+        assert!(SIZE.is_multiple_of(PAGE_SIZE));
 
         Self { buf: UnsafeCell::new(Box::new([0; SIZE])), size: SIZE }
     }

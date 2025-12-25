@@ -42,7 +42,7 @@ where
         };
 
         let mut bucket_w = bucket_page.write();
-        let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
+        let mut bucket = Bucket::deserialise(bucket_w.data, self.schema);
 
         bucket.insert(key, value);
         bucket_w.put(&bucket);
@@ -59,11 +59,11 @@ where
             // 4. Update the page ids in the directory
             let page0 = self.pc.new_page()?;
             let mut page0_w = page0.write();
-            let mut bucket0 = Bucket::deserialise(page0_w.data, &self.schema);
+            let mut bucket0 = Bucket::deserialise(page0_w.data, self.schema);
 
             let page1 = self.pc.new_page()?;
             let mut page1_w = page1.write();
-            let mut bucket1 = Bucket::deserialise(page1_w.data, &self.schema);
+            let mut bucket1 = Bucket::deserialise(page1_w.data, self.schema);
 
             let bit = dir.get_local_high_bit(bucket_index);
             for pair in bucket.get_pairs() {
@@ -99,7 +99,7 @@ where
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
         let mut bucket_w = bucket_page.write();
-        let mut bucket = Bucket::deserialise(bucket_w.data, &self.schema);
+        let mut bucket = Bucket::deserialise(bucket_w.data, self.schema);
 
         let ret = bucket.remove(key, v);
         bucket_w.put(&bucket);
@@ -118,7 +118,7 @@ where
             _ => self.pc.fetch_page(bucket_page_id)?,
         };
 
-        let bucket = bucket_page.read_object::<Bucket<V>>(&self.schema);
+        let bucket = bucket_page.read_object::<Bucket<V>>(self.schema);
 
         Ok(bucket.find(key))
     }

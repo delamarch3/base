@@ -134,7 +134,7 @@ fn eval_between(
         return Ok(Value::Bool(false));
     }
 
-    Ok(Value::Bool(true && !negated))
+    Ok(Value::Bool(!negated))
 }
 
 fn eval_binary_op(

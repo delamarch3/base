@@ -24,7 +24,7 @@ impl PhysicalOperator for Filter {
                 Value::TinyInt(0) | Value::Bool(false) | Value::Int(0) | Value::BigInt(0) => {
                     continue
                 }
-                Value::Varchar(s) if s.len() == 0 => continue,
+                Value::Varchar(s) if s.is_empty() => continue,
                 _ => break Ok(Some(input_tuple)),
             }
         }
