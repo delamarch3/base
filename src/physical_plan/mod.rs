@@ -1,6 +1,7 @@
 use crate::catalog::schema::Schema;
 use crate::table::tuple::Data as TupleData;
 
+mod create;
 mod filter;
 mod insert;
 mod limit;
@@ -9,8 +10,8 @@ mod scan;
 mod values;
 
 pub use {
-    filter::Filter, insert::Insert, limit::Limit, projection::Projection, scan::Scan,
-    values::Values,
+    create::Create, filter::Filter, insert::Insert, limit::Limit, projection::Projection,
+    scan::Scan, values::Values,
 };
 
 pub struct PhysicalOperatorError(String);

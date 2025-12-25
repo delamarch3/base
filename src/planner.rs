@@ -208,6 +208,7 @@ impl Planner {
         }
 
         let schema = builder.build();
+        // self.catalog.create_table(&name, schema.clone());
 
         Ok(create(name, schema))
     }
