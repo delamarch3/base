@@ -19,7 +19,7 @@ impl std::error::Error for PhysicalOperatorError {}
 
 impl std::fmt::Display for PhysicalOperatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "physical operator error: {}", self.0)
+        write!(f, "execution error: {}", self.0)
     }
 }
 

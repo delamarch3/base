@@ -121,6 +121,19 @@ pub enum PageCacheError {
     Disk(std::io::ErrorKind),
     OutOfMemory,
 }
+
+impl std::error::Error for PageCacheError {}
+
+impl std::fmt::Display for PageCacheError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "page cache error: ")?;
+        match self {
+            Self::Disk(e) => write!(f, "{e}"),
+            Self::OutOfMemory => write!(f, "out of memory"),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, PageCacheError>;
 
 pub struct PageCache {

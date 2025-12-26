@@ -1,19 +1,23 @@
 pub mod schema;
 use schema::Schema;
 
-use crate::btree::BTree;
-use crate::page::PageID;
-use crate::page_cache::SharedPageCache;
-use crate::table::{
-    list::{List as TableInner, ListRef as TableRef},
-    node::RID,
-    tuple::fit_tuple_with_schema,
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU32, Ordering::Relaxed},
+        Arc, Mutex,
+    },
 };
 
-use std::collections::HashMap;
-use std::sync::{
-    atomic::{AtomicU32, Ordering::Relaxed},
-    Arc,
+use crate::{
+    btree::BTree,
+    page::PageID,
+    page_cache::SharedPageCache,
+    table::{
+        list::{List as TableInner, ListRef as TableRef},
+        node::RID,
+        tuple::fit_tuple_with_schema,
+    },
 };
 
 pub type OID = u32;
@@ -76,6 +80,8 @@ pub struct Catalog {
     index_names: HashMap<String, HashMap<String, OID>>, // table -> index -> oid
     next_index_oid: AtomicU32,
 }
+
+pub type SharedCatalog = Arc<Mutex<Catalog>>;
 
 impl Catalog {
     pub fn new(pc: SharedPageCache) -> Self {
@@ -186,8 +192,7 @@ impl Catalog {
     }
 
     pub fn get_index(&self, table_name: &str, index_name: &str) -> Option<Arc<IndexInfo>> {
-        self.indexes
-            .get(self.index_names.get(table_name)?.get(index_name)?).cloned()
+        self.indexes.get(self.index_names.get(table_name)?.get(index_name)?).cloned()
     }
 
     pub fn get_index_by_oid(&self, oid: OID) -> Option<Arc<IndexInfo>> {

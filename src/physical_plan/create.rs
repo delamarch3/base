@@ -1,5 +1,5 @@
 use crate::{
-    catalog::{schema::Schema, Catalog},
+    catalog::{schema::Schema, SharedCatalog},
     column,
     physical_plan::{PhysicalOperator, PhysicalOperatorError},
     schema,
@@ -7,21 +7,32 @@ use crate::{
 };
 
 pub struct Create {
-    _name: String,
+    catalog: SharedCatalog,
+    name: String,
     schema: Schema,
-    _table_schema: Schema,
+    table_schema: Schema,
 }
 
 impl Create {
-    pub fn new(name: String, table_schema: Schema) -> Self {
-        Self { _name: name, _table_schema: table_schema, schema: schema! { column!("ok", Int) } }
+    pub fn new(catalog: SharedCatalog, name: String, table_schema: Schema) -> Self {
+        Self { catalog, name, table_schema, schema: schema! { column!("ok", Int) } }
     }
 }
 
 impl PhysicalOperator for Create {
     fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
-        // TODO: planner.rs creates the table - need to set up an Arc<Catalog> to use it inside
-        // operators
+        let mut catalog = self.catalog.lock().unwrap();
+
+        let Create { name, table_schema, .. } = &self;
+
+        if catalog
+            .create_table(name, table_schema.clone())
+            .map_err(|e| PhysicalOperatorError(e.to_string()))?
+            .is_none()
+        {
+            Err(format!("{name} already exists"))?
+        };
+
         Ok(Some(TupleBuilder::new().int(1).build()))
     }
 

@@ -1,5 +1,7 @@
+use std::sync::MutexGuard;
+
 use crate::{
-    catalog::{schema::SchemaBuilder, Catalog},
+    catalog::{schema::SchemaBuilder, Catalog, SharedCatalog},
     column,
     logical_plan::{
         create, scan, scan_with_alias, values, values_with_alias,
@@ -46,30 +48,36 @@ impl From<LogicalOperatorError> for PlannerError {
 }
 
 pub struct Planner {
-    catalog: Catalog,
+    catalog: SharedCatalog,
 }
 
 impl Planner {
-    pub fn new(catalog: Catalog) -> Self {
+    pub fn new(catalog: SharedCatalog) -> Self {
         Self { catalog }
     }
 
     pub fn plan_statement(&self, statement: Statement) -> Result<LogicalOperator, PlannerError> {
+        let catalog = self.catalog.lock().unwrap();
+
         let statement = match statement {
-            Statement::Select(select) => self.build_select(select)?,
-            Statement::Insert(insert) => self.build_insert(insert)?,
+            Statement::Select(select) => self.build_select(&catalog, select)?,
+            Statement::Insert(insert) => self.build_insert(&catalog, insert)?,
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
-            Statement::Create(create) => self.build_create(create)?,
+            Statement::Create(create) => self.build_create(&catalog, create)?,
         };
 
         Ok(statement.build())
     }
 
-    fn build_select(&self, select: Select) -> Result<LogicalOperatorBuilder, PlannerError> {
+    fn build_select(
+        &self,
+        catalog: &MutexGuard<'_, Catalog>,
+        select: Select,
+    ) -> Result<LogicalOperatorBuilder, PlannerError> {
         let Select { body, order, limit } = select;
 
-        let mut query = self.build_query(body)?;
+        let mut query = self.build_query(catalog, body)?;
 
         query = match order {
             Some(OrderByExpr { exprs, desc: false }) => query.sort(exprs),
@@ -86,13 +94,14 @@ impl Planner {
 
     fn build_query(
         &self,
+        catalog: &MutexGuard<'_, Catalog>,
         Query { projection, from, joins, filter, group }: Query,
     ) -> Result<LogicalOperatorBuilder, PlannerError> {
-        let (mut query, _) = self.build_from(from)?;
+        let (mut query, _) = self.build_from(catalog, from)?;
 
         for join in joins {
             let Join { from, ty, constraint } = join;
-            let (rhs, _) = self.build_from(from)?;
+            let (rhs, _) = self.build_from(catalog, from)?;
 
             let JoinType::Inner = ty;
 
@@ -125,6 +134,7 @@ impl Planner {
     /// Creates a `Scan` operator and returns it along with the table alias
     fn build_from(
         &self,
+        catalog: &MutexGuard<'_, Catalog>,
         from: FromTable,
     ) -> Result<(LogicalOperatorBuilder, String), PlannerError> {
         let builder = match from {
@@ -132,10 +142,8 @@ impl Planner {
                 let Ident::Single(name) = name else {
                     Err(format!("multiple schemas aren't supported: {name}"))?
                 };
-                let table_info = self
-                    .catalog
-                    .get_table_by_name(&name)
-                    .ok_or(format!("unknown table: {name}"))?;
+                let table_info =
+                    catalog.get_table_by_name(&name).ok_or(format!("unknown table: {name}"))?;
 
                 if let Some(alias) = alias {
                     // Alias is applied at the `Scan` node, single table
@@ -145,7 +153,7 @@ impl Planner {
                 }
             }
             FromTable::Derived { query, alias } => {
-                let mut query = self.build_query(*query)?;
+                let mut query = self.build_query(catalog, *query)?;
 
                 // Alias applies to all columns in the query, all tables
                 let Some(alias) = alias else {
@@ -169,17 +177,18 @@ impl Planner {
 
     fn build_insert(
         &self,
+        catalog: &MutexGuard<'_, Catalog>,
         Insert { table, input }: Insert,
     ) -> Result<LogicalOperatorBuilder, PlannerError> {
         let Ident::Single(name) = table else {
             Err(format!("multiple schemas aren't supported: {table}"))?
         };
         let table_info =
-            self.catalog.get_table_by_name(&name).ok_or(format!("unknown table: {name}"))?;
+            catalog.get_table_by_name(&name).ok_or(format!("unknown table: {name}"))?;
 
         let builder = match input {
             InsertInput::Values(rows) => values(rows)?.insert(table_info)?,
-            InsertInput::Query(query) => self.build_query(query)?.insert(table_info)?,
+            InsertInput::Query(query) => self.build_query(catalog, query)?.insert(table_info)?,
         };
 
         Ok(builder)
@@ -187,15 +196,14 @@ impl Planner {
 
     fn build_create(
         &self,
+        _catalog: &MutexGuard<'_, Catalog>,
         Create { name, columns }: Create,
     ) -> Result<LogicalOperatorBuilder, PlannerError> {
         let Ident::Single(name) = name else {
             Err(format!("multiple schemas aren't supported: {name}"))?
         };
 
-        if self.catalog.get_table_by_name(&name).is_some() {
-            Err(format!("{name} already exists"))?
-        };
+        // We'll invoke the catalog methods in the `Create` physical operator
 
         let mut builder = SchemaBuilder::new();
         for ColumnDef { ty, name } in columns {
@@ -208,7 +216,6 @@ impl Planner {
         }
 
         let schema = builder.build();
-        // self.catalog.create_table(&name, schema.clone());
 
         Ok(create(name, schema))
     }
@@ -216,14 +223,12 @@ impl Planner {
 
 #[cfg(test)]
 mod test {
-    use crate::catalog::Catalog;
-    use crate::disk::Memory;
-    use crate::page::PAGE_SIZE;
-    use crate::page_cache::PageCache;
-    use crate::planner::Planner;
-    use crate::replacer::LRU;
-    use crate::sql::Parser;
-    use crate::{column, schema};
+    use std::sync::{Arc, Mutex};
+
+    use crate::{
+        catalog::Catalog, column, disk::Memory, page::PAGE_SIZE, page_cache::PageCache,
+        planner::Planner, replacer::LRU, schema, sql::Parser,
+    };
 
     macro_rules! test_statement {
         ($name:ident, {$( $table:expr => $columns:expr )+}, $statement:expr, $want:expr) => {
@@ -235,18 +240,21 @@ mod test {
                 let replacer = LRU::new(K);
                 let pc = PageCache::new(disk, replacer, 0);
 
-                let mut catalog = Catalog::new(pc);
+                let shared_catalog = Arc::new(Mutex::new(Catalog::new(pc)));
 
-                $(
-                catalog
-                    .create_table($table, $columns)
-                    .unwrap();
-                )+
+                {
+                    let mut catalog = shared_catalog.lock().unwrap();
+                    $(
+                    catalog
+                        .create_table($table, $columns)
+                        .unwrap();
+                    )+
+                }
 
                 let statement= $statement;
                 let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
-                let planner = Planner::new(catalog);
+                let planner = Planner::new(shared_catalog);
                 let plan = planner.plan_statement(select).unwrap();
 
                 assert_eq!($want, plan.to_string());
@@ -262,12 +270,12 @@ mod test {
                 let replacer = LRU::new(K);
                 let pc = PageCache::new(disk, replacer, 0);
 
-                let catalog = Catalog::new(pc);
+                let shared_catalog = Arc::new(Mutex::new(Catalog::new(pc)));
 
                 let statement = $statement;
                 let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
-                let planner = Planner::new(catalog);
+                let planner = Planner::new(shared_catalog);
                 let plan = planner.plan_statement(select).unwrap();
 
                 assert_eq!($want, plan.to_string());
