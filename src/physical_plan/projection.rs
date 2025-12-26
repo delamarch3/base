@@ -1,9 +1,11 @@
-use crate::catalog::schema::{Column, Schema};
-use crate::execution::eval;
-use crate::logical_plan::ProjectionAttributes;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
-use crate::sql::{Expr, SelectItem};
-use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
+use crate::{
+    catalog::schema::{Column, Schema},
+    evaluation::eval,
+    logical_plan::ProjectionAttributes,
+    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    sql::{Expr, SelectItem},
+    table::tuple::{Builder as TupleBuilder, Data as TupleData},
+};
 
 pub struct Projection {
     attributes: ProjectionAttributes,

@@ -1,9 +1,11 @@
-use crate::catalog::schema::Schema;
-use crate::execution::eval;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
-use crate::schema;
-use crate::sql::Expr;
-use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
+use crate::{
+    catalog::schema::Schema,
+    evaluation::eval,
+    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    schema,
+    sql::Expr,
+    table::tuple::{Builder as TupleBuilder, Data as TupleData},
+};
 
 pub struct Values {
     values: Vec<Vec<Expr>>,
@@ -19,8 +21,8 @@ impl Values {
 
 impl PhysicalOperator for Values {
     fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+        let Some(values) = self.values.get(self.pos) else { return Ok(None) };
         self.pos += 1;
-        let Some(values) = self.values.get(self.pos - 1) else { return Ok(None) };
 
         let mut tuple = TupleBuilder::new();
         for (i, _column) in self.schema.iter().enumerate() {

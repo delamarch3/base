@@ -11,6 +11,21 @@ pub enum ParserError {
     Unexpected(String),
 }
 
+impl std::error::Error for ParserError {}
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "parser error: {}",
+            match self {
+                Self::TokeniserError(e) => e,
+                Self::Unexpected(e) => e,
+            }
+        )
+    }
+}
+
 struct Unexpected<'a>(&'a Token, &'a Location);
 
 impl<'a> std::fmt::Display for Unexpected<'a> {
@@ -55,7 +70,10 @@ impl Parser {
                     Keyword::Create => Statement::Create(self.parse_create()?),
                     _ => Err(Unexpected(&token, &location))?,
                 },
-                Token::Semicolon => continue,
+                Token::Semicolon => {
+                    self.next();
+                    continue;
+                }
                 Token::Eof => break,
                 _ => Err(Unexpected(&token, &location))?,
             });

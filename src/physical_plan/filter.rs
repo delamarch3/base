@@ -1,8 +1,10 @@
-use crate::catalog::schema::Schema;
-use crate::execution::eval;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
-use crate::sql::Expr;
-use crate::table::tuple::{Data as TupleData, Value};
+use crate::{
+    catalog::schema::Schema,
+    evaluation::eval,
+    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    sql::Expr,
+    table::tuple::{Data as TupleData, Value},
+};
 
 pub struct Filter {
     expr: Expr,

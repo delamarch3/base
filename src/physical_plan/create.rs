@@ -11,16 +11,21 @@ pub struct Create {
     name: String,
     schema: Schema,
     table_schema: Schema,
+    invoked: bool,
 }
 
 impl Create {
     pub fn new(catalog: SharedCatalog, name: String, table_schema: Schema) -> Self {
-        Self { catalog, name, table_schema, schema: schema! { column!("ok", Int) } }
+        Self { catalog, name, table_schema, schema: schema! { column!("ok", Int) }, invoked: false }
     }
 }
 
 impl PhysicalOperator for Create {
     fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+        if self.invoked {
+            return Ok(None);
+        }
+
         let mut catalog = self.catalog.lock().unwrap();
 
         let Create { name, table_schema, .. } = &self;
@@ -32,6 +37,8 @@ impl PhysicalOperator for Create {
         {
             Err(format!("{name} already exists"))?
         };
+
+        self.invoked = true;
 
         Ok(Some(TupleBuilder::new().int(1).build()))
     }
