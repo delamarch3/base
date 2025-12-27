@@ -1,5 +1,5 @@
 use crate::catalog::schema::Schema;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
+use crate::physical_plan::{ExecutionError, PhysicalOperator};
 use crate::table::list::ListRef as TableRef;
 use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
 use crate::{column, schema};
@@ -18,7 +18,7 @@ impl Insert {
 }
 
 impl PhysicalOperator for Insert {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         if self.invoked {
             return Ok(None);
         }

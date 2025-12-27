@@ -2,7 +2,7 @@ use crate::{
     catalog::schema::{Column, Schema},
     evaluation::eval,
     logical_plan::ProjectionAttributes,
-    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    physical_plan::{ExecutionError, PhysicalOperator},
     sql::{Expr, SelectItem},
     table::tuple::{Builder as TupleBuilder, Data as TupleData},
 };
@@ -19,7 +19,7 @@ impl Projection {
 }
 
 impl PhysicalOperator for Projection {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         let Some(input_tuple) = self.input.next()? else { return Ok(None) };
         let input_schema = self.input.schema();
         let mut input_idents = self.attributes.input_idents().iter();

@@ -1,5 +1,5 @@
 use crate::catalog::schema::Schema;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
+use crate::physical_plan::{ExecutionError, PhysicalOperator};
 use crate::table::list::Iter as TableIter;
 use crate::table::tuple::Data as TupleData;
 
@@ -15,7 +15,7 @@ impl Scan {
 }
 
 impl PhysicalOperator for Scan {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         let next = match self.iter.next() {
             Some(result) => {
                 let (_meta, data, _rid) = result.unwrap();

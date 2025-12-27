@@ -21,12 +21,18 @@ fn main() -> Result<()> {
 
     let stdin = stdin();
     let mut stdout = stdout();
+
+    let mut input = String::new();
     loop {
         stdout.write_all(b"(base) ")?;
         stdout.flush()?;
 
-        let mut input = String::new();
+        input.clear();
         stdin.read_line(&mut input)?;
+        if input.is_empty() {
+            writeln!(stdout)?;
+            continue;
+        }
 
         if let Err(e) = run_query(&input, &planner, &optimiser) {
             writeln!(stdout, "{e}")?;

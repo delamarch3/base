@@ -14,28 +14,28 @@ pub use {
     scan::Scan, values::Values,
 };
 
-pub struct PhysicalOperatorError(String);
-impl std::error::Error for PhysicalOperatorError {}
+pub struct ExecutionError(String);
+impl std::error::Error for ExecutionError {}
 
-impl std::fmt::Display for PhysicalOperatorError {
+impl std::fmt::Display for ExecutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "execution error: {}", self.0)
     }
 }
 
-impl std::fmt::Debug for PhysicalOperatorError {
+impl std::fmt::Debug for ExecutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(self, f)
     }
 }
 
-impl From<String> for PhysicalOperatorError {
+impl From<String> for ExecutionError {
     fn from(value: String) -> Self {
-        PhysicalOperatorError(value)
+        ExecutionError(value)
     }
 }
 
 pub trait PhysicalOperator {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError>;
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError>;
     fn schema(&self) -> &Schema;
 }

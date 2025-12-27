@@ -1,5 +1,5 @@
 use crate::catalog::schema::Schema;
-use crate::physical_plan::{PhysicalOperator, PhysicalOperatorError};
+use crate::physical_plan::{ExecutionError, PhysicalOperator};
 use crate::table::tuple::Data as TupleData;
 
 pub struct Limit {
@@ -15,7 +15,7 @@ impl Limit {
 }
 
 impl PhysicalOperator for Limit {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         if self.pos == self.limit.saturating_sub(1) {
             return Ok(None);
         }

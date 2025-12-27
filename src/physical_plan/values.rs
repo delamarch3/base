@@ -1,7 +1,7 @@
 use crate::{
     catalog::schema::Schema,
     evaluation::eval,
-    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    physical_plan::{ExecutionError, PhysicalOperator},
     schema,
     sql::Expr,
     table::tuple::{Builder as TupleBuilder, Data as TupleData},
@@ -20,7 +20,7 @@ impl Values {
 }
 
 impl PhysicalOperator for Values {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         let Some(values) = self.values.get(self.pos) else { return Ok(None) };
         self.pos += 1;
 

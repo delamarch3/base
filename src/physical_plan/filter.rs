@@ -1,7 +1,7 @@
 use crate::{
     catalog::schema::Schema,
     evaluation::eval,
-    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    physical_plan::{ExecutionError, PhysicalOperator},
     sql::Expr,
     table::tuple::{Data as TupleData, Value},
 };
@@ -18,10 +18,11 @@ impl Filter {
 }
 
 impl PhysicalOperator for Filter {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         loop {
             let Some(input_tuple) = self.input.next()? else { break Ok(None) };
-            let value = eval(&self.expr, self.input.schema(), &input_tuple).unwrap();
+            let value = eval(&self.expr, self.input.schema(), &input_tuple)
+                .map_err(|e| ExecutionError(e.to_string()))?;
             match value {
                 Value::TinyInt(0) | Value::Bool(false) | Value::Int(0) | Value::BigInt(0) => {
                     continue

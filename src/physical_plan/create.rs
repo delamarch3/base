@@ -1,7 +1,7 @@
 use crate::{
     catalog::{schema::Schema, SharedCatalog},
     column,
-    physical_plan::{PhysicalOperator, PhysicalOperatorError},
+    physical_plan::{ExecutionError, PhysicalOperator},
     schema,
     table::tuple::{Builder as TupleBuilder, Data as TupleData},
 };
@@ -21,7 +21,7 @@ impl Create {
 }
 
 impl PhysicalOperator for Create {
-    fn next(&mut self) -> Result<Option<TupleData>, PhysicalOperatorError> {
+    fn next(&mut self) -> Result<Option<TupleData>, ExecutionError> {
         if self.invoked {
             return Ok(None);
         }
@@ -32,7 +32,7 @@ impl PhysicalOperator for Create {
 
         if catalog
             .create_table(name, table_schema.clone())
-            .map_err(|e| PhysicalOperatorError(e.to_string()))?
+            .map_err(|e| ExecutionError(e.to_string()))?
             .is_none()
         {
             Err(format!("{name} already exists"))?
