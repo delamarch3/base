@@ -3,7 +3,9 @@ use std::sync::Arc;
 use crate::{
     catalog::SharedCatalog,
     logical_plan::LogicalOperator,
-    physical_plan::{Create, Filter, Insert, Limit, PhysicalOperator, Projection, Scan, Values},
+    physical_plan::{
+        Create, Explain, Filter, Insert, Limit, PhysicalOperator, Projection, Scan, Values,
+    },
 };
 
 pub struct Optimiser {
@@ -55,6 +57,9 @@ impl Optimiser {
             }
             LogicalOperator::Create(create) => {
                 Box::new(Create::new(Arc::clone(&self.catalog), create.name, create.schema))
+            }
+            LogicalOperator::Explain(explain) => {
+                Box::new(Explain::new(*explain.input, explain.schema))
             }
         };
 

@@ -2,6 +2,7 @@ use crate::catalog::schema::Schema;
 use crate::table::tuple::Data as TupleData;
 
 mod create;
+mod explain;
 mod filter;
 mod insert;
 mod limit;
@@ -10,8 +11,8 @@ mod scan;
 mod values;
 
 pub use {
-    create::Create, filter::Filter, insert::Insert, limit::Limit, projection::Projection,
-    scan::Scan, values::Values,
+    create::Create, explain::Explain, filter::Filter, insert::Insert, limit::Limit,
+    projection::Projection, scan::Scan, values::Values,
 };
 
 pub struct ExecutionError(String);

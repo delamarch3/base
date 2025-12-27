@@ -50,7 +50,7 @@ fn run_query(input: &str, planner: &Planner, optimiser: &Optimiser) -> Result<()
         .into_iter()
         .map(|stmt| {
             planner
-                .plan_statement(stmt)
+                .plan(stmt)
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
                 .map(|p| optimiser.transform(p))
                 .map(|p| optimiser.implement(p))

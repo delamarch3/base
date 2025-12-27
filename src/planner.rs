@@ -4,12 +4,12 @@ use crate::{
     catalog::{schema::SchemaBuilder, Catalog, SharedCatalog},
     column,
     logical_plan::{
-        create, scan, scan_with_alias, values, values_with_alias,
+        create, explain, scan, scan_with_alias, values, values_with_alias,
         Builder as LogicalOperatorBuilder, LogicalOperator, LogicalOperatorError,
     },
     sql::{
-        ColumnDef, ColumnType, Create, FromTable, Ident, Insert, InsertInput, Join, JoinConstraint,
-        JoinType, OrderByExpr, Query, Select, Statement,
+        ColumnDef, ColumnType, Create, Explain, FromTable, Ident, Insert, InsertInput, Join,
+        JoinConstraint, JoinType, OrderByExpr, Query, Select, Statement,
     },
 };
 
@@ -56,16 +56,24 @@ impl Planner {
         Self { catalog }
     }
 
-    pub fn plan_statement(&self, statement: Statement) -> Result<LogicalOperator, PlannerError> {
+    pub fn plan(&self, statement: Statement) -> Result<LogicalOperator, PlannerError> {
         let catalog = self.catalog.lock().unwrap();
 
+        self.plan_statement(&catalog, statement)
+    }
+
+    fn plan_statement(
+        &self,
+        catalog: &MutexGuard<'_, Catalog>,
+        statement: Statement,
+    ) -> Result<LogicalOperator, PlannerError> {
         let statement = match statement {
             Statement::Select(select) => self.build_select(&catalog, select)?,
             Statement::Insert(insert) => self.build_insert(&catalog, insert)?,
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
             Statement::Create(create) => self.build_create(&catalog, create)?,
-            Statement::Explain(_) => todo!(),
+            Statement::Explain(explain) => self.build_explain(&catalog, explain)?,
         };
 
         Ok(statement.build())
@@ -220,6 +228,16 @@ impl Planner {
 
         Ok(create(name, schema))
     }
+
+    fn build_explain(
+        &self,
+        catalog: &MutexGuard<'_, Catalog>,
+        Explain { statement }: Explain,
+    ) -> Result<LogicalOperatorBuilder, PlannerError> {
+        let plan = self.plan_statement(catalog, *statement)?;
+
+        Ok(explain(plan))
+    }
 }
 
 #[cfg(test)]
@@ -256,7 +274,7 @@ mod test {
                 let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
                 let planner = Planner::new(shared_catalog);
-                let plan = planner.plan_statement(select).unwrap();
+                let plan = planner.plan(select).unwrap();
 
                 assert_eq!($want, plan.to_string());
             }
@@ -277,7 +295,7 @@ mod test {
                 let mut parser = Parser::new(&statement).unwrap();
                 let select = parser.parse_statements().unwrap().pop().unwrap();
                 let planner = Planner::new(shared_catalog);
-                let plan = planner.plan_statement(select).unwrap();
+                let plan = planner.plan(select).unwrap();
 
                 assert_eq!($want, plan.to_string());
             }

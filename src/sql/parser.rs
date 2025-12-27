@@ -73,9 +73,8 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Option<Statement>> {
-        let (token, location) = self.peek();
-
         loop {
+            let (token, location) = self.peek();
             match token {
                 Token::Keyword(kw) => {
                     let statement = match kw {

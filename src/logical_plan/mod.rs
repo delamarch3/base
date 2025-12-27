@@ -6,6 +6,7 @@ use crate::sql::{Expr, Function, FunctionName, Ident, Literal, Op, SelectItem};
 
 mod aggregate;
 mod create;
+mod explain;
 mod filter;
 mod group;
 mod insert;
@@ -18,8 +19,9 @@ mod values;
 
 pub use projection::ProjectionAttributes;
 use {
-    aggregate::Aggregate, create::Create, filter::Filter, group::Group, insert::Insert, join::Join,
-    limit::Limit, projection::Projection, scan::Scan, sort::Sort, values::Values,
+    aggregate::Aggregate, create::Create, explain::Explain, filter::Filter, group::Group,
+    insert::Insert, join::Join, limit::Limit, projection::Projection, scan::Scan, sort::Sort,
+    values::Values,
 };
 
 /// The first value will always be Some(..) unless it's a leaf node like Scan.
@@ -65,6 +67,7 @@ pub enum LogicalOperator {
     Values(Values),
     Insert(Insert),
     Create(Create),
+    Explain(Explain),
 }
 
 impl std::fmt::Display for LogicalOperator {
@@ -91,6 +94,7 @@ impl std::fmt::Display for LogicalOperator {
                 LogicalOperator::Values(values) => writeln!(f, "{values}"),
                 LogicalOperator::Insert(insert) => writeln!(f, "{insert}"),
                 LogicalOperator::Create(create) => writeln!(f, "{create}"),
+                LogicalOperator::Explain(explain) => writeln!(f, "{explain}"),
             }?;
 
             let (lhs, rhs) = plan.inputs();
@@ -124,6 +128,7 @@ impl LogicalOperator {
             LogicalOperator::Values(_) => (None, None),
             LogicalOperator::Insert(insert) => (Some(insert.input.as_ref()), None),
             LogicalOperator::Create(_) => (None, None),
+            LogicalOperator::Explain(_) => (None, None),
         }
     }
 
@@ -140,6 +145,7 @@ impl LogicalOperator {
             LogicalOperator::Values(values) => &values.schema,
             LogicalOperator::Insert(insert) => &insert.schema,
             LogicalOperator::Create(create) => &create.schema,
+            LogicalOperator::Explain(explain) => &explain.schema,
         }
     }
 
@@ -156,6 +162,7 @@ impl LogicalOperator {
             LogicalOperator::Values(values) => &mut values.schema,
             LogicalOperator::Insert(insert) => &mut insert.schema,
             LogicalOperator::Create(create) => &mut create.schema,
+            LogicalOperator::Explain(explain) => &mut explain.schema,
         }
     }
 }
@@ -216,6 +223,10 @@ fn expr_type(expr: &Expr, schema: &Schema) -> Result<Type, LogicalOperatorError>
 
 pub struct Builder {
     root: LogicalOperator,
+}
+
+pub fn explain(input: impl Into<LogicalOperator>) -> Builder {
+    Builder { root: LogicalOperator::Explain(Explain::new(input)) }
 }
 
 pub fn create(name: String, schema: Schema) -> Builder {
