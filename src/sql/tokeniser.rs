@@ -142,13 +142,17 @@ impl TryFrom<String> for Keyword {
 #[derive(Debug)]
 pub enum TokeniserError {
     Unexpected { want: char, have: char, location: Location },
+    Unhandled { have: char, location: Location },
 }
 
 impl std::fmt::Display for TokeniserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokeniserError::Unexpected { want, have, location } => {
-                write!(f, "{}: unexpected char, want: {}, have: {}", location, want, have)
+                write!(f, "{location}: unexpected char, want: {want}, have: {have}")
+            }
+            TokeniserError::Unhandled { location, have } => {
+                write!(f, "{location}: unhandled char: {have}")
             }
         }
     }
@@ -158,6 +162,10 @@ impl std::error::Error for TokeniserError {}
 
 fn unexpected(want: char, have: Option<char>, location: Location) -> TokeniserError {
     TokeniserError::Unexpected { want, have: have.unwrap_or(' '), location }
+}
+
+fn unhandled(have: char, location: Location) -> TokeniserError {
+    TokeniserError::Unhandled { have, location }
 }
 
 pub(crate) struct Tokeniser<'a> {
@@ -279,7 +287,7 @@ impl<'a> Iterator for TokeniserIter<'a> {
                         _ => Ok((Token::Ident(s), location)),
                     }
                 }
-                ch => unimplemented!("unhandled char: {ch}"),
+                ch => Err(unhandled(ch, location)),
             },
             None => unreachable!(),
         };
