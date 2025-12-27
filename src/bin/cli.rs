@@ -4,9 +4,9 @@ use std::{
 };
 
 use base::{
-    catalog::Catalog, disk::FileSystem, execution::execute, logical_plan::LogicalOperator,
-    optimiser::Optimiser, page_cache::PageCache, physical_plan::PhysicalOperator, planner::Planner,
-    replacer::LRU, sql::Parser,
+    catalog::Catalog, disk::FileSystem, execution::execute, optimiser::Optimiser,
+    page_cache::PageCache, physical_plan::PhysicalOperator, planner::Planner, replacer::LRU,
+    sql::Parser,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -43,17 +43,15 @@ fn run_query(input: &str, planner: &Planner, optimiser: &Optimiser) -> Result<()
         .parse_statements()?
         .into_iter()
         .map(|stmt| {
-            planner.plan_statement(stmt).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+            planner
+                .plan_statement(stmt)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+                .map(|p| optimiser.transform(p))
+                .map(|p| optimiser.implement(p))
         })
-        .collect::<Result<Vec<LogicalOperator>>>()?;
-
-    let physical_plans = plans
-        .into_iter()
-        .map(|p| optimiser.transform(p))
-        .map(|p| optimiser.implement(p))
         .collect::<Result<Vec<Box<dyn PhysicalOperator>>>>()?;
 
-    for mut plan in physical_plans {
+    for mut plan in plans {
         let result = execute(plan.as_mut())?;
         let schema = plan.schema();
 
