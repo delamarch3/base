@@ -65,6 +65,7 @@ impl Planner {
             Statement::Update(_) => todo!(),
             Statement::Delete(_) => todo!(),
             Statement::Create(create) => self.build_create(&catalog, create)?,
+            Statement::Explain(_) => todo!(),
         };
 
         Ok(statement.build())

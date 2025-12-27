@@ -1,9 +1,13 @@
-use super::ast::{
-    Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
-    Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr, Query,
-    Select, SelectItem, Statement, Update,
+use crate::sql::Explain;
+
+use super::{
+    ast::{
+        Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
+        Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr,
+        Query, Select, SelectItem, Statement, Update,
+    },
+    tokeniser::{Keyword, Location, Token, Tokeniser},
 };
-use super::tokeniser::{Keyword, Location, Token, Tokeniser};
 
 #[derive(Debug)]
 pub enum ParserError {
@@ -59,27 +63,51 @@ impl Parser {
 
     pub fn parse_statements(&mut self) -> Result<Vec<Statement>> {
         let mut statements = Vec::new();
+
         loop {
-            let (token, location) = self.peek();
-            statements.push(match token {
-                Token::Keyword(kw) => match kw {
-                    Keyword::Select => Statement::Select(self.parse_select()?),
-                    Keyword::Insert => Statement::Insert(self.parse_insert()?),
-                    Keyword::Update => Statement::Update(self.parse_update()?),
-                    Keyword::Delete => Statement::Delete(self.parse_delete()?),
-                    Keyword::Create => Statement::Create(self.parse_create()?),
-                    _ => Err(Unexpected(&token, &location))?,
-                },
+            let Some(statement) = self.parse_statement()? else { break };
+            statements.push(statement);
+        }
+
+        Ok(statements)
+    }
+
+    fn parse_statement(&mut self) -> Result<Option<Statement>> {
+        let (token, location) = self.peek();
+
+        loop {
+            match token {
+                Token::Keyword(kw) => {
+                    let statement = match kw {
+                        Keyword::Select => Statement::Select(self.parse_select()?),
+                        Keyword::Insert => Statement::Insert(self.parse_insert()?),
+                        Keyword::Update => Statement::Update(self.parse_update()?),
+                        Keyword::Delete => Statement::Delete(self.parse_delete()?),
+                        Keyword::Create => Statement::Create(self.parse_create()?),
+                        Keyword::Explain => Statement::Explain(self.parse_explain()?),
+                        _ => Err(Unexpected(&token, &location))?,
+                    };
+                    return Ok(Some(statement));
+                }
                 Token::Semicolon => {
                     self.next();
                     continue;
                 }
-                Token::Eof => break,
+                Token::Eof => return Ok(None),
                 _ => Err(Unexpected(&token, &location))?,
-            });
+            };
         }
+    }
 
-        Ok(statements)
+    fn parse_explain(&mut self) -> Result<Explain> {
+        self.parse_keywords(&[Keyword::Explain])?;
+
+        let Some(statement) = self.parse_statement()?.map(Box::new) else {
+            let (token, location) = self.peek();
+            Err(Unexpected(&token, &location))?
+        };
+
+        Ok(Explain { statement })
     }
 
     fn parse_select(&mut self) -> Result<Select> {
@@ -693,6 +721,8 @@ impl Parser {
 
 #[cfg(test)]
 mod test {
+    use crate::sql::Explain;
+
     use super::{
         Assignment, ColumnDef, ColumnType, Create, Delete, Expr, FromTable, Function, FunctionName,
         Ident, Insert, InsertInput, Join, JoinConstraint, JoinType, Literal, Op, OrderByExpr,
@@ -1118,6 +1148,28 @@ mod test {
             limit: Some(Expr::Literal(Literal::Number("5".into()))),
         };
         let have = Parser::new(input).unwrap().parse_select().unwrap();
+
+        assert_eq!(want, have);
+    }
+
+    #[test]
+    fn test_parse_explain_select() {
+        let input = "explain select * from t1";
+
+        let want = Explain {
+            statement: Box::new(Statement::Select(Select {
+                body: Query {
+                    projection: vec![SelectItem::Wildcard],
+                    from: FromTable::Table { name: Ident::Single("t1".into()), alias: None },
+                    joins: vec![],
+                    filter: None,
+                    group: vec![],
+                },
+                order: None,
+                limit: None,
+            })),
+        };
+        let have = Parser::new(input).unwrap().parse_explain().unwrap();
 
         assert_eq!(want, have);
     }

@@ -7,6 +7,7 @@ pub enum Statement {
     Update(Update),
     Delete(Delete),
     Create(Create),
+    Explain(Explain),
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -319,6 +320,11 @@ pub struct Delete {
 pub struct Create {
     pub name: Ident,
     pub columns: Vec<ColumnDef>,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Explain {
+    pub statement: Box<Statement>,
 }
 
 #[derive(PartialEq, Debug)]
