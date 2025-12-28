@@ -426,7 +426,13 @@ impl Parser {
             Token::Keyword(Keyword::Select) => Expr::SubQuery(self.parse_query().map(Box::new)?),
 
             Token::Keyword(
-                Keyword::Min | Keyword::Max | Keyword::Sum | Keyword::Avg | Keyword::Count,
+                Keyword::Min
+                | Keyword::Max
+                | Keyword::Sum
+                | Keyword::Avg
+                | Keyword::Count
+                | Keyword::Contains
+                | Keyword::Concat,
             ) => Expr::Function(self.parse_function()?),
 
             Token::Ident(_) => {
