@@ -14,11 +14,11 @@ pub enum Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::TinyInt(v) => write!(f, "{v}"),
-            Value::Bool(v) => write!(f, "{v}"),
-            Value::Int(v) => write!(f, "{v}"),
-            Value::BigInt(v) => write!(f, "{v}"),
-            Value::Varchar(v) => write!(f, "{v}"),
+            Value::TinyInt(v) => v.fmt(f),
+            Value::Bool(v) => v.fmt(f),
+            Value::Int(v) => v.fmt(f),
+            Value::BigInt(v) => v.fmt(f),
+            Value::Varchar(v) => v.fmt(f),
         }
     }
 }
@@ -327,8 +327,8 @@ impl Builder {
 #[cfg(test)]
 mod test {
     use crate::catalog::schema::{Column, Schema, Type};
+    use crate::schema;
     use crate::table::tuple::{fit_tuple_with_schema, Builder, Comparand};
-    use crate::{column, schema};
 
     use std::cmp::Ordering::*;
 

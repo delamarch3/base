@@ -1,4 +1,5 @@
 use std::{
+    cmp::max,
     io::{stdin, stdout, Write},
     sync::{Arc, Mutex},
 };
@@ -61,13 +62,46 @@ fn run_query(input: &str, planner: &Planner, optimiser: &Optimiser) -> Result<()
         let result = execute(plan.as_mut())?;
         let schema = plan.schema();
 
-        for row in &result {
-            for column in &schema.columns {
-                let value = row.get_value(column.offset, column.ty);
-                write!(stdout, "{value} ")?;
-            }
-            writeln!(stdout)?;
+        let mut column_widths = vec![0; schema.len()];
+        for (i, column) in schema.iter().enumerate() {
+            column_widths[i] = max(column_widths[i], column.name.len() + 2); // padding = 2
         }
+
+        // TODO: look at the some of the rows to figure out the width
+
+        for i in 0..schema.len() {
+            let width = column_widths[i];
+            write!(stdout, "+{:-^width$}", "")?;
+        }
+        writeln!(stdout, "+")?;
+
+        for (i, column) in schema.iter().enumerate() {
+            let width = column_widths[i];
+            let name = &column.name;
+            write!(stdout, "|{name:^width$}")?;
+        }
+        writeln!(stdout, "|")?;
+
+        for row in &result {
+            for i in 0..schema.len() {
+                let width = column_widths[i];
+                write!(stdout, "+{:-^width$}", "")?;
+            }
+            writeln!(stdout, "+")?;
+
+            for (i, column) in schema.iter().enumerate() {
+                let value = row.get_value(column.offset, column.ty);
+                let width = column_widths[i];
+                write!(stdout, "|{value:^width$}")?;
+            }
+            writeln!(stdout, "|")?;
+        }
+
+        for i in 0..schema.len() {
+            let width = column_widths[i];
+            write!(stdout, "+{:-^width$}", "")?;
+        }
+        writeln!(stdout, "+")?;
     }
 
     Ok(())
