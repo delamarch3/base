@@ -2,7 +2,7 @@ use crate::catalog::schema::Schema;
 use crate::physical_plan::{ExecutionError, PhysicalOperator};
 use crate::table::list::ListRef as TableRef;
 use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
-use crate::{column, schema};
+use crate::schema;
 
 pub struct Insert {
     table: TableRef,
@@ -13,7 +13,7 @@ pub struct Insert {
 
 impl Insert {
     pub fn new(input: Box<dyn PhysicalOperator>, table: TableRef) -> Self {
-        Self { table, input, schema: schema! { column!("ok", Int) }, invoked: false }
+        Self { table, input, schema: schema! { ok Int }, invoked: false }
     }
 }
 

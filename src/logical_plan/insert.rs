@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::{
     catalog::{schema::Schema, TableInfo},
-    column,
     logical_plan::{LogicalOperator, LogicalOperatorError},
     schema,
 };
@@ -33,7 +32,7 @@ impl Insert {
         input: impl Into<LogicalOperator>,
     ) -> Result<Self, LogicalOperatorError> {
         let input = Box::new(input.into());
-        let schema = schema! { column!("ok", Int) };
+        let schema = schema! { ok Int };
 
         let table_schema = &table.schema;
         let insert_schema = input.schema();

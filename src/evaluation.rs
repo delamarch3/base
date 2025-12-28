@@ -291,7 +291,7 @@ mod test {
     test_eval!(
         t6,
         ident("c1"),
-        schema! {column!("c1", Int)},
+        schema! {c1 Int},
         TupleBuilder::new().int(1).build(),
         Ok(Value::Int(1))
     );
@@ -299,7 +299,7 @@ mod test {
     test_eval!(
         t7,
         ident("c1").eq(lit(1)),
-        schema! {column!("c1", Int)},
+        schema! {c1 Int},
         TupleBuilder::new().int(1).build(),
         Ok(Value::Bool(true))
     );
@@ -307,7 +307,7 @@ mod test {
     test_eval!(
         t8,
         ident("c1").eq(lit("1")),
-        schema! {column!("c1", Int)},
+        schema! {c1 Int},
         TupleBuilder::new().int(1).build(),
         Err("cannot perform INT = VARCHAR".into())
     );
@@ -315,7 +315,7 @@ mod test {
     test_eval!(
         t9,
         ident("c1").eq(lit("a")).and(ident("c2").between(lit(20), lit(30))),
-        schema! {column!("c1", Varchar), column!("c2", Int)},
+        schema! {c1 Varchar, c2 Int},
         TupleBuilder::new().varchar("a").int(20).build(),
         Ok(Value::Bool(true))
     );
@@ -323,7 +323,7 @@ mod test {
     test_eval!(
         t10,
         contains(vec![ident("c1"), lit("sd")]),
-        schema! {column!("c1", Varchar)},
+        schema! {c1 Varchar},
         TupleBuilder::new().varchar("asdf").build(),
         Ok(Value::Bool(true))
     );
@@ -331,7 +331,7 @@ mod test {
     test_eval!(
         t11,
         concat(vec![ident("c1"), ident("c2"), lit("c"), lit(9)]),
-        schema! {column!("c1", Varchar), column!("c2", Varchar)},
+        schema! {c1 Varchar, c2 Varchar},
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
     );
@@ -339,7 +339,7 @@ mod test {
     test_eval!(
         t12,
         concat(vec![concat(vec![ident("c1"), ident("c2")]), concat(vec![lit("c"), lit(9)])]),
-        schema! {column!("c1", Varchar), column!("c2", Varchar)},
+        schema! {c1 Varchar, c2 Varchar},
         TupleBuilder::new().varchar("a").varchar("b").build(),
         Ok(Value::Varchar("abc9".to_string()))
     );

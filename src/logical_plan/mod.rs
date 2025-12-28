@@ -367,18 +367,12 @@ mod test {
 
         let mut catalog = Catalog::new(pc);
         let t1 = catalog
-            .create_table(
-                "t1",
-                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
-            )
+            .create_table("t1", schema! {c1 Int, c2 Varchar, c3 BigInt})
             .unwrap()
             .unwrap()
             .clone();
         let t2 = catalog
-            .create_table(
-                "t2",
-                schema! {column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt)},
-            )
+            .create_table("t2", schema! {c1 Int, c2 Varchar, c3 BigInt})
             .unwrap()
             .unwrap()
             .clone();

@@ -1,6 +1,5 @@
 use crate::{
     catalog::{schema::Schema, SharedCatalog},
-    column,
     physical_plan::{ExecutionError, PhysicalOperator},
     schema,
     table::tuple::{Builder as TupleBuilder, Data as TupleData},
@@ -16,7 +15,7 @@ pub struct Create {
 
 impl Create {
     pub fn new(catalog: SharedCatalog, name: String, table_schema: Schema) -> Self {
-        Self { catalog, name, table_schema, schema: schema! { column!("ok", Int) }, invoked: false }
+        Self { catalog, name, table_schema, schema: schema! { ok Int }, invoked: false }
     }
 }
 

@@ -169,7 +169,7 @@ mod test {
         let pm = PageCache::new(disk, replacer, 0);
         let dir = pm.new_page()?;
 
-        let key_schema = schema! { column!("c1", Int) };
+        let key_schema = schema! { c1 Int };
         let table = ExtendibleHashTable::new(dir.id, pm.clone(), &key_schema);
 
         const BOUND: i32 = 50;
@@ -220,7 +220,7 @@ mod test {
         let pm = PageCache::new(disk, replacer, 0);
         let dir = pm.new_page()?;
 
-        let key_schema = schema! { column!("c1", Int) };
+        let key_schema = schema! { c1 Int };
         let table = ExtendibleHashTable::new(dir.id, pm.clone(), &key_schema);
 
         assert_eq!(table.get_num_buckets().unwrap(), 1);

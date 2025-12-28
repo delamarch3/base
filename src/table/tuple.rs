@@ -14,11 +14,11 @@ pub enum Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::TinyInt(v) => write!(f, "{}", v),
-            Value::Bool(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::BigInt(v) => write!(f, "{}", v),
-            Value::Varchar(v) => write!(f, "\"{}\"", v),
+            Value::TinyInt(v) => write!(f, "{v}"),
+            Value::Bool(v) => write!(f, "{v}"),
+            Value::Int(v) => write!(f, "{v}"),
+            Value::BigInt(v) => write!(f, "{v}"),
+            Value::Varchar(v) => write!(f, "{v}"),
         }
     }
 }
@@ -344,14 +344,14 @@ mod test {
 
     test_fit_tuple_with_schema! (
         fit_same_schema_2_columns,
-        schema! {column!("col_b", Varchar), column!("col_c", Int)},
+        schema! {col_b Varchar, col_c Int},
         tuple: Builder::new().varchar("row_a").int(20).build(),
         want: Builder::new().varchar("row_a").int(20).build()
     );
 
     test_fit_tuple_with_schema! (
         fit_same_schema_3_columns,
-        schema! {column!("col_a", Int), column!("col_b", Varchar), column!("col_c", BigInt)},
+        schema! {col_a Int, col_b Varchar, col_c BigInt},
         tuple: Builder::new().int(10).varchar("row_a").big_int(20).build(),
         want: Builder::new().int(10).varchar("row_a").big_int(20).build()
     );
@@ -401,7 +401,7 @@ mod test {
 
     test_comparator!(
         t1,
-        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
+        schema! {c1 Int, c2 Bool, c1 BigInt},
         lhs: Builder::new().int(4).bool(false).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Equal
@@ -409,7 +409,7 @@ mod test {
 
     test_comparator!(
         t2,
-        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
+        schema! {c1 Int, c2 Bool, c1 BigInt},
         lhs: Builder::new().int(4).bool(true).big_int(100).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Greater
@@ -417,7 +417,7 @@ mod test {
 
     test_comparator!(
         t3,
-        schema! {column!("c1", Int), column!("c2", Bool), column!("c1", BigInt)},
+        schema! {c1 Int, c2 Bool, c1 BigInt},
         lhs: Builder::new().int(4).bool(false).big_int(90).build(),
         rhs: Builder::new().int(4).bool(false).big_int(100).build(),
         Less
@@ -425,7 +425,7 @@ mod test {
 
     test_comparator!(
         t4,
-        schema! {column!("c1", TinyInt), column!("c2", Varchar)},
+        schema! {c1 TinyInt, c2 Varchar},
         lhs: Builder::new().tiny_int(1).varchar("Column").build(),
         rhs: Builder::new().tiny_int(1).varchar("Column").build(),
         Equal
@@ -433,7 +433,7 @@ mod test {
 
     test_comparator!(
         t5,
-        schema! {column!("c1", Varchar), column!("c2", TinyInt)},
+        schema! {c1 Varchar, c2 TinyInt},
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column B").tiny_int(1).build(),
         Less
@@ -441,7 +441,7 @@ mod test {
 
     test_comparator!(
         t6,
-        schema! {column!("c1", Varchar), column!("c2", TinyInt)},
+        schema! {c1 Varchar, c2 TinyInt},
         lhs: Builder::new().varchar("Column A").tiny_int(1).build(),
         rhs: Builder::new().varchar("Column").tiny_int(1).build(),
         Greater

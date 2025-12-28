@@ -158,22 +158,6 @@ impl SchemaBuilder {
 }
 
 #[macro_export]
-macro_rules! schema {
-    () => {
-        {
-            let columns = Vec::new();
-            $crate::catalog::schema::Schema::new(columns)
-        }
-    };
-    ( $( $column:expr ),* ) => {
-        {
-            let columns = vec![$($column,)*];
-            $crate::catalog::schema::Schema::new(columns).compact()
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! column {
     ($name:expr, $ty:tt, $table:expr) => {
         $crate::catalog::schema::Column {
@@ -194,4 +178,25 @@ macro_rules! column {
     ($name:expr => $ty:expr) => {
         $crate::catalog::schema::Column { name: $name.into(), ty: $ty, offset: 0, table: None }
     };
+}
+
+#[macro_export]
+macro_rules! schema {
+    () => {
+        {
+            let columns = Vec::new();
+            $crate::catalog::schema::Schema::new(columns)
+        }
+    };
+    ( $( $name:ident $ty:tt ),* ) => {
+        {
+            let columns = vec![$($crate::catalog::schema::Column {
+                name: stringify!($name).into(),
+                ty: $crate::catalog::schema::Type::$ty,
+                offset: 0,
+                table: None,
+            },)*];
+            $crate::catalog::schema::Schema::new(columns).compact()
+        }
+    }
 }

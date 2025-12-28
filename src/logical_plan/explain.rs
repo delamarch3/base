@@ -1,4 +1,4 @@
-use crate::{catalog::schema::Schema, column, logical_plan::LogicalOperator, schema};
+use crate::{catalog::schema::Schema, logical_plan::LogicalOperator, schema};
 
 pub struct Explain {
     pub input: Box<LogicalOperator>,
@@ -20,6 +20,6 @@ impl From<Explain> for LogicalOperator {
 impl Explain {
     pub fn new(input: impl Into<LogicalOperator>) -> Self {
         let input = Box::new(input.into());
-        Self { input, schema: schema! { column!("plan", Varchar) } }
+        Self { input, schema: schema! { plan Varchar } }
     }
 }

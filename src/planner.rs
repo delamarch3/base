@@ -305,7 +305,7 @@ mod test {
     test_statement!(
         simple_select,
         {
-            "t1" => schema!{ column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
+            "t1" => schema!{ c1 Int, c2 Varchar, c3 BigInt }
         },
         "SELECT * FROM t1 WHERE c1 = c2",
         "\
@@ -318,8 +318,8 @@ Projection [*]
     test_statement!(
         select_with_join_on,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
-            "t2" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
+            "t1" => schema! { c1 Int, c2 Varchar, c3 BigInt }
+            "t2" => schema! { c1 Int, c2 Varchar, c3 BigInt }
         },
         "SELECT * FROM t1 JOIN t2 ON (t1.c1 = t2.c1) where t1.c1 > 5",
         "\
@@ -334,9 +334,9 @@ Projection [*]
     test_statement!(
         select_with_join_using,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
-            "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
-            "t3" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c4", BigInt) }
+            "t1" => schema! { c1 Int, c2 Varchar, c3 BigInt }
+            "t2" => schema! { c2 Int, c3 Varchar, c4 BigInt }
+            "t3" => schema! { c1 Int, c2 Varchar, c4 BigInt }
         },
         "SELECT * FROM t1 JOIN t2 USING (c2, c3) JOIN t3 USING (c1, c4) where c1 > 5",
         "\
@@ -353,8 +353,8 @@ Projection [*]
     test_statement!(
         select_with_projection,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt),
-                     column!("c4", BigInt), column!("c5", BigInt)}
+            "t1" => schema! { c1 Int, c2 Varchar, c3 BigInt,
+                     c4 BigInt, c5 BigInt}
         },
         "SELECT c1, c2, c3, c4 AS column_four FROM t1 WHERE c5 = '' AND column_four > 10",
         "\
@@ -367,8 +367,8 @@ Projection [c1, c2, c3, c4 AS column_four]
     test_statement!(
         select_with_derived_tables,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) }
-            "t2" => schema! { column!("c2", Int), column!("c3", Varchar), column!("c4", BigInt) }
+            "t1" => schema! { c1 Int, c2 Varchar, c3 BigInt }
+            "t2" => schema! { c2 Int, c3 Varchar, c4 BigInt }
         },
         "SELECT d1.*, d2.c3, d2.c4 FROM (SELECT * FROM t1 WHERE c1 IN (1, 2, 3)) d1
         JOIN (SELECT c2, c3, c4 FROM t2 WHERE c2 != '') d2 USING (c2)",
@@ -396,7 +396,7 @@ Projection [*]
     test_statement!(
         insert_from_values,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
+            "t1" => schema! { c1 Int, c2 Int, c3 Int }
         },
         "INSERT INTO t1 VALUES (1, 2, 3), (4, 5, 6)",
         "\
@@ -408,7 +408,7 @@ Insert table=t1 oid=0
     test_statement!(
         insert_from_derived_table,
         {
-            "t1" => schema! { column!("c1", Int), column!("c2", Int), column!("c3", Int) }
+            "t1" => schema! { c1 Int, c2 Int, c3 Int }
         },
         "INSERT INTO t1 (SELECT * FROM VALUES (1, 2, 3), (4, 5, 6))",
         "\

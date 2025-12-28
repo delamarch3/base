@@ -168,7 +168,7 @@ mod test {
     fn test_bucket() {
         let page = Page::default();
         let mut page_w = page.write();
-        let key_schema = schema! { column!("c1", Int) };
+        let key_schema = schema! { c1 Int };
 
         let mut bucket: Bucket<i32> = Bucket::deserialise(page_w.data, &key_schema);
 

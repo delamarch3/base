@@ -284,7 +284,7 @@ mod test {
 
     #[test]
     fn test_serde() {
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
 
         let node = Node {
             t: NodeType::Leaf,
@@ -370,7 +370,7 @@ mod test {
 
     #[test]
     fn test_get_separators_leaf() {
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
 
         let node = Node {
             t: NodeType::Leaf,
@@ -410,7 +410,7 @@ mod test {
 
     #[test]
     fn test_get_separators_internal() {
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -450,7 +450,7 @@ mod test {
 
     #[test]
     fn test_find_child() {
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
 
         let node: Node<i32> = Node {
             t: NodeType::Internal,
@@ -493,7 +493,7 @@ mod test {
 
     #[test]
     fn test_values() {
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
 
         let mut node: Node<i32> =
             Node { t: NodeType::Internal, is_root: false, next: 1, id: 0, values: vec![] };

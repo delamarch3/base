@@ -254,7 +254,7 @@ mod test {
 
     test_btree_index!(
         test_int_big_int_key,
-        schema! { column!("c1", Int), column!("c2", Varchar), column!("c3", BigInt) },
+        schema! { c1 Int, c2 Varchar, c3 BigInt },
         ["c1", "c3"],
         [
             TupleBuilder::new().int(10).varchar("row_a").big_int(20).build(),
@@ -268,7 +268,7 @@ mod test {
 
     test_btree_index!(
         test_int_varchar_key,
-        schema! { column!("c1", Int), column!("c2", BigInt), column!("c3", Varchar) },
+        schema! { c1 Int, c2 BigInt, c3 Varchar },
         ["c1", "c3"],
         [
             TupleBuilder::new().int(20).big_int(20).varchar("row_a").build(),

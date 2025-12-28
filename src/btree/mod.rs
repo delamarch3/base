@@ -420,7 +420,7 @@ mod test {
         let lru = LRU::new(K);
         let pc = PageCache::new(disk, lru, 0);
 
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
         let mut btree = BTree::new(pc.clone(), &schema);
 
         // Insert and get
@@ -496,7 +496,7 @@ mod test {
         let pc = PageCache::new(disk, lru, 0);
         let pc2 = pc.clone();
 
-        let schema = schema! {column!("", Int)};
+        let schema = schema! {c1 Int};
         let mut btree = BTree::new(pc.clone(), &schema);
 
         let range = -50..50;
@@ -531,7 +531,7 @@ mod test {
                 let lru = LRU::new(K);
                 let pc = PageCache::new(disk, lru, 0);
 
-                let schema = schema! {column!("", Int)};
+                let schema = schema! {c1 Int};
 
                 let mut btree = BTree::new(pc.clone(), &schema);
 
