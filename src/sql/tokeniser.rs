@@ -144,6 +144,7 @@ impl TryFrom<String> for Keyword {
 pub enum TokeniserError {
     Unexpected { want: char, have: char, location: Location },
     Unhandled { have: char, location: Location },
+    UnexpectedEof(Location),
 }
 
 impl std::fmt::Display for TokeniserError {
@@ -155,6 +156,9 @@ impl std::fmt::Display for TokeniserError {
             TokeniserError::Unhandled { location, have } => {
                 write!(f, "{location}: unhandled char: {have}")
             }
+            TokeniserError::UnexpectedEof(location) => {
+                write!(f, "{location}: unhandled eof")
+            }
         }
     }
 }
@@ -163,6 +167,10 @@ impl std::error::Error for TokeniserError {}
 
 fn unexpected(want: char, have: Option<char>, location: Location) -> TokeniserError {
     TokeniserError::Unexpected { want, have: have.unwrap_or(' '), location }
+}
+
+fn unexpected_eof(location: Location) -> TokeniserError {
+    TokeniserError::UnexpectedEof(location)
 }
 
 fn unhandled(have: char, location: Location) -> TokeniserError {
@@ -225,7 +233,36 @@ impl<'a> Iterator for TokeniserIter<'a> {
                 }
                 '\'' => {
                     self.tokeniser.next_char();
-                    let s = self.tokeniser.peeking_take_while(|c| c != '\'');
+                    let mut s = String::new();
+                    while let Some(&c) = self.tokeniser.peek_char() {
+                        match c {
+                            '\\' => {
+                                self.tokeniser.next_char();
+                                let c = match self.tokeniser.next_char() {
+                                    Some(c) => match c {
+                                        'n' => '\n',
+                                        '\\' => '\\',
+                                        c => {
+                                            return Some(Err(unhandled(
+                                                c,
+                                                self.tokeniser.location(),
+                                            )))
+                                        }
+                                    },
+                                    None => {
+                                        return Some(Err(unexpected_eof(self.tokeniser.location())))
+                                    }
+                                };
+                                s.push(c);
+                            }
+                            '\'' => break,
+                            _ => {
+                                self.tokeniser.next_char();
+                                s.push(c);
+                            }
+                        }
+                    }
+
                     match self.tokeniser.next_char() {
                         Some('\'') => Ok((Token::StringLiteral(s), location)),
                         have => Err(unexpected('"', have, self.tokeniser.location())),
@@ -519,6 +556,18 @@ mod test {
 2
 3'",
         [Token::Keyword(Keyword::Select), Token::StringLiteral("c1\n2\n3".into()), Token::Eof]
+    );
+
+    test_tokeniser!(
+        test_select_multi_line_string2,
+        r#"SELECT 'c1\n2\n3'"#,
+        [Token::Keyword(Keyword::Select), Token::StringLiteral("c1\n2\n3".into()), Token::Eof]
+    );
+
+    test_tokeniser!(
+        test_escape,
+        r#"SELECT 'c1\\n2\\n3'"#,
+        [Token::Keyword(Keyword::Select), Token::StringLiteral(r#"c1\n2\n3"#.into()), Token::Eof]
     );
 
     test_tokeniser!(
