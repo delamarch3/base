@@ -33,6 +33,17 @@ impl Value {
             Value::Varchar(_) => Type::Varchar,
         }
     }
+
+    pub fn display_len(&self) -> usize {
+        match self {
+            Value::TinyInt(v) => (v.checked_ilog10().unwrap_or_default() + 1) as usize,
+            Value::Bool(v) if *v => "true".len(),
+            Value::Bool(_) => "false".len(),
+            Value::Int(v) => (v.checked_ilog10().unwrap_or_default() + 1) as usize,
+            Value::BigInt(v) => (v.checked_ilog10().unwrap_or_default() + 1) as usize,
+            Value::Varchar(v) => v.lines().map(str::len).max().unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]

@@ -7,7 +7,7 @@ use std::{
 use base::{
     catalog::Catalog, disk::FileSystem, execution::execute, optimiser::Optimiser,
     page_cache::PageCache, physical_plan::PhysicalOperator, planner::Planner, replacer::LRU,
-    sql::Parser,
+    sql::Parser, table::tuple::Value,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -58,16 +58,22 @@ fn run_query(input: &str, planner: &Planner, optimiser: &Optimiser) -> Result<()
         })
         .collect::<Result<Vec<Box<dyn PhysicalOperator>>>>()?;
 
+    const CELL_PADDING: usize = 2;
     for mut plan in plans {
         let result = execute(plan.as_mut())?;
         let schema = plan.schema();
 
         let mut column_widths = vec![0; schema.len()];
         for (i, column) in schema.iter().enumerate() {
-            column_widths[i] = max(column_widths[i], column.name.len() + 2); // padding = 2
+            column_widths[i] = max(column_widths[i], column.name.len() + CELL_PADDING);
         }
 
-        // TODO: look at the some of the rows to figure out the width
+        for row in result.iter().take(10) {
+            for (i, column) in schema.iter().enumerate() {
+                let value = row.get_value(column.offset, column.ty);
+                column_widths[i] = max(column_widths[i], value.display_len() + CELL_PADDING);
+            }
+        }
 
         for i in 0..schema.len() {
             let width = column_widths[i];
