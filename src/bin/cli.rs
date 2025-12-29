@@ -7,7 +7,7 @@ use std::{
 use base::{
     catalog::Catalog, disk::FileSystem, execution::execute, optimiser::Optimiser,
     page_cache::PageCache, physical_plan::PhysicalOperator, planner::Planner, replacer::LRU,
-    sql::Parser, table::tuple::Value,
+    sql::Parser,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

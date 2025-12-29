@@ -389,7 +389,7 @@ mod test {
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
-    use crate::{column, schema};
+    use crate::schema;
 
     use rand::{seq::SliceRandom, thread_rng, Rng};
 

@@ -156,8 +156,8 @@ mod test {
     use crate::page::{DiskObject, PAGE_SIZE};
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
+    use crate::schema;
     use crate::table::tuple::{Builder as TupleBuilder, Data as TupleData};
-    use crate::{column, schema};
 
     #[test]
     fn test_extendible_hash_table() -> crate::Result<()> {

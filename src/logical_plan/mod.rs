@@ -354,8 +354,8 @@ mod test {
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
+    use crate::schema;
     use crate::sql::expr_builder::{alias, concat, ident, lit, wildcard};
-    use crate::{column, schema};
 
     #[test]
     fn test_builder() -> Result<(), LogicalOperatorError> {

@@ -161,8 +161,8 @@ where
 mod test {
     use crate::hash_table::bucket::Bucket;
     use crate::page::{DiskObject, Page};
+    use crate::schema;
     use crate::table::tuple::Builder as TupleBuilder;
-    use crate::{column, schema};
 
     #[test]
     fn test_bucket() {

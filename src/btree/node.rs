@@ -278,7 +278,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::btree::slot::Either;
-    use crate::{column, schema};
+    use crate::schema;
 
     use super::*;
 

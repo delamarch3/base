@@ -223,14 +223,6 @@ impl<'a> Iterator for TokeniserIter<'a> {
 
                     Ok((Token::NumberLiteral(s), location))
                 }
-                '"' => {
-                    self.tokeniser.next_char();
-                    let s = self.tokeniser.peeking_take_while(|c| c != '"');
-                    match self.tokeniser.next_char() {
-                        Some('"') => Ok((Token::StringLiteral(s), location)),
-                        have => Err(unexpected('"', have, self.tokeniser.location())),
-                    }
-                }
                 '\'' => {
                     self.tokeniser.next_char();
                     let s = self.tokeniser.peeking_take_while(|c| c != '\'');
@@ -517,15 +509,15 @@ mod test {
 
     test_tokeniser!(
         test_select_string,
-        "SELECT \"c1\"",
+        "SELECT 'c1'",
         [Token::Keyword(Keyword::Select), Token::StringLiteral("c1".into()), Token::Eof]
     );
 
     test_tokeniser!(
         test_select_multi_line_string,
-        "SELECT \"c1
+        "SELECT 'c1
 2
-3\"",
+3'",
         [Token::Keyword(Keyword::Select), Token::StringLiteral("c1\n2\n3".into()), Token::Eof]
     );
 

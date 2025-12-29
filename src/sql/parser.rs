@@ -794,7 +794,7 @@ mod test {
 
     test_parse_expr!(
         test_expr_binary_op_in,
-        "c1 < 5 and c2 in (1, \"2\", .3, \"4\")",
+        "c1 < 5 and c2 in (1, '2', .3, '4')",
         Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Ident(Ident::Single("c1".into()))),
@@ -817,7 +817,7 @@ mod test {
 
     test_parse_expr!(
         test_expr_binary_op_not_in,
-        "c1 < 5 and c2 not in (1, \"2\", 3, \"4\")",
+        "c1 < 5 and c2 not in (1, '2', 3, '4')",
         Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Ident(Ident::Single("c1".into()))),
@@ -840,7 +840,7 @@ mod test {
 
     test_parse_expr!(
         test_expr_binary_op_not_in_parens,
-        "(c1 < 5) and (c2 not in (1, \"2\", 3, \"4\"))",
+        "(c1 < 5) and (c2 not in (1, '2', 3, '4'))",
         Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Ident(Ident::Single("c1".into()))),
@@ -1039,7 +1039,7 @@ mod test {
 
     #[test]
     fn test_parse_insert() {
-        let input = "insert into t1 values (1, 2), (\"1\", \"2\")";
+        let input = "insert into t1 values (1, 2), ('1', '2')";
 
         let want = Insert {
             table: Ident::Single("t1".into()),
@@ -1080,7 +1080,7 @@ mod test {
 
     #[test]
     fn test_parse_update() {
-        let input = "update t1 set c1 = 1, c2 = \"2\" where 1 = 1";
+        let input = "update t1 set c1 = 1, c2 = '2' where 1 = 1";
 
         let want = Update {
             table: Ident::Single("t1".into()),

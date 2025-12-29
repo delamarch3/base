@@ -261,9 +261,9 @@ fn varchar_op(lhs: &str, op: Op, rhs: &str) -> Result<bool, EvalError> {
 #[cfg(test)]
 mod test {
     use super::eval;
+    use crate::schema;
     use crate::sql::expr_builder::{concat, contains, ident, lit};
     use crate::table::tuple::{Builder as TupleBuilder, Value};
-    use crate::{column, schema};
 
     macro_rules! test_eval {
         ($name:tt, $expr:expr, $schema:expr, $tuple:expr, $want:expr) => {

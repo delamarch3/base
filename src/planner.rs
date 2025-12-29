@@ -245,8 +245,8 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     use crate::{
-        catalog::Catalog, column, disk::Memory, page::PAGE_SIZE, page_cache::PageCache,
-        planner::Planner, replacer::LRU, schema, sql::Parser,
+        catalog::Catalog, disk::Memory, page::PAGE_SIZE, page_cache::PageCache, planner::Planner,
+        replacer::LRU, schema, sql::Parser,
     };
 
     macro_rules! test_statement {

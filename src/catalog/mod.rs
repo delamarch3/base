@@ -212,8 +212,8 @@ mod test {
     use crate::page::PAGE_SIZE;
     use crate::page_cache::PageCache;
     use crate::replacer::LRU;
+    use crate::schema;
     use crate::table::{node::RID, tuple::Builder as TupleBuilder};
-    use crate::{column, schema};
 
     macro_rules! test_btree_index {
         ($test:tt, $schema:expr, $key:expr, $tuples:expr, $want:expr) => {
